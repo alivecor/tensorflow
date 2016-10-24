@@ -40,6 +40,7 @@ tensorflow/core/kernels/sequence_ops.cc
 tensorflow/core/kernels/sendrecv_ops.cc
 tensorflow/core/kernels/save_restore_tensor.cc
 tensorflow/core/kernels/save_op.cc
+tensorflow/core/kernels/random_op.cc
 tensorflow/core/kernels/reverse_sequence_op.cc
 tensorflow/core/kernels/reverse_op.cc
 tensorflow/core/kernels/restore_op.cc
@@ -98,6 +99,7 @@ tensorflow/core/kernels/cwise_op_greater.cc
 tensorflow/core/kernels/cwise_op_exp.cc
 tensorflow/core/kernels/cwise_op_equal_to.cc
 tensorflow/core/kernels/cwise_op_div.cc
+tensorflow/core/kernels/cwise_op_floor.cc
 tensorflow/core/kernels/cwise_op_add.cc
 tensorflow/core/kernels/ctc_decoder_ops.cc
 tensorflow/core/kernels/conv_ops_using_gemm.cc
