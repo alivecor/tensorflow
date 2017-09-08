@@ -62,7 +62,7 @@ HOST_GENDIR := $(MAKEFILE_DIR)/gen/host_obj/
 
 # Settings for the host compiler.
 HOST_CXX := $(CC_PREFIX) gcc
-HOST_CXXFLAGS := --std=c++11
+HOST_CXXFLAGS := --std=c++11 -Wno-unknown-warning-option -Wno-invalid-partial-specialization
 HOST_LDOPTS :=
 ifeq ($(HAS_GEN_HOST_PROTOC),true)
 	HOST_LDOPTS += -L$(MAKEFILE_DIR)/gen/protobuf-host/lib
@@ -138,7 +138,7 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 # Settings for the target compiler.
 CXX := $(CC_PREFIX) gcc
 OPTFLAGS := -O2
-CXXFLAGS := --std=c++11 -DIS_SLIM_BUILD -fno-exceptions -DNDEBUG -DNOTFDBG $(OPTFLAGS)
+CXXFLAGS := --std=c++11 -DIS_SLIM_BUILD -fno-exceptions -fembed-bitcode -DNDEBUG -DNOTFDBG $(OPTFLAGS) -Wno-unknown-warning-option -Wno-invalid-partial-specialization
 LDFLAGS := \
 -L/usr/local/lib
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
@@ -400,6 +400,82 @@ ifeq ($(TARGET),IOS)
 	LIBDIR := $(LIBDIR)ios_$(IOS_ARCH)/
 	BINDIR := $(BINDIR)ios_$(IOS_ARCH)/
 	DEPDIR := $(DEPDIR)ios_$(IOS_ARCH)/
+endif
+# Settings for WATCHOS.
+ifeq ($(TARGET),WATCHOS)
+	WATCHOS_PLATFORM := $(shell xcrun --sdk watchos --show-sdk-platform-path)
+	WATCHOS_SYSROOT := $(shell xcrun --sdk watchos --show-sdk-path)
+	WATCHSIMULATOR_PLATFORM := $(shell xcrun --sdk watchsimulator \
+	--show-sdk-platform-path)
+	WATCHSIMULATOR_SYSROOT := $(shell xcrun --sdk watchsimulator \
+	--show-sdk-path)
+	WATCH_SDK_VERSION := $(shell xcrun --sdk watchos --show-sdk-version)
+	MIN_SDK_VERSION := 4.0
+# Override WATCHOS_ARCH with ARMV7K, X86_64, or I386.
+# -DUSE_GEMM_FOR_CONV   # No Accelerate.framework on watchOS
+	WATCHOS_ARCH := X86_64
+	ifeq ($(WATCHOS_ARCH),ARMV7K)
+		CXXFLAGS += -mwatchos-version-min=$(MIN_SDK_VERSION) \
+		-arch armv7k \
+		-D__thread= \
+		-Wno-c++11-narrowing \
+		-mno-thumb \
+		-DTF_LEAN_BINARY \
+		-D__ANDROID_TYPES_FULL__ \
+		-fno-exceptions \
+		-isysroot \
+		${WATCHOS_SYSROOT}
+		LDFLAGS := -arch armv7k \
+		-mwatchos-version-min=${MIN_SDK_VERSION} \
+		-Xlinker -S \
+		-Xlinker -x \
+		-Xlinker -dead_strip \
+		-all_load \
+		-L$(GENDIR)protobuf_watchos/lib \
+		-lz
+	endif
+	ifeq ($(WATCHOS_ARCH),I386)
+		CXXFLAGS += -mwatchos-simulator-version-min=$(MIN_SDK_VERSION) \
+		-arch i386 \
+		-D__thread= \
+		-Wno-c++11-narrowing \
+		-DTF_LEAN_BINARY \
+		-D__ANDROID_TYPES_FULL__ \
+		-fno-exceptions \
+		-isysroot \
+		${WATCHSIMULATOR_SYSROOT}
+		LDFLAGS := -arch i386 \
+		-mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
+		-Xlinker -S \
+		-Xlinker -x \
+		-Xlinker -dead_strip \
+		-all_load \
+		-L$(GENDIR)protobuf_watchos/lib \
+		-lz
+	endif
+	ifeq ($(WATCHOS_ARCH),X86_64)
+		CXXFLAGS += -mwatchos-simulator-version-min=$(MIN_SDK_VERSION) \
+		-arch x86_64 \
+		-D__thread= \
+		-Wno-c++11-narrowing \
+		-DTF_LEAN_BINARY \
+		-D__ANDROID_TYPES_FULL__ \
+		-fno-exceptions \
+		-isysroot \
+		${WATCHSIMULATOR_SYSROOT}
+		LDFLAGS := -arch x86_64 \
+		-mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
+		-Xlinker -S \
+		-Xlinker -x \
+		-Xlinker -dead_strip \
+		-all_load \
+		-L$(GENDIR)protobuf_watchos/lib \
+		-lz
+	endif
+	OBJDIR := $(OBJDIR)watchos_$(WATCHOS_ARCH)/
+	LIBDIR := $(LIBDIR)watchos_$(WATCHOS_ARCH)/
+	BINDIR := $(BINDIR)watchos_$(WATCHOS_ARCH)/
+	DEPDIR := $(DEPDIR)watchos_$(WATCHOS_ARCH)/
 endif
 
 # This library is the main target for this makefile. It will contain a minimal
