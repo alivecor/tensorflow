@@ -67,4 +67,7 @@ replace_by_sed 's#static uint64x2_t p2ul_CONJ_XOR = vld1q_u64( p2ul_conj_XOR_DAT
 replace_by_sed 's#https://googlemock.googlecode.com/files/gmock-1.7.0.zip#http://download.tensorflow.org/deps/gmock-1.7.0.zip#' \
   "${DOWNLOADS_DIR}/protobuf/autogen.sh"
 
+# Fix use of fork/execve() on watchOS
+cp ./tensorflow/contrib/makefile/subprocess_mod.cc ./tensorflow/contrib/makefile/downloads/protobuf/src/google/protobuf/compiler/subprocess.cc
+
 echo "download_dependencies.sh completed successfully." >&2

@@ -201,7 +201,8 @@ bool SubProcess::Start() {
 
   // Start the child process and setup the file descriptors of both processes.
   // See comment (1) in the header about issues with the use of fork().
-  pid_ = fork();
+  pid_ = -1;
+  LOG(FATAL) << "fork not available";
   if (pid_ < 0) {
     LOG(ERROR) << "Start cannot fork() child process: " << strerror(errno);
     ClosePipes();
@@ -274,7 +275,8 @@ bool SubProcess::Start() {
 
   // Execute the child program.
   // See comment (2) in the header about issues with the use of execv().
-  execv(exec_path_, exec_argv_);
+  // execv(exec_path_, exec_argv_);
+  LOG(FATAL) << "execv not available";
   _exit(1);
 }
 
