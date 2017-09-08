@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""A Dual Coordinate Ascent optimizer library for training fast linear models.
+"""## Script Language Operators.
+
+A Dual Cordinate Ascent optimizer for TensorFlow for training fast linear
+models.
 
 @@sdca_optimizer
 @@sdca_fprint
@@ -24,18 +27,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import ops
+import numpy as np
 
+from tensorflow.python import pywrap_tensorflow
+from tensorflow.python.framework import common_shapes
+from tensorflow.python.framework import ops
 # go/tf-wildcard-import
 # pylint: disable=wildcard-import
 from tensorflow.python.ops.gen_sdca_ops import *
 # pylint: enable=wildcard-import
 
-from tensorflow.python.util.all_util import remove_undocumented
-
+# pylint: disable=anomalous-backslash-in-string,protected-access
 ops.NotDifferentiable("SdcaFprint")
 ops.NotDifferentiable("SdcaOptimizer")
 ops.NotDifferentiable("SdcaShrinkL1")
-
-
-remove_undocumented(__name__)
+ops.RegisterShape("SdcaFprint")(common_shapes.call_cpp_shape_fn)
+ops.RegisterShape("SdcaOptimizer")(common_shapes.call_cpp_shape_fn)
+ops.RegisterShape("SdcaShrinkL1")(common_shapes.call_cpp_shape_fn)

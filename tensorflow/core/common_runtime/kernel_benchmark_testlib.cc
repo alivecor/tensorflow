@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/op_segment.h"
-#include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/lib/core/notification.h"
@@ -40,8 +39,7 @@ namespace tensorflow {
 namespace test {
 
 Benchmark::Benchmark(const string& device, Graph* g,
-                     const SessionOptions* options, Graph* init,
-                     Rendezvous* rendez) {
+                     const SessionOptions* options, Graph* init) {
   SessionOptions default_options;
   if (!options) {
     options = &default_options;
@@ -63,11 +61,7 @@ Benchmark::Benchmark(const string& device, Graph* g,
     pool_->Schedule(closure);
   };
 
-  if (rendez == nullptr) {
-    rendez_ = NewLocalRendezvous();
-  } else {
-    rendez_ = rendez;
-  }
+  rendez_ = NewLocalRendezvous();
 
   const int graph_def_version = g->versions().producer();
 
@@ -109,13 +103,13 @@ void Benchmark::Run(int iters) { RunWithArgs({}, {}, iters); }
 
 string GetRendezvousKey(const Node* node) {
   string send_device;
-  TF_CHECK_OK(GetNodeAttr(node->attrs(), "send_device", &send_device));
+  TF_CHECK_OK(GetNodeAttr(node->def(), "send_device", &send_device));
   string recv_device;
-  TF_CHECK_OK(GetNodeAttr(node->attrs(), "recv_device", &recv_device));
+  TF_CHECK_OK(GetNodeAttr(node->def(), "recv_device", &recv_device));
   string tensor_name;
-  TF_CHECK_OK(GetNodeAttr(node->attrs(), "tensor_name", &tensor_name));
+  TF_CHECK_OK(GetNodeAttr(node->def(), "tensor_name", &tensor_name));
   uint64 send_device_incarnation;
-  TF_CHECK_OK(GetNodeAttr(node->attrs(), "send_device_incarnation",
+  TF_CHECK_OK(GetNodeAttr(node->def(), "send_device_incarnation",
                           reinterpret_cast<int64*>(&send_device_incarnation)));
   return Rendezvous::CreateKey(send_device, send_device_incarnation,
                                recv_device, tensor_name, FrameAndIter(0, 0));
@@ -129,12 +123,10 @@ void Benchmark::RunWithArgs(
   }
   // Gets inputs' and outputs' rendezvous keys.
   std::vector<std::pair<string, Tensor>> in;
-  in.reserve(inputs.size());
   for (const auto& p : inputs) {
     in.push_back({GetRendezvousKey(p.first), p.second});
   }
   std::vector<string> out;
-  out.reserve(outputs.size());
   for (const auto& n : outputs) {
     out.push_back(GetRendezvousKey(n));
   }
@@ -152,13 +144,13 @@ void Benchmark::RunWithArgs(
     for (const auto& p : in) {
       Rendezvous::ParsedKey parsed;
       TF_CHECK_OK(Rendezvous::ParseKey(p.first, &parsed));
-      TF_CHECK_OK(rendez_->Send(parsed, Rendezvous::Args(), p.second, false));
+      rendez_->Send(parsed, Rendezvous::Args(), p.second, false);
     }
     TF_CHECK_OK(exec_->Run(args));
     for (const string& key : out) {
       Rendezvous::ParsedKey parsed;
       TF_CHECK_OK(Rendezvous::ParseKey(key, &parsed));
-      TF_CHECK_OK(rendez_->Recv(parsed, Rendezvous::Args(), &unused, &is_dead));
+      rendez_->Recv(parsed, Rendezvous::Args(), &unused, &is_dead);
     }
   }
   TF_CHECK_OK(device_->Sync());
@@ -169,13 +161,13 @@ void Benchmark::RunWithArgs(
     for (const auto& p : in) {
       Rendezvous::ParsedKey parsed;
       TF_CHECK_OK(Rendezvous::ParseKey(p.first, &parsed));
-      TF_CHECK_OK(rendez_->Send(parsed, Rendezvous::Args(), p.second, false));
+      rendez_->Send(parsed, Rendezvous::Args(), p.second, false);
     }
     TF_CHECK_OK(exec_->Run(args));
     for (const string& key : out) {
       Rendezvous::ParsedKey parsed;
       TF_CHECK_OK(Rendezvous::ParseKey(key, &parsed));
-      TF_CHECK_OK(rendez_->Recv(parsed, Rendezvous::Args(), &unused, &is_dead));
+      rendez_->Recv(parsed, Rendezvous::Args(), &unused, &is_dead);
     }
   }
 

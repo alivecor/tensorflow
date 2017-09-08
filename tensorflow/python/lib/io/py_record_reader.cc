@@ -55,14 +55,10 @@ PyRecordReader::~PyRecordReader() {
   delete file_;
 }
 
-void PyRecordReader::GetNext(TF_Status* status) {
-  if (reader_ == nullptr) {
-    Set_TF_Status_from_Status(status,
-                              errors::FailedPrecondition("Reader is closed."));
-    return;
-  }
+bool PyRecordReader::GetNext() {
+  if (reader_ == nullptr) return false;
   Status s = reader_->ReadRecord(&offset_, &record_);
-  Set_TF_Status_from_Status(status, s);
+  return s.ok();
 }
 
 void PyRecordReader::Close() {

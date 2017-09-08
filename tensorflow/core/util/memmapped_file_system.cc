@@ -79,15 +79,12 @@ class RandomAccessFileFromMemmapped : public RandomAccessFile {
 
 MemmappedFileSystem::MemmappedFileSystem() {}
 
-Status MemmappedFileSystem::FileExists(const string& fname) {
+bool MemmappedFileSystem::FileExists(const string& fname) {
   if (!mapped_memory_) {
-    return errors::FailedPrecondition("MemmappedEnv is not initialized");
+    return false;
   }
   const auto dir_element = directory_.find(fname);
-  if (dir_element != directory_.end()) {
-    return Status::OK();
-  }
-  return errors::NotFound(fname, " not found");
+  return dir_element != directory_.end();
 }
 
 Status MemmappedFileSystem::NewRandomAccessFile(
@@ -177,13 +174,8 @@ const void* MemmappedFileSystem::GetMemoryWithOffset(uint64 offset) const {
   return reinterpret_cast<const uint8*>(mapped_memory_->data()) + offset;
 }
 
-#if defined(COMPILER_MSVC)
-constexpr char* MemmappedFileSystem::kMemmappedPackagePrefix;
-constexpr char* MemmappedFileSystem::kMemmappedPackageDefaultGraphDef;
-#else
 constexpr char MemmappedFileSystem::kMemmappedPackagePrefix[];
 constexpr char MemmappedFileSystem::kMemmappedPackageDefaultGraphDef[];
-#endif
 
 Status MemmappedFileSystem::InitializeFromFile(Env* env,
                                                const string& filename) {

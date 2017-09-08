@@ -13,9 +13,23 @@
 # limitations under the License.
 # ==============================================================================
 # pylint: disable=g-short-docstring-punctuation
-"""Working with audio using FFmpeg.
+"""## Encoding and decoding audio using FFmpeg
 
-See the @{$python/contrib.ffmpeg} guide.
+TensorFlow provides Ops to decode and encode audio files using the
+[FFmpeg](https://www.ffmpeg.org/) library. FFmpeg must be
+locally [installed](https://ffmpeg.org/download.html) for these Ops to succeed.
+
+Example:
+
+```python
+from tensorflow.contrib import ffmpeg
+
+audio_binary = tf.read_file('song.mp3')
+waveform = ffmpeg.decode_audio(
+    audio_binary, file_format='mp3', samples_per_second=44100, channel_count=2)
+uncompressed_binary = ffmpeg.encode_audio(
+    waveform, file_format='wav', samples_per_second=44100)
+```
 
 @@decode_audio
 @@encode_audio
@@ -27,8 +41,3 @@ from __future__ import print_function
 
 from tensorflow.contrib.ffmpeg.ffmpeg_ops import decode_audio
 from tensorflow.contrib.ffmpeg.ffmpeg_ops import encode_audio
-
-from tensorflow.python.util.all_util import remove_undocumented
-
-_allowed_symbols = ['decode_audio', 'encode_audio']
-remove_undocumented(__name__, _allowed_symbols)

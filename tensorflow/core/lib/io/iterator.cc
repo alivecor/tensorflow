@@ -19,14 +19,14 @@ namespace tensorflow {
 namespace table {
 
 Iterator::Iterator() {
-  cleanup_.function = nullptr;
-  cleanup_.next = nullptr;
+  cleanup_.function = NULL;
+  cleanup_.next = NULL;
 }
 
 Iterator::~Iterator() {
-  if (cleanup_.function != nullptr) {
+  if (cleanup_.function != NULL) {
     (*cleanup_.function)(cleanup_.arg1, cleanup_.arg2);
-    for (Cleanup* c = cleanup_.next; c != nullptr;) {
+    for (Cleanup* c = cleanup_.next; c != NULL;) {
       (*c->function)(c->arg1, c->arg2);
       Cleanup* next = c->next;
       delete c;
@@ -36,9 +36,9 @@ Iterator::~Iterator() {
 }
 
 void Iterator::RegisterCleanup(CleanupFunction func, void* arg1, void* arg2) {
-  assert(func != nullptr);
+  assert(func != NULL);
   Cleanup* c;
-  if (cleanup_.function == nullptr) {
+  if (cleanup_.function == NULL) {
     c = &cleanup_;
   } else {
     c = new Cleanup;
@@ -53,20 +53,20 @@ void Iterator::RegisterCleanup(CleanupFunction func, void* arg1, void* arg2) {
 namespace {
 class EmptyIterator : public Iterator {
  public:
-  explicit EmptyIterator(const Status& s) : status_(s) {}
-  bool Valid() const override { return false; }
-  void Seek(const StringPiece& target) override {}
-  void SeekToFirst() override {}
-  void Next() override { assert(false); }
-  StringPiece key() const override {
+  EmptyIterator(const Status& s) : status_(s) {}
+  virtual bool Valid() const { return false; }
+  virtual void Seek(const StringPiece& target) {}
+  virtual void SeekToFirst() {}
+  virtual void Next() { assert(false); }
+  StringPiece key() const {
     assert(false);
     return StringPiece();
   }
-  StringPiece value() const override {
+  StringPiece value() const {
     assert(false);
     return StringPiece();
   }
-  Status status() const override { return status_; }
+  virtual Status status() const { return status_; }
 
  private:
   Status status_;

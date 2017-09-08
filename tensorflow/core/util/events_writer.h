@@ -35,10 +35,10 @@ class EventsWriter {
 #endif
 
   // Events files typically have a name of the form
-  //   '/some/file/path/my.file.out.events.[timestamp].[hostname][suffix]'
+  //   '/some/file/path/my.file.out.events.[timestamp].[hostname]'
   // To create and EventWriter, the user should provide file_prefix =
   //   '/some/file/path/my.file'
-  // The EventsWriter will append '.out.events.[timestamp].[hostname][suffix]'
+  // The EventsWriter will append '.out.events.[timestamp].[hostname]'
   // to the ultimate filename once Init() is called.
   // Note that it is not recommended to simultaneously have two
   // EventWriters writing to the same file_prefix.
@@ -51,14 +51,10 @@ class EventsWriter {
   // and is open this is a no-op.  If on the other hand the file was opened,
   // but has since disappeared (e.g. deleted by another process), this will open
   // a new file with a new timestamp in its filename.
-  bool Init() { return InitWithSuffix(""); }
-  bool InitWithSuffix(const string& suffix) {
-    file_suffix_ = suffix;
-    return InitIfNeeded();
-  }
+  bool Init();
 
   // Returns the filename for the current events file:
-  // filename_ = [file_prefix_].out.events.[timestamp].[hostname][suffix]
+  // filename_ = [file_prefix_].out.events.[timestamp].[hostname]
   string FileName();
 
   // Append "event" to the file.  The "tensorflow::" part is for swig happiness.
@@ -82,11 +78,9 @@ class EventsWriter {
 
  private:
   bool FileHasDisappeared();  // True if event_file_path_ does not exist.
-  bool InitIfNeeded();
 
   Env* env_;
   const string file_prefix_;
-  string file_suffix_;
   string filename_;
   std::unique_ptr<WritableFile> recordio_file_;
   std::unique_ptr<io::RecordWriter> recordio_writer_;

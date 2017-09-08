@@ -39,10 +39,8 @@ limitations under the License.
 #include "tensorflow/core/graph/optimizer_cse.h"
 
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
-#include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/lib/gtl/map_util.h"
 #include "tensorflow/core/lib/hash/hash.h"
@@ -54,12 +52,14 @@ class OptimizerCSE {
  public:
   explicit OptimizerCSE(Graph* g) : g_(g) {}
 
-  bool Optimize(const std::function<bool(const Node*)>& consider_fn);
+  bool Optimize(std::function<bool(const Node*)> consider_fn);
 
  private:
+  struct Scratch;
+
   static size_t NodeHash(const Node* n);
-  static bool Equivalent(const Node* a, const Node* b,
-                         AttrSlice::Scratch* scratch);
+  static bool Equivalent(const Node* a, const Node* b, Scratch* s);
+  static bool EqualAttrs(const Node* a, const Node* b, Scratch* s);
 
   Graph* g_;
 };
@@ -109,7 +109,7 @@ size_t OptimizerCSE::NodeHash(const Node* n) {
   // Hash the attrs.  For example, this makes sure different constants
   // end up in different hash buckets.
   string tmp;
-  for (const auto& attr : n->attrs()) {
+  for (const auto& attr : n->def().attr()) {
     tmp = attr.first;
     attr.second.AppendToString(&tmp);
     // Add hashes of attrs, so the order of attrs doesn't matter.
@@ -121,6 +121,28 @@ size_t OptimizerCSE::NodeHash(const Node* n) {
   return h;
 }
 
+struct OptimizerCSE::Scratch {
+  // For EqualAttrs():
+  string a;
+  string b;
+};
+
+bool OptimizerCSE::EqualAttrs(const Node* a, const Node* b, Scratch* scratch) {
+  if (a->def().attr_size() != b->def().attr_size()) return false;
+
+  for (const auto& attr : b->def().attr()) {
+    auto iter = a->def().attr().find(attr.first);
+    if (iter == a->def().attr().end()) return false;
+    // Note: it should be safe to compare proto serializations of the attr
+    // values since at most one field should be set in each (indeed, it
+    // should be the same field).
+    iter->second.SerializeToString(&scratch->a);
+    attr.second.SerializeToString(&scratch->b);
+    if (scratch->a != scratch->b) return false;
+  }
+  return true;
+}
+
 static bool HasRefInput(const Node* n) {
   for (auto dt : n->input_types()) {
     if (IsRefType(dt)) return true;
@@ -128,8 +150,7 @@ static bool HasRefInput(const Node* n) {
   return false;
 }
 
-bool OptimizerCSE::Equivalent(const Node* a, const Node* b,
-                              AttrSlice::Scratch* scratch) {
+bool OptimizerCSE::Equivalent(const Node* a, const Node* b, Scratch* scratch) {
   // Different op names are different
   if (a->type_string() != b->type_string()) return false;
 
@@ -142,7 +163,7 @@ bool OptimizerCSE::Equivalent(const Node* a, const Node* b,
 
   // Compare attrs.  Note that equal attrs implies equal input and
   // output types.
-  if (!a->attrs().EqualAttrs(b->attrs(), scratch)) return false;
+  if (!EqualAttrs(a, b, scratch)) return false;
 
   // Compare input sources
   if (a->num_inputs() != b->num_inputs()) return false;
@@ -159,13 +180,11 @@ bool OptimizerCSE::Equivalent(const Node* a, const Node* b,
   return true;
 }
 
-bool OptimizerCSE::Optimize(
-    const std::function<bool(const Node*)>& consider_fn) {
+bool OptimizerCSE::Optimize(std::function<bool(const Node*)> consider_fn) {
   // This very simple implementation works if the whole graph is one
   // giant basic block (because we just traverse nodes in a
-  // topological order). This simple implementation works well
-  // with control flow/loops/etc. But we need to be careful about
-  // control flow if we want to add more sophisticated CSE optimizations.
+  // topological order).  We'll need to do something more
+  // sophisticated when we have control flow/loops/etc.
 
   // TODO(jeff): We need to handle Update nodes specially, but dealing
   // with more general control flow will also solve this issue, and for
@@ -184,16 +203,9 @@ bool OptimizerCSE::Optimize(
   // Scratch space for Equivalent calls.  Allocated here and passed in to
   // Equivalent to avoid allocation inside the loop below.
   bool changed = false;
-  AttrSlice::Scratch scratch;
+  Scratch scratch;
   for (Node* n : order) {
     if (!n->IsOp()) continue;
-
-    // Don't prune placeholder nodes.
-    if (n->type_string() == "Placeholder" ||
-        n->type_string() == "PlaceholderV2" ||
-        n->type_string() == "PlaceholderWithDefault") {
-      continue;
-    }
 
     // See if we should consider this node at all
     if (consider_fn != nullptr && !consider_fn(n)) continue;
@@ -212,7 +224,6 @@ bool OptimizerCSE::Optimize(
       for (const Edge* e : n->out_edges()) {
         g_->AddEdge(*candidate, e->src_output(), e->dst(), e->dst_input());
       }
-
       g_->RemoveNode(n);
       changed = true;
     }
@@ -220,8 +231,7 @@ bool OptimizerCSE::Optimize(
   return changed;
 }
 
-bool OptimizeCSE(Graph* g,
-                 const std::function<bool(const Node*)>& consider_fn) {
+bool OptimizeCSE(Graph* g, std::function<bool(const Node*)> consider_fn) {
   OptimizerCSE opt(g);
   return opt.Optimize(consider_fn);
 }

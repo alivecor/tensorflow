@@ -32,29 +32,29 @@ class TwoLevelIterator : public Iterator {
   TwoLevelIterator(Iterator* index_iter, BlockFunction block_function,
                    void* arg);
 
-  ~TwoLevelIterator() override;
+  virtual ~TwoLevelIterator();
 
-  void Seek(const StringPiece& target) override;
-  void SeekToFirst() override;
-  void Next() override;
+  virtual void Seek(const StringPiece& target);
+  virtual void SeekToFirst();
+  virtual void Next();
 
-  bool Valid() const override {
+  virtual bool Valid() const {
     return (data_iter_ == nullptr) ? false : data_iter_->Valid();
   }
-  StringPiece key() const override {
+  virtual StringPiece key() const {
     assert(Valid());
     return data_iter_->key();
   }
-  StringPiece value() const override {
+  virtual StringPiece value() const {
     assert(Valid());
     return data_iter_->value();
   }
-  Status status() const override {
+  virtual Status status() const {
     // It'd be nice if status() returned a const Status& instead of a
     // Status
     if (!index_iter_->status().ok()) {
       return index_iter_->status();
-    } else if (data_iter_ != nullptr && !data_iter_->status().ok()) {
+    } else if (data_iter_ != NULL && !data_iter_->status().ok()) {
       return data_iter_->status();
     } else {
       return status_;
@@ -84,7 +84,7 @@ TwoLevelIterator::TwoLevelIterator(Iterator* index_iter,
     : block_function_(block_function),
       arg_(arg),
       index_iter_(index_iter),
-      data_iter_(nullptr) {}
+      data_iter_(NULL) {}
 
 TwoLevelIterator::~TwoLevelIterator() {
   delete index_iter_;
@@ -94,14 +94,14 @@ TwoLevelIterator::~TwoLevelIterator() {
 void TwoLevelIterator::Seek(const StringPiece& target) {
   index_iter_->Seek(target);
   InitDataBlock();
-  if (data_iter_ != nullptr) data_iter_->Seek(target);
+  if (data_iter_ != NULL) data_iter_->Seek(target);
   SkipEmptyDataBlocksForward();
 }
 
 void TwoLevelIterator::SeekToFirst() {
   index_iter_->SeekToFirst();
   InitDataBlock();
-  if (data_iter_ != nullptr) data_iter_->SeekToFirst();
+  if (data_iter_ != NULL) data_iter_->SeekToFirst();
   SkipEmptyDataBlocksForward();
 }
 
@@ -112,20 +112,20 @@ void TwoLevelIterator::Next() {
 }
 
 void TwoLevelIterator::SkipEmptyDataBlocksForward() {
-  while (data_iter_ == nullptr || !data_iter_->Valid()) {
+  while (data_iter_ == NULL || !data_iter_->Valid()) {
     // Move to next block
     if (!index_iter_->Valid()) {
-      SetDataIterator(nullptr);
+      SetDataIterator(NULL);
       return;
     }
     index_iter_->Next();
     InitDataBlock();
-    if (data_iter_ != nullptr) data_iter_->SeekToFirst();
+    if (data_iter_ != NULL) data_iter_->SeekToFirst();
   }
 }
 
 void TwoLevelIterator::SetDataIterator(Iterator* data_iter) {
-  if (data_iter_ != nullptr) {
+  if (data_iter_ != NULL) {
     SaveError(data_iter_->status());
     delete data_iter_;
   }
@@ -134,10 +134,10 @@ void TwoLevelIterator::SetDataIterator(Iterator* data_iter) {
 
 void TwoLevelIterator::InitDataBlock() {
   if (!index_iter_->Valid()) {
-    SetDataIterator(nullptr);
+    SetDataIterator(NULL);
   } else {
     StringPiece handle = index_iter_->value();
-    if (data_iter_ != nullptr && handle.compare(data_block_handle_) == 0) {
+    if (data_iter_ != NULL && handle.compare(data_block_handle_) == 0) {
       // data_iter_ is already constructed with this iterator, so
       // no need to change anything
     } else {

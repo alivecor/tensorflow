@@ -19,7 +19,6 @@ limitations under the License.
 #include <direct.h>
 #include <stdlib.h>
 #include <WinSock2.h>
-#pragma comment(lib, "Ws2_32.lib")
 #else
 #include <unistd.h>
 #endif
@@ -41,7 +40,7 @@ bool GetCurrentDirectory(string* dir) {
   std::unique_ptr<char[]> a(new char[len]);
   for (;;) {
     char* p = getcwd(a.get(), len);
-    if (p != nullptr) {
+    if (p != NULL) {
       *dir = p;
       return true;
     } else if (errno == ERANGE) {

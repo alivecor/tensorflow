@@ -23,7 +23,6 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
-#include "tensorflow/core/kernels/warn_about_ints.h"
 #include "tensorflow/core/lib/core/errors.h"
 
 namespace tensorflow {
@@ -34,10 +33,7 @@ typedef Eigen::GpuDevice GPUDevice;
 template <typename Device, typename T>
 class SoftplusOp : public UnaryElementWiseOp<T, SoftplusOp<Device, T>> {
  public:
-  explicit SoftplusOp(OpKernelConstruction* context)
-      : UnaryElementWiseOp<T, SoftplusOp<Device, T>>(context) {
-    WarnAboutInts(context);
-  }
+  using UnaryElementWiseOp<T, SoftplusOp<Device, T>>::UnaryElementWiseOp;
 
   void Operate(OpKernelContext* context, const Tensor& input, Tensor* output) {
     functor::Softplus<Device, T> functor;
@@ -50,10 +46,7 @@ template <typename Device, typename T>
 class SoftplusGradOp
     : public BinaryElementWiseOp<T, SoftplusGradOp<Device, T>> {
  public:
-  explicit SoftplusGradOp(OpKernelConstruction* context)
-      : BinaryElementWiseOp<T, SoftplusGradOp<Device, T>>(context) {
-    WarnAboutInts(context);
-  }
+  using BinaryElementWiseOp<T, SoftplusGradOp<Device, T>>::BinaryElementWiseOp;
 
   void OperateNoTemplate(OpKernelContext* context, const Tensor& g,
                          const Tensor& a, Tensor* output);

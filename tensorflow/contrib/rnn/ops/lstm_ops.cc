@@ -78,7 +78,7 @@ ci = tanh(ci)
 cs = ci .* i + cs_prev .* f
 cs = clip(cs, cell_clip)
 
-o = sigmoid(cs * wco + o)
+o = sigmoid(cs * wco + f)
 co = tanh(cs)
 h = co .* o
 ```

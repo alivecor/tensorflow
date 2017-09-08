@@ -13,67 +13,63 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tensor summaries for exporting information about a model.
+"""## Generation of summaries.
 
-See the @{$python/summary} guide.
-
-@@FileWriter
-@@FileWriterCache
+### Summary Ops
 @@tensor_summary
 @@scalar
 @@histogram
 @@audio
 @@image
-@@text
 @@merge
 @@merge_all
+
+## Utilities
 @@get_summary_description
-@@PluginAsset
-@@get_plugin_asset
-@@get_all_plugin_assets
+
 """
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import six
+
 from google.protobuf import json_format as _json_format
-
-# exports Summary, SummaryDescription, Event, TaggedRunMetadata, SessionLog
-# pylint: disable=unused-import
-from tensorflow.core.framework.summary_pb2 import Summary
-from tensorflow.core.framework.summary_pb2 import SummaryDescription
-from tensorflow.core.util.event_pb2 import Event
-from tensorflow.core.util.event_pb2 import SessionLog
-from tensorflow.core.util.event_pb2 import TaggedRunMetadata
-# pylint: enable=unused-import
-
+from tensorflow.core.framework import summary_pb2 as _summary_pb2
 from tensorflow.python.framework import dtypes as _dtypes
 from tensorflow.python.framework import ops as _ops
 from tensorflow.python.ops import gen_logging_ops as _gen_logging_ops
-from tensorflow.python.ops import summary_op_util as _summary_op_util
-
-# exports tensor-related summaries
+# exports tensor_summary
 # pylint: disable=unused-import
 from tensorflow.python.ops.summary_ops import tensor_summary
 # pylint: enable=unused-import
-
-# exports text
-# pylint: disable=unused-import
-from tensorflow.python.summary.text_summary import text_summary as text
-# pylint: enable=unused-import
-
-# exports FileWriter, FileWriterCache
-# pylint: disable=unused-import
-from tensorflow.python.summary.writer.writer import FileWriter
-from tensorflow.python.summary.writer.writer_cache import FileWriterCache
-# pylint: enable=unused-import
-
-from tensorflow.python.util import compat as _compat
+from tensorflow.python.platform import tf_logging as _logging
 from tensorflow.python.util.all_util import remove_undocumented
+from tensorflow.python.util import compat as _compat
 
 
-def scalar(name, tensor, collections=None, family=None):
+def _collect(val, collections, default_collections):
+  if collections is None:
+    collections = default_collections
+  for key in collections:
+    _ops.add_to_collection(key, val)
+
+
+def _clean_tag(name):
+  # In the past, the first argument to summary ops was a tag, which allowed
+  # spaces. Since now we pass in the name, spaces are disallowed; to ease the
+  # transition and support backwards compatbility, we will convert the spaces
+  # to underscores (and also warn about it).
+  if name is not None and ' ' in name:
+    _logging.warning(
+        'Summary tag name %s contains spaces; replacing with underscores.' %
+        name)
+    name = name.replace(' ', '_')
+  return name
+
+
+def scalar(name, tensor, collections=None):
   """Outputs a `Summary` protocol buffer containing a single scalar value.
 
   The generated Summary has a Tensor.proto containing the input Tensor.
@@ -84,8 +80,6 @@ def scalar(name, tensor, collections=None, family=None):
     tensor: A real numeric Tensor containing a single value.
     collections: Optional list of graph collections keys. The new summary op is
       added to these collections. Defaults to `[GraphKeys.SUMMARIES]`.
-    family: Optional; if provided, used as the prefix of the summary tag name,
-      which controls the tab name used for display on Tensorboard.
 
   Returns:
     A scalar `Tensor` of type `string`. Which contains a `Summary` protobuf.
@@ -93,18 +87,19 @@ def scalar(name, tensor, collections=None, family=None):
   Raises:
     ValueError: If tensor has the wrong shape or type.
   """
-  with _summary_op_util.summary_scope(
-      name, family, values=[tensor]) as (tag, scope):
+  name = _clean_tag(name)
+  with _ops.name_scope(name, None, [tensor]) as scope:
     # pylint: disable=protected-access
-    val = _gen_logging_ops._scalar_summary(tags=tag, values=tensor, name=scope)
-    _summary_op_util.collect(val, collections, [_ops.GraphKeys.SUMMARIES])
+    val = _gen_logging_ops._scalar_summary(
+        tags=scope.rstrip('/'), values=tensor, name=scope)
+    _collect(val, collections, [_ops.GraphKeys.SUMMARIES])
   return val
 
 
-def image(name, tensor, max_outputs=3, collections=None, family=None):
+def image(name, tensor, max_outputs=3, collections=None):
   """Outputs a `Summary` protocol buffer with images.
 
-  The summary has up to `max_outputs` summary values containing images. The
+  The summary has up to `max_images` summary values containing images. The
   images are built from `tensor` which must be 4-D with shape `[batch_size,
   height, width, channels]` and where `channels` can be:
 
@@ -139,30 +134,26 @@ def image(name, tensor, max_outputs=3, collections=None, family=None):
     max_outputs: Max number of batch elements to generate images for.
     collections: Optional list of ops.GraphKeys.  The collections to add the
       summary to.  Defaults to [_ops.GraphKeys.SUMMARIES]
-    family: Optional; if provided, used as the prefix of the summary tag name,
-      which controls the tab name used for display on Tensorboard.
 
   Returns:
     A scalar `Tensor` of type `string`. The serialized `Summary` protocol
     buffer.
   """
-  with _summary_op_util.summary_scope(
-      name, family, values=[tensor]) as (tag, scope):
+  name = _clean_tag(name)
+  with _ops.name_scope(name, None, [tensor]) as scope:
     # pylint: disable=protected-access
     val = _gen_logging_ops._image_summary(
-        tag=tag, tensor=tensor, max_images=max_outputs, name=scope)
-    _summary_op_util.collect(val, collections, [_ops.GraphKeys.SUMMARIES])
+        tag=scope.rstrip('/'),
+        tensor=tensor,
+        max_images=max_outputs,
+        name=scope)
+    _collect(val, collections, [_ops.GraphKeys.SUMMARIES])
   return val
 
 
-def histogram(name, values, collections=None, family=None):
+def histogram(name, values, collections=None):
   # pylint: disable=line-too-long
   """Outputs a `Summary` protocol buffer with a histogram.
-
-  Adding a histogram summary makes it possible to visualize your data's
-  distribution in TensorBoard. You can see a detailed explanation of the
-  TensorBoard histogram dashboard
-  [here](https://www.tensorflow.org/get_started/tensorboard_histograms).
 
   The generated
   [`Summary`](https://www.tensorflow.org/code/tensorflow/core/framework/summary.proto)
@@ -177,25 +168,22 @@ def histogram(name, values, collections=None, family=None):
       build the histogram.
     collections: Optional list of graph collections keys. The new summary op is
       added to these collections. Defaults to `[GraphKeys.SUMMARIES]`.
-    family: Optional; if provided, used as the prefix of the summary tag name,
-      which controls the tab name used for display on Tensorboard.
 
   Returns:
     A scalar `Tensor` of type `string`. The serialized `Summary` protocol
     buffer.
   """
-  with _summary_op_util.summary_scope(
-      name, family, values=[values],
-      default_name='HistogramSummary') as (tag, scope):
+  # pylint: enable=line-too-long
+  name = _clean_tag(name)
+  with _ops.name_scope(name, 'HistogramSummary', [values]) as scope:
     # pylint: disable=protected-access
     val = _gen_logging_ops._histogram_summary(
-        tag=tag, values=values, name=scope)
-    _summary_op_util.collect(val, collections, [_ops.GraphKeys.SUMMARIES])
+        tag=scope.rstrip('/'), values=values, name=scope)
+    _collect(val, collections, [_ops.GraphKeys.SUMMARIES])
   return val
 
 
-def audio(name, tensor, sample_rate, max_outputs=3, collections=None,
-          family=None):
+def audio(name, tensor, sample_rate, max_outputs=3, collections=None):
   # pylint: disable=line-too-long
   """Outputs a `Summary` protocol buffer with audio.
 
@@ -222,22 +210,24 @@ def audio(name, tensor, sample_rate, max_outputs=3, collections=None,
     max_outputs: Max number of batch elements to generate audio for.
     collections: Optional list of ops.GraphKeys.  The collections to add the
       summary to.  Defaults to [_ops.GraphKeys.SUMMARIES]
-    family: Optional; if provided, used as the prefix of the summary tag name,
-      which controls the tab name used for display on Tensorboard.
 
   Returns:
     A scalar `Tensor` of type `string`. The serialized `Summary` protocol
     buffer.
   """
-  with _summary_op_util.summary_scope(
-      name, family=family, values=[tensor]) as (tag, scope):
+  # pylint: enable=line-too-long
+  name = _clean_tag(name)
+  with _ops.name_scope(name, None, [tensor]) as scope:
     # pylint: disable=protected-access
     sample_rate = _ops.convert_to_tensor(
         sample_rate, dtype=_dtypes.float32, name='sample_rate')
     val = _gen_logging_ops._audio_summary_v2(
-        tag=tag, tensor=tensor, max_outputs=max_outputs,
-        sample_rate=sample_rate, name=scope)
-    _summary_op_util.collect(val, collections, [_ops.GraphKeys.SUMMARIES])
+        tag=scope.rstrip('/'),
+        tensor=tensor,
+        max_outputs=max_outputs,
+        sample_rate=sample_rate,
+        name=scope)
+    _collect(val, collections, [_ops.GraphKeys.SUMMARIES])
   return val
 
 
@@ -257,7 +247,7 @@ def merge(inputs, collections=None, name=None):
     inputs: A list of `string` `Tensor` objects containing serialized `Summary`
       protocol buffers.
     collections: Optional list of graph collections keys. The new summary op is
-      added to these collections. Defaults to `[]`.
+      added to these collections. Defaults to `[GraphKeys.SUMMARIES]`.
     name: A name for the operation (optional).
 
   Returns:
@@ -265,11 +255,11 @@ def merge(inputs, collections=None, name=None):
     buffer resulting from the merging.
   """
   # pylint: enable=line-too-long
-  name = _summary_op_util.clean_tag(name)
+  name = _clean_tag(name)
   with _ops.name_scope(name, 'Merge', inputs):
     # pylint: disable=protected-access
     val = _gen_logging_ops._merge_summary(inputs=inputs, name=name)
-    _summary_op_util.collect(val, collections, [])
+    _collect(val, collections, [])
   return val
 
 
@@ -311,13 +301,9 @@ def get_summary_description(node_def):
   if node_def.op != 'TensorSummary':
     raise ValueError("Can't get_summary_description on %s" % node_def.op)
   description_str = _compat.as_str_any(node_def.attr['description'].s)
-  summary_description = SummaryDescription()
+  summary_description = _summary_pb2.SummaryDescription()
   _json_format.Parse(description_str, summary_description)
   return summary_description
 
 
-_allowed_symbols = [
-    'Summary', 'SummaryDescription', 'Event', 'TaggedRunMetadata', 'SessionLog'
-]
-
-remove_undocumented(__name__, _allowed_symbols)
+remove_undocumented(__name__, [])

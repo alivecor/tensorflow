@@ -30,15 +30,11 @@
     net = layers.conv2d(inputs, 64, [11, 11], 4, padding='VALID', scope='conv1')
     net = layers.conv2d(net, 256, [5, 5], scope='conv2')
   ```
-  The first call to conv2d will behave as follows:
-    layers.conv2d(inputs, 64, [11, 11], 4, padding='VALID',
-                  initializer=layers.variance_scaling_initializer(),
-                  regularizer=layers.l2_regularizer(0.05), scope='conv1')
+  The first call to conv2d will use predefined args:
+    layers.conv2d(inputs, 64, [11, 11], 4, padding='VALID', ..., scope='conv1')
 
-  The second call to conv2d will also use the arg_scope's default for padding:
-    layers.conv2d(inputs, 256, [5, 5], padding='SAME',
-                  initializer=layers.variance_scaling_initializer(),
-                  regularizer=layers.l2_regularizer(0.05), scope='conv2')
+  The second call to Conv will overwrite padding:
+    layers.conv2d(inputs, 256, [5, 5], padding='SAME', ..., scope='conv2')
 
   Example of how to reuse an arg_scope:
 
@@ -53,7 +49,7 @@
     net = layers.conv2d(net, 256, [5, 5], scope='conv2')
   ```
 
-  Example of how to use tf.contrib.framework.add_arg_scope to enable your function to be called within an arg_scope later:
+  Example of how to use tf.contrib.framework.add_arg_scope:
 
   @tf.contrib.framework.add_arg_scope
   def conv2d(*args, **kwargs)
@@ -61,9 +57,8 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-from tensorflow.python.util import tf_contextlib
-from tensorflow.python.util import tf_decorator
+import contextlib
+import functools
 
 __all__ = ['arg_scope',
            'add_arg_scope',
@@ -107,7 +102,7 @@ def _add_op(op):
     _DECORATED_OPS[key_op] = _kwarg_names(op)
 
 
-@tf_contextlib.contextmanager
+@contextlib.contextmanager
 def arg_scope(list_ops_or_scope, **kwargs):
   """Stores the default arguments for the given set of list_ops.
 
@@ -171,6 +166,7 @@ def add_arg_scope(func):
   Returns:
     A tuple with the decorated function func_with_args().
   """
+  @functools.wraps(func)
   def func_with_args(*args, **kwargs):
     current_scope = _current_arg_scope()
     current_args = kwargs
@@ -181,7 +177,8 @@ def add_arg_scope(func):
     return func(*args, **current_args)
   _add_op(func)
   setattr(func_with_args, '_key_op', _key_op(func))
-  return tf_decorator.make_decorator(func, func_with_args)
+  setattr(func_with_args, '__doc__', func.__doc__)
+  return func_with_args
 
 
 def has_arg_scope(func):

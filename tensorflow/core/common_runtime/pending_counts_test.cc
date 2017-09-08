@@ -23,146 +23,106 @@ namespace tensorflow {
 
 TEST(PendingCounts, Simple) {
   const int C = 300;
-  PendingCounts::Layout layout;
-  std::vector<PendingCounts::Handle> h(C);
+  PendingCounts c(C);
   for (int id = 0; id < C; id++) {
-    h[id] = layout.CreateHandle(id, id);
-  }
-
-  PendingCounts c(layout);
-  for (int id = 0; id < C; id++) {
-    c.set_initial_count(h[id], id);
+    c.set_initial_count(id, id, id);
   }
   for (int id = 0; id < C; id++) {
-    EXPECT_EQ(c.pending(h[id]), id);
-    EXPECT_EQ(c.dead_count(h[id]), 0);
+    EXPECT_EQ(c.pending(id), id);
+    EXPECT_EQ(c.dead_count(id), 0);
   }
 
   for (int id = 0; id < C; id++) {
-    c.increment_dead_count(h[id]);
+    c.increment_dead_count(id);
     // The dead count is no longer updated once pending is 0.
-    EXPECT_EQ(c.dead_count(h[id]), (id == 0) ? 0 : 1);
+    EXPECT_EQ(c.dead_count(id), (id == 0) ? 0 : 1);
   }
 
-  EXPECT_EQ(c.decrement_pending(h[1], 1), 0);
-  EXPECT_EQ(c.decrement_pending(h[3], 1), 2);
-  EXPECT_EQ(c.decrement_pending(h[3], 1), 1);
-  c.decrement_pending(h[5], 1);
-  c.decrement_pending(h[5], 3);
-  c.decrement_pending(h[170], 1);
-  c.decrement_pending(h[170], 13);
-  EXPECT_EQ(c.pending(h[1]), 0);
-  EXPECT_EQ(c.pending(h[3]), 1);
-  EXPECT_EQ(c.pending(h[5]), 1);
-  EXPECT_EQ(c.pending(h[170]), 156);
+  EXPECT_EQ(c.decrement_pending(1, 1), 0);
+  EXPECT_EQ(c.decrement_pending(3, 1), 2);
+  EXPECT_EQ(c.decrement_pending(3, 1), 1);
+  c.decrement_pending(5, 1);
+  c.decrement_pending(5, 3);
+  c.decrement_pending(170, 1);
+  c.decrement_pending(170, 13);
+  EXPECT_EQ(c.pending(1), 0);
+  EXPECT_EQ(c.pending(3), 1);
+  EXPECT_EQ(c.pending(5), 1);
+  EXPECT_EQ(c.pending(170), 156);
 }
 
-TEST(PendingCounts, CopyConstructor) {
+TEST(PendingCounts, InitializeFrom) {
   const int C = 300;
-  PendingCounts::Layout layout;
-  std::vector<PendingCounts::Handle> h(C);
+  PendingCounts c(C);
   for (int id = 0; id < C; id++) {
-    h[id] = layout.CreateHandle(id, id);
+    c.set_initial_count(id, id, id);
   }
-  PendingCounts c(layout);
+  PendingCounts c2(C);
+  c2.InitializeFrom(c);
   for (int id = 0; id < C; id++) {
-    c.set_initial_count(h[id], id);
+    EXPECT_EQ(c.pending(id), c2.pending(id));
+    EXPECT_EQ(c.dead_count(id), c2.dead_count(id));
   }
-  PendingCounts c2(c);
-  for (int id = 0; id < C; id++) {
-    EXPECT_EQ(c.pending(h[id]), c2.pending(h[id]));
-    EXPECT_EQ(c.dead_count(h[id]), c2.dead_count(h[id]));
+}
+
+TEST(PendingCounts, SmallPendingLargeDead) {
+  PendingCounts c(1);
+  c.set_initial_count(0, 1, 10);
+  EXPECT_EQ(c.pending(0), 1);
+  EXPECT_EQ(c.dead_count(0), 0);
+  for (int i = 1; i <= 10; i++) {
+    c.increment_dead_count(0);
+    EXPECT_EQ(c.dead_count(0), i);
   }
+  EXPECT_EQ(c.pending(0), 1);
+  EXPECT_EQ(c.decrement_pending(0, 1), 0);
+  EXPECT_EQ(c.dead_count(0), 10);
 }
 
 TEST(PendingCounts, MarkLiveShowsUpAsCount) {
-  PendingCounts::Layout layout;
-  PendingCounts::Handle handles[2];
-  handles[0] = layout.CreateHandle(5, 4);
-  handles[1] = layout.CreateHandle(15, 4);
+  PendingCounts c(2);
   for (int id = 0; id < 2; id++) {
-    PendingCounts::Handle h = handles[id];
     // Test for both packed and large.
     int count = (id == 0) ? 5 : 15;
-
-    PendingCounts c(layout);
-    c.set_initial_count(h, count);
-    EXPECT_EQ(c.pending(h), count);
-    c.mark_live(h);
-    EXPECT_EQ(c.pending(h), count - 1);
+    c.set_initial_count(id, count, 4);
+    EXPECT_EQ(c.pending(id), count);
+    c.mark_live(id);
+    EXPECT_EQ(c.pending(id), count - 1);
     // mark_live should be idempotent
-    c.mark_live(h);
-    EXPECT_EQ(c.pending(h), count - 1);
+    c.mark_live(id);
+    EXPECT_EQ(c.pending(id), count - 1);
 
-    c.decrement_pending(h, count - 1);
-    EXPECT_EQ(c.pending(h), 0);
+    c.decrement_pending(id, count - 1);
+    EXPECT_EQ(c.pending(id), 0);
 
     // mark_live should be idempotent
-    c.mark_live(h);
-    EXPECT_EQ(c.pending(h), 0);
-    c.mark_started(h);
-    c.mark_live(h);
-    EXPECT_EQ(c.pending(h), 0);
-    c.mark_completed(h);
-    c.mark_live(h);
-    EXPECT_EQ(c.pending(h), 0);
+    c.mark_live(id);
+    EXPECT_EQ(c.pending(id), 0);
+    c.mark_started(id);
+    c.mark_live(id);
+    EXPECT_EQ(c.pending(id), 0);
+    c.mark_completed(id);
+    c.mark_live(id);
+    EXPECT_EQ(c.pending(id), 0);
   }
 }
 
 TEST(PendingCounts, StateIsCorrect) {
   const int C = 20;
-  PendingCounts::Layout layout;
-  std::vector<PendingCounts::Handle> handles(C);
+  PendingCounts c(C);
   for (int id = 0; id < C; id++) {
-    handles[id] = layout.CreateHandle(id, id);
+    c.set_initial_count(id, id, id);
   }
-  PendingCounts c(layout);
   for (int id = 0; id < C; id++) {
-    c.set_initial_count(handles[id], id);
-  }
-
-  for (int id = 0; id < C; id++) {
-    PendingCounts::Handle h = handles[id];
-    while (c.pending(h) > 0) {
-      EXPECT_EQ(c.node_state(h), PendingCounts::PENDING_NOTREADY);
-      c.decrement_pending(h, 1);
+    while (c.pending(id) > 0) {
+      EXPECT_EQ(c.node_state(id), PendingCounts::PENDING_NOTREADY);
+      c.decrement_pending(id, 1);
     }
-    EXPECT_EQ(c.node_state(h), PendingCounts::PENDING_READY);
-    c.mark_started(h);
-    EXPECT_EQ(c.node_state(h), PendingCounts::STARTED);
-    c.mark_completed(h);
-    EXPECT_EQ(c.node_state(h), PendingCounts::COMPLETED);
-  }
-}
-
-TEST(PendingCounts, AdjustForActivation) {
-  PendingCounts::Layout layout;
-  PendingCounts::Handle handles[2];
-  handles[0] = layout.CreateHandle(5, 4);
-  handles[1] = layout.CreateHandle(15, 4);
-  for (int id = 0; id < 2; id++) {
-    PendingCounts::Handle h = handles[id];
-    // Test for both packed and large.
-    int count = (id == 0) ? 5 : 15;
-    int pending, dead;
-
-    PendingCounts c(layout);
-    c.set_initial_count(h, count);
-    EXPECT_EQ(c.pending(h), count);
-
-    // Don't increment the dead count this time
-    c.adjust_for_activation(h, false, &pending, &dead);
-    EXPECT_EQ(c.pending(h), count - 1);
-    EXPECT_EQ(c.pending(h), pending);
-    EXPECT_EQ(c.dead_count(h), 0);
-    EXPECT_EQ(c.dead_count(h), dead);
-
-    // Increment the dead count this time
-    c.adjust_for_activation(h, true, &pending, &dead);
-    EXPECT_EQ(c.pending(h), count - 2);
-    EXPECT_EQ(c.pending(h), pending);
-    EXPECT_EQ(c.dead_count(h), dead);
-    EXPECT_EQ(c.dead_count(h), 1);
+    EXPECT_EQ(c.node_state(id), PendingCounts::PENDING_READY);
+    c.mark_started(id);
+    EXPECT_EQ(c.node_state(id), PendingCounts::STARTED);
+    c.mark_completed(id);
+    EXPECT_EQ(c.node_state(id), PendingCounts::COMPLETED);
   }
 }
 

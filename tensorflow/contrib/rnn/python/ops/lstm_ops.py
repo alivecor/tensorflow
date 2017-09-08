@@ -19,16 +19,16 @@ from __future__ import print_function
 
 import abc
 
-from tensorflow.contrib.rnn.ops import gen_lstm_ops
 from tensorflow.contrib.rnn.python.ops import fused_rnn_cell
 from tensorflow.contrib.util import loader
+from tensorflow.python.framework import common_shapes
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
-from tensorflow.python.ops import rnn_cell_impl
+from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.platform import resource_loader
 
@@ -58,7 +58,7 @@ def _lstm_block_cell(x,
 
   ```python
   xh = [x, h_prev]
-  [i, ci, f, o] = xh * w + b
+  [i, f, ci, o] = xh * w + b
   f = f + forget_bias
 
   if not use_peephole:
@@ -71,7 +71,7 @@ def _lstm_block_cell(x,
   cs = ci .* i + cs_prev .* f
   cs = clip(cs, cell_clip)
 
-  o = sigmoid(cs * wco + o)
+  o = sigmoid(cs * wco + f)
   co = tanh(cs)
   h = co .* o
   ```
@@ -93,7 +93,7 @@ def _lstm_block_cell(x,
       The weight matrix for output gate peephole connection.
     forget_bias: An optional `float`. Defaults to `1`. The forget gate bias.
     cell_clip: An optional `float`. Defaults to `3`.
-      Value to clip the 'cs' value to. Disable by setting to negative value.
+      Value to clip the 'cs' value to.
     use_peephole: An optional `bool`. Defaults to `False`.
       Whether to use peephole weights.
     name: A name for the operation (optional).
@@ -120,7 +120,7 @@ def _lstm_block_cell(x,
     wcf = wci
 
   # pylint: disable=protected-access
-  return gen_lstm_ops.lstm_block_cell(
+  return _lstm_ops_so.lstm_block_cell(
       x=x,
       cs_prev=cs_prev,
       h_prev=h_prev,
@@ -205,9 +205,9 @@ def _block_lstm(seq_len_max,
     wcf = wci
 
   # pylint: disable=protected-access
-  i, cs, f, o, ci, co, h = gen_lstm_ops.block_lstm(
+  i, cs, f, o, ci, co, h = _lstm_ops_so.block_lstm(
       seq_len_max=seq_len_max,
-      x=array_ops.stack(x),
+      x=array_ops.pack(x),
       cs_prev=cs_prev,
       h_prev=h_prev,
       w=w,
@@ -220,14 +220,16 @@ def _block_lstm(seq_len_max,
       name=name,
       use_peephole=use_peephole)
 
-  return array_ops.unstack(i), array_ops.unstack(cs), array_ops.unstack(
-      f), array_ops.unstack(o), array_ops.unstack(ci), array_ops.unstack(
-          co), array_ops.unstack(h)
+  return array_ops.unpack(i), array_ops.unpack(cs), array_ops.unpack(
+      f), array_ops.unpack(o), array_ops.unpack(ci), array_ops.unpack(
+          co), array_ops.unpack(h)
   # pylint: enable=protected-access
   # pylint: enable=invalid-name
 
 
 _lstm_block_cell_grad_outputs = ["cs_prev_grad", "dicfo"]
+
+ops.RegisterShape("LSTMBlockCell")(common_shapes.call_cpp_shape_fn)
 
 
 @ops.RegisterGradient("LSTMBlockCell")
@@ -248,7 +250,7 @@ def _LSTMBlockCellGrad(op, *grad):
     raise ValueError("cell_size from `cs_prev` should not be None.")
 
   (cs_prev_grad, dicfo, wci_grad, wcf_grad,
-   wco_grad) = gen_lstm_ops.lstm_block_cell_grad(
+   wco_grad) = _lstm_ops_so.lstm_block_cell_grad(
        x,
        cs_prev,
        h_prev,
@@ -278,7 +280,7 @@ def _LSTMBlockCellGrad(op, *grad):
   h_prev_grad.get_shape().merge_with(h_prev.get_shape())
 
   # Backprop from dicfo to w.
-  xh = array_ops.concat([x, h_prev], 1)
+  xh = array_ops.concat(1, [x, h_prev])
   w_grad = math_ops.matmul(xh, dicfo, transpose_a=True)
   w_grad.get_shape().merge_with(w.get_shape())
 
@@ -288,6 +290,10 @@ def _LSTMBlockCellGrad(op, *grad):
 
   return (x_grad, cs_prev_grad, h_prev_grad, w_grad, wci_grad, wcf_grad,
           wco_grad, b_grad)
+
+
+ops.RegisterShape("LSTMBlockCellGrad")(common_shapes.call_cpp_shape_fn)
+ops.RegisterShape("BlockLSTM")(common_shapes.call_cpp_shape_fn)
 
 
 @ops.RegisterGradient("BlockLSTM")
@@ -300,7 +306,7 @@ def _BlockLSTMGrad(op, *grad):
   h_grad = grad[6]
 
   (x_grad, cs_prev_grad, h_prev_grad, w_grad, wci_grad, wco_grad, wcf_grad,
-   b_grad) = gen_lstm_ops.block_lstm_grad(
+   b_grad) = _lstm_ops_so.block_lstm_grad(
        seq_len_max,
        x,
        cs_prev,
@@ -325,7 +331,10 @@ def _BlockLSTMGrad(op, *grad):
           wcf_grad, b_grad]
 
 
-class LSTMBlockCell(rnn_cell_impl.RNNCell):
+ops.RegisterShape("BlockLSTMGrad")(common_shapes.call_cpp_shape_fn)
+
+
+class LSTMBlockCell(rnn_cell.RNNCell):
   """Basic LSTM recurrent network cell.
 
   The implementation is based on: http://arxiv.org/abs/1409.2329.
@@ -333,49 +342,50 @@ class LSTMBlockCell(rnn_cell_impl.RNNCell):
   We add `forget_bias` (default: 1) to the biases of the forget gate in order to
   reduce the scale of forgetting in the beginning of the training.
 
-  Unlike `rnn_cell_impl.LSTMCell`, this is a monolithic op and should be much
-  faster.  The weight and bias matrices should be compatible as long as the
-  variable scope matches.
+  Unlike `rnn_cell.LSTMCell`, this is a monolithic op and should be much faster.
+  The weight and bias matrixes should be compatible as long as the variable
+  scope matches, and you use `use_compatible_names=True`.
   """
 
   def __init__(self,
                num_units,
                forget_bias=1.0,
-               clip_cell=True,
                use_peephole=False,
-               reuse=None):
+               use_compatible_names=False):
     """Initialize the basic LSTM cell.
 
     Args:
       num_units: int, The number of units in the LSTM cell.
       forget_bias: float, The bias added to forget gates (see above).
-      clip_cell: boolean, whether to apply cell clipping. See
-        `_lstm_block_cell()` for details.
       use_peephole: Whether to use peephole connections or not.
-      reuse: (optional) boolean describing whether to reuse variables in an
-        existing scope.  If not `True`, and the existing scope already has the
-        given variables, an error is raised.
-
-      When restoring from CudnnLSTM-trained checkpoints, must use
-      CudnnCompatibleLSTMBlockCell instead.
+      use_compatible_names: If True, use the same variable naming as
+        rnn_cell.LSTMCell
     """
-    super(LSTMBlockCell, self).__init__(_reuse=reuse)
     self._num_units = num_units
     self._forget_bias = forget_bias
     self._use_peephole = use_peephole
-    self._clip_cell = clip_cell
-    self._names = {
-        "W": "kernel",
-        "b": "bias",
-        "wci": "w_i_diag",
-        "wco": "w_o_diag",
-        "wcf": "w_f_diag",
-        "scope": "lstm_cell"
-    }
+    if use_compatible_names:
+      self._names = {
+          "W": "W_0",
+          "b": "B",
+          "wci": "W_I_diag",
+          "wco": "W_O_diag",
+          "wcf": "W_F_diag",
+          "scope": "LSTMCell"
+      }
+    else:
+      self._names = {
+          "W": "W",
+          "b": "b",
+          "wci": "wci",
+          "wco": "wco",
+          "wcf": "wcf",
+          "scope": "LSTMBlockCell"
+      }
 
   @property
   def state_size(self):
-    return rnn_cell_impl.LSTMStateTuple(self._num_units, self._num_units)
+    return (self._num_units,) * 2
 
   @property
   def output_size(self):
@@ -385,15 +395,15 @@ class LSTMBlockCell(rnn_cell_impl.RNNCell):
     """Long short-term memory cell (LSTM)."""
     with vs.variable_scope(scope or self._names["scope"]):
       x_shape = x.get_shape().with_rank(2)
-      if not x_shape[1].value:
-        raise ValueError("Expecting x_shape[1] to be set: %s" % str(x_shape))
+      if not x_shape[1]:
+        raise ValueError("Expecting x_shape[1] to be sets: %s" % str(x_shape))
       if len(states_prev) != 2:
         raise ValueError("Expecting states_prev to be a tuple with length 2.")
-      input_size = x_shape[1].value
+      input_size = x_shape[1]
       w = vs.get_variable(self._names["W"], [input_size + self._num_units,
                                              self._num_units * 4])
       b = vs.get_variable(
-          self._names["b"], [w.get_shape().with_rank(2)[1].value],
+          self._names["b"], [w.get_shape().with_rank(2)[1]],
           initializer=init_ops.constant_initializer(0.0))
       if self._use_peephole:
         wci = vs.get_variable(self._names["wci"], [self._num_units])
@@ -412,11 +422,9 @@ class LSTMBlockCell(rnn_cell_impl.RNNCell):
           wco=wco,
           wcf=wcf,
           forget_bias=self._forget_bias,
-          cell_clip=None if self._clip_cell else -1,
           use_peephole=self._use_peephole)
 
-      new_state = rnn_cell_impl.LSTMStateTuple(cs, h)
-      return h, new_state
+      return (h, (cs, h))
 
 
 class LSTMBlockWrapper(fused_rnn_cell.FusedRNNCell):
@@ -492,10 +500,10 @@ class LSTMBlockWrapper(fused_rnn_cell.FusedRNNCell):
     Raises:
       ValueError: in case of shape mismatches
     """
-    with vs.variable_scope(scope or "lstm_block_wrapper"):
+    with vs.variable_scope(scope or type(self).__name__):
       is_list = isinstance(inputs, list)
       if is_list:
-        inputs = array_ops.stack(inputs)
+        inputs = array_ops.pack(inputs)
       inputs_shape = inputs.get_shape().with_rank(3)
       if not inputs_shape[2]:
         raise ValueError("Expecting inputs_shape[2] to be set: %s" %
@@ -513,7 +521,7 @@ class LSTMBlockWrapper(fused_rnn_cell.FusedRNNCell):
           raise ValueError(
               "Either initial_state or dtype needs to be specified")
         z = array_ops.zeros(
-            array_ops.stack([batch_size, self.num_units]), dtype=dtype)
+            array_ops.pack([batch_size, self.num_units]), dtype=dtype)
         initial_state = z, z
       else:
         if len(initial_state) != 2:
@@ -543,9 +551,9 @@ class LSTMBlockWrapper(fused_rnn_cell.FusedRNNCell):
         # sequence_length - 1, which can even be -1, corresponding to the
         # initial state.
         mod_cell_states = array_ops.concat(
-            [array_ops.expand_dims(initial_cell_state, [0]), cell_states], 0)
+            0, [array_ops.expand_dims(initial_cell_state, [0]), cell_states])
         mod_outputs = array_ops.concat(
-            [array_ops.expand_dims(initial_output, [0]), outputs], 0)
+            0, [array_ops.expand_dims(initial_output, [0]), outputs])
         final_cell_state = self._gather_states(mod_cell_states, sequence_length,
                                                batch_size)
         final_output = self._gather_states(mod_outputs, sequence_length,
@@ -557,10 +565,9 @@ class LSTMBlockWrapper(fused_rnn_cell.FusedRNNCell):
 
       if is_list:
         # Input was a list, so return a list
-        outputs = array_ops.unstack(outputs)
+        outputs = array_ops.unpack(outputs)
 
-      final_state = rnn_cell_impl.LSTMStateTuple(final_cell_state, final_output)
-      return outputs, final_state
+      return outputs, (final_cell_state, final_output)
 
   def _gather_states(self, data, indices, batch_size):
     """Produce `out`, s.t. out(i, j) = data(indices(i), i, j)."""
@@ -581,7 +588,7 @@ class LSTMBlockFusedCell(LSTMBlockWrapper):
   We add forget_bias (default: 1) to the biases of the forget gate in order to
   reduce the scale of forgetting in the beginning of the training.
 
-  The variable naming is consistent with `rnn_cell_impl.LSTMCell`.
+  The variable naming is consistent with `rnn_cell.LSTMCell`.
   """
 
   def __init__(self,
@@ -637,25 +644,24 @@ class LSTMBlockFusedCell(LSTMBlockWrapper):
       time_len = array_ops.shape(inputs)[0]
     input_size = inputs_shape[2].value
     w = vs.get_variable(
-        "kernel",
-        [input_size + self._num_units, self._num_units * 4], dtype=dtype)
+        "W_0", [input_size + self._num_units, self._num_units * 4], dtype=dtype)
     b = vs.get_variable(
-        "bias", [w.get_shape().with_rank(2)[1]],
+        "B", [w.get_shape().with_rank(2)[1]],
         initializer=init_ops.constant_initializer(0.0),
         dtype=dtype)
     if self._use_peephole:
-      wci = vs.get_variable("w_i_diag", [self._num_units], dtype=dtype)
-      wco = vs.get_variable("w_o_diag", [self._num_units], dtype=dtype)
-      wcf = vs.get_variable("w_f_diag", [self._num_units], dtype=dtype)
+      wci = vs.get_variable("W_I_diag", [self._num_units], dtype=dtype)
+      wco = vs.get_variable("W_O_diag", [self._num_units], dtype=dtype)
+      wcf = vs.get_variable("W_F_diag", [self._num_units], dtype=dtype)
     else:
       wci = wco = wcf = array_ops.zeros([self._num_units], dtype=dtype)
 
     if sequence_length is None:
-      max_seq_len = math_ops.to_int64(time_len)
+      max_seq_len = time_len
     else:
       max_seq_len = math_ops.to_int64(math_ops.reduce_max(sequence_length))
 
-    _, cs, _, _, _, _, h = gen_lstm_ops.block_lstm(
+    _, cs, _, _, _, _, h = _lstm_ops_so.block_lstm(
         seq_len_max=max_seq_len,
         x=inputs,
         cs_prev=initial_cell_state,

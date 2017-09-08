@@ -29,12 +29,10 @@ limitations under the License.
 namespace tensorflow {
 namespace {
 
-constexpr char kTestDataPbTxt[] =
-    "cc/saved_model/testdata/half_plus_two_pbtxt/00000123";
-constexpr char kTestDataMainOp[] =
-    "cc/saved_model/testdata/half_plus_two_main_op/00000123";
+constexpr char kTestDataPb[] = "cc/saved_model/testdata/half_plus_two";
+constexpr char kTestDataPbTxt[] = "cc/saved_model/testdata/half_plus_two_pbtxt";
 constexpr char kTestDataSharded[] =
-    "cc/saved_model/testdata/half_plus_two/00000123";
+    "cc/saved_model/testdata/half_plus_two_sharded";
 
 class LoaderTest : public ::testing::Test {
  protected:
@@ -47,29 +45,15 @@ class LoaderTest : public ::testing::Test {
     return example.SerializeAsString();
   }
 
-  void ValidateAssets(const string& export_dir,
-                      const SavedModelBundle& bundle) {
-    const string asset_directory =
-        io::JoinPath(export_dir, kSavedModelAssetsDirectory);
-    const string asset_filename = "foo.txt";
-    const string asset_filepath = io::JoinPath(asset_directory, asset_filename);
-    TF_EXPECT_OK(Env::Default()->FileExists(asset_filepath));
-
-    std::vector<Tensor> path_outputs;
-    TF_ASSERT_OK(
-        bundle.session->Run({}, {"filename_tensor:0"}, {}, &path_outputs));
-    ASSERT_EQ(1, path_outputs.size());
-
-    test::ExpectTensorEqual<string>(
-        test::AsTensor<string>({"foo.txt"}, TensorShape({})), path_outputs[0]);
-  }
-
   void CheckSavedModelBundle(const string& export_dir,
                              const SavedModelBundle& bundle) {
-    ValidateAssets(export_dir, bundle);
+    const string asset_path =
+        io::JoinPath(export_dir, kSavedModelAssetsDirectory, "foo.txt");
+    EXPECT_TRUE(Env::Default()->FileExists(asset_path));
+
     // Retrieve the regression signature from meta graph def.
     const auto signature_def_map = bundle.meta_graph_def.signature_def();
-    const auto signature_def = signature_def_map.at("regress_x_to_y");
+    const auto signature_def = signature_def_map.at(kRegressMethodName);
 
     const string input_name = signature_def.inputs().at(kRegressInputs).name();
     const string output_name =
@@ -133,9 +117,9 @@ TEST_F(LoaderTest, NoTagMatch) {
   Status st = LoadSavedModel(session_options, run_options, export_dir,
                              {"missing-tag"}, &bundle);
   EXPECT_FALSE(st.ok());
-  EXPECT_TRUE(StringPiece(st.error_message())
-                  .contains("Could not find meta graph def matching supplied "
-                            "tags: { missing-tag }"))
+  EXPECT_TRUE(
+      StringPiece(st.error_message())
+          .contains("Could not find meta graph def matching supplied tags."))
       << st.error_message();
 }
 
@@ -151,7 +135,7 @@ TEST_F(LoaderTest, NoTagMatchMultiple) {
   EXPECT_FALSE(st.ok());
   EXPECT_TRUE(
       StringPiece(st.error_message())
-          .contains("Could not find meta graph def matching supplied tags: "))
+          .contains("Could not find meta graph def matching supplied tags."))
       << st.error_message();
 }
 
@@ -167,13 +151,13 @@ TEST_F(LoaderTest, PbtxtFormat) {
   CheckSavedModelBundle(export_dir, bundle);
 }
 
-TEST_F(LoaderTest, MainOpFormat) {
+TEST_F(LoaderTest, SingleShardVariables) {
   SavedModelBundle bundle;
   SessionOptions session_options;
   RunOptions run_options;
 
   const string export_dir =
-      io::JoinPath(testing::TensorFlowSrcRoot(), kTestDataMainOp);
+      io::JoinPath(testing::TensorFlowSrcRoot(), kTestDataPb);
   TF_ASSERT_OK(LoadSavedModel(session_options, run_options, export_dir,
                               {kSavedModelTagServe}, &bundle));
   CheckSavedModelBundle(export_dir, bundle);
@@ -204,7 +188,7 @@ TEST_F(LoaderTest, MaybeSavedModelDirectory) {
 
   // Directory that exists but is an invalid SavedModel location.
   const string invalid_export_dir =
-      io::JoinPath(testing::TensorFlowSrcRoot(), "cc/saved_model");
+      io::JoinPath(testing::TensorFlowSrcRoot(), "cc/saved_model/testdata");
   EXPECT_FALSE(MaybeSavedModelDirectory(invalid_export_dir));
 }
 

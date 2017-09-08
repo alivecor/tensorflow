@@ -73,48 +73,25 @@ static void E(string* s) {
   }
 }
 
+template <const char* const FACTS[], uint64 N>
 class FactOpKernel : public OpKernel {
  public:
   explicit FactOpKernel(OpKernelConstruction* context) : OpKernel(context) {}
 
-  void Compute(OpKernelContext* context) override = 0;
-
- protected:
-  void Compute(OpKernelContext* context, const char* const facts[],
-               uint64 count) {
-    Tensor* output_tensor = nullptr;
+  void Compute(OpKernelContext* context) override {
+    Tensor* output_tensor = NULL;
     OP_REQUIRES_OK(
         context, context->allocate_output(0, TensorShape({}), &output_tensor));
     auto output = output_tensor->template scalar<string>();
 
-    string coded = facts[context->env()->NowMicros() % count];
+    string coded = FACTS[context->env()->NowMicros() % N];
     E(&coded);
     output() = coded;
   }
 };
 
-class FactOpKernel1 : public FactOpKernel {
- public:
-  explicit FactOpKernel1(OpKernelConstruction* context)
-      : FactOpKernel(context) {}
-
-  void Compute(OpKernelContext* context) override {
-    FactOpKernel::Compute(context, kFacts1, kNum1);
-  }
-};
-
-class FactOpKernel2 : public FactOpKernel {
- public:
-  explicit FactOpKernel2(OpKernelConstruction* context)
-      : FactOpKernel(context) {}
-
-  void Compute(OpKernelContext* context) override {
-    FactOpKernel::Compute(context, kFacts2, kNum2);
-  }
-};
-
 REGISTER_KERNEL_BUILDER(Name("Fact").Device(DEVICE_GPU).HostMemory("fact"),
-                        FactOpKernel1);
+                        FactOpKernel<kFacts1, kNum1>);
 
 static string D(const char* s) {
   string ret(s);
@@ -125,10 +102,10 @@ static string D(const char* s) {
 REGISTER_KERNEL_BUILDER(Name("Fact")
                             .Device(DEVICE_CPU)
                             .Label(D("Yoxmos").c_str()),
-                        FactOpKernel2);
+                        FactOpKernel<kFacts2, kNum2>);
 REGISTER_KERNEL_BUILDER(Name("Fact")
                             .Device(DEVICE_CPU)
                             .Label(D("yoxmos").c_str()),
-                        FactOpKernel2);
+                        FactOpKernel<kFacts2, kNum2>);
 
 }  // namespace tensorflow

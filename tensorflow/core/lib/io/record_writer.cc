@@ -17,7 +17,6 @@ limitations under the License.
 
 #include "tensorflow/core/lib/core/coding.h"
 #include "tensorflow/core/lib/hash/crc32c.h"
-#include "tensorflow/core/lib/io/compression.h"
 #include "tensorflow/core/platform/env.h"
 
 namespace tensorflow {
@@ -39,7 +38,7 @@ RecordWriterOptions RecordWriterOptions::CreateRecordWriterOptions(
 #else
     options.zlib_options = io::ZlibCompressionOptions::DEFAULT();
 #endif  // IS_SLIM_BUILD
-  } else if (compression_type == compression::kGzip) {
+  } else if (compression_type == "GZIP") {
     options.compression_type = io::RecordWriterOptions::ZLIB_COMPRESSION;
 #if defined(IS_SLIM_BUILD)
     LOG(ERROR) << "Compression is not supported but compression_type is set."
@@ -47,7 +46,7 @@ RecordWriterOptions RecordWriterOptions::CreateRecordWriterOptions(
 #else
     options.zlib_options = io::ZlibCompressionOptions::GZIP();
 #endif  // IS_SLIM_BUILD
-  } else if (compression_type != compression::kNone) {
+  } else if (compression_type != "") {
     LOG(ERROR) << "Unsupported compression_type:" << compression_type
                << ". No comprression will be used.";
   }
@@ -80,12 +79,15 @@ RecordWriter::RecordWriter(WritableFile* dest,
 }
 
 RecordWriter::~RecordWriter() {
-  if (dest_ != nullptr) {
-    Status s = Close();
+#if !defined(IS_SLIM_BUILD)
+  if (IsZlibCompressed(options_)) {
+    Status s = dest_->Close();
     if (!s.ok()) {
       LOG(ERROR) << "Could not finish writing file: " << s;
     }
+    delete dest_;
   }
+#endif  // IS_SLIM_BUILD
 }
 
 static uint32 MaskedCrc(const char* data, size_t n) {
@@ -108,18 +110,6 @@ Status RecordWriter::WriteRecord(StringPiece data) {
   TF_RETURN_IF_ERROR(dest_->Append(StringPiece(header, sizeof(header))));
   TF_RETURN_IF_ERROR(dest_->Append(data));
   return dest_->Append(StringPiece(footer, sizeof(footer)));
-}
-
-Status RecordWriter::Close() {
-#if !defined(IS_SLIM_BUILD)
-  if (IsZlibCompressed(options_)) {
-    Status s = dest_->Close();
-    delete dest_;
-    dest_ = nullptr;
-    return s;
-  }
-#endif  // IS_SLIM_BUILD
-  return Status::OK();
 }
 
 Status RecordWriter::Flush() {

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Tests for Reader ops from io_ops."""
 
 from __future__ import absolute_import
@@ -21,27 +22,16 @@ from __future__ import print_function
 import collections
 import gzip
 import os
-import shutil
 import threading
 import zlib
 
 import six
-
-from tensorflow.core.protobuf import config_pb2
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import errors_impl
-from tensorflow.python.lib.io import tf_record
-from tensorflow.python.ops import data_flow_ops
-from tensorflow.python.ops import io_ops
-from tensorflow.python.ops import variables
-from tensorflow.python.platform import test
-from tensorflow.python.util import compat
-
-prefix_path = "tensorflow/core/lib"
+import tensorflow as tf
 
 # pylint: disable=invalid-name
-TFRecordCompressionType = tf_record.TFRecordCompressionType
+TFRecordCompressionType = tf.python_io.TFRecordCompressionType
 # pylint: enable=invalid-name
+
 
 # Edgar Allan Poe's 'Eldorado'
 _TEXT = b"""Gaily bedight,
@@ -74,7 +64,7 @@ _TEXT = b"""Gaily bedight,
     """
 
 
-class IdentityReaderTest(test.TestCase):
+class IdentityReaderTest(tf.test.TestCase):
 
   def _ExpectRead(self, sess, key, value, expected):
     k, v = sess.run([key, value])
@@ -83,10 +73,10 @@ class IdentityReaderTest(test.TestCase):
 
   def testOneEpoch(self):
     with self.test_session() as sess:
-      reader = io_ops.IdentityReader("test_reader")
+      reader = tf.IdentityReader("test_reader")
       work_completed = reader.num_work_units_completed()
       produced = reader.num_records_produced()
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       queued_length = queue.size()
       key, value = reader.read(queue)
 
@@ -117,8 +107,8 @@ class IdentityReaderTest(test.TestCase):
 
   def testMultipleEpochs(self):
     with self.test_session() as sess:
-      reader = io_ops.IdentityReader("test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.IdentityReader("test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       enqueue = queue.enqueue_many([["DD", "EE"]])
       key, value = reader.read(queue)
 
@@ -138,9 +128,9 @@ class IdentityReaderTest(test.TestCase):
 
   def testSerializeRestore(self):
     with self.test_session() as sess:
-      reader = io_ops.IdentityReader("test_reader")
+      reader = tf.IdentityReader("test_reader")
       produced = reader.num_records_produced()
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       queue.enqueue_many([["X", "Y", "Z"]]).run()
       key, value = reader.read(queue)
 
@@ -193,10 +183,10 @@ class IdentityReaderTest(test.TestCase):
 
   def testReset(self):
     with self.test_session() as sess:
-      reader = io_ops.IdentityReader("test_reader")
+      reader = tf.IdentityReader("test_reader")
       work_completed = reader.num_work_units_completed()
       produced = reader.num_records_produced()
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       queued_length = queue.size()
       key, value = reader.read(queue)
 
@@ -219,33 +209,32 @@ class IdentityReaderTest(test.TestCase):
       self._ExpectRead(sess, key, value, b"K")
 
 
-class WholeFileReaderTest(test.TestCase):
+class WholeFileReaderTest(tf.test.TestCase):
 
   def setUp(self):
     super(WholeFileReaderTest, self).setUp()
-    self._filenames = [
-        os.path.join(self.get_temp_dir(), "whole_file.%d.txt" % i)
-        for i in range(3)
-    ]
+    self._filenames = [os.path.join(self.get_temp_dir(),
+                                    "whole_file.%d.txt" % i)
+                       for i in range(3)]
     self._content = [b"One\na\nb\n", b"Two\nC\nD", b"Three x, y, z"]
     for fn, c in zip(self._filenames, self._content):
       with open(fn, "wb") as h:
         h.write(c)
 
   def tearDown(self):
+    super(WholeFileReaderTest, self).tearDown()
     for fn in self._filenames:
       os.remove(fn)
-    super(WholeFileReaderTest, self).tearDown()
 
   def _ExpectRead(self, sess, key, value, index):
     k, v = sess.run([key, value])
-    self.assertAllEqual(compat.as_bytes(self._filenames[index]), k)
+    self.assertAllEqual(tf.compat.as_bytes(self._filenames[index]), k)
     self.assertAllEqual(self._content[index], v)
 
   def testOneEpoch(self):
     with self.test_session() as sess:
-      reader = io_ops.WholeFileReader("test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.WholeFileReader("test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       queue.enqueue_many([self._filenames]).run()
       queue.close().run()
       key, value = reader.read(queue)
@@ -260,8 +249,8 @@ class WholeFileReaderTest(test.TestCase):
 
   def testInfiniteEpochs(self):
     with self.test_session() as sess:
-      reader = io_ops.WholeFileReader("test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.WholeFileReader("test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       enqueue = queue.enqueue_many([self._filenames])
       key, value = reader.read(queue)
 
@@ -277,7 +266,7 @@ class WholeFileReaderTest(test.TestCase):
       self._ExpectRead(sess, key, value, 0)
 
 
-class TextLineReaderTest(test.TestCase):
+class TextLineReaderTest(tf.test.TestCase):
 
   def setUp(self):
     super(TextLineReaderTest, self).setUp()
@@ -285,7 +274,7 @@ class TextLineReaderTest(test.TestCase):
     self._num_lines = 5
 
   def _LineText(self, f, l):
-    return compat.as_bytes("%d: %d" % (f, l))
+    return tf.compat.as_bytes("%d: %d" % (f, l))
 
   def _CreateFiles(self, crlf=False):
     filenames = []
@@ -303,8 +292,8 @@ class TextLineReaderTest(test.TestCase):
 
   def _testOneEpoch(self, files):
     with self.test_session() as sess:
-      reader = io_ops.TextLineReader(name="test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.TextLineReader(name="test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       key, value = reader.read(queue)
 
       queue.enqueue_many([files]).run()
@@ -312,7 +301,7 @@ class TextLineReaderTest(test.TestCase):
       for i in range(self._num_files):
         for j in range(self._num_lines):
           k, v = sess.run([key, value])
-          self.assertAllEqual("%s:%d" % (files[i], j + 1), compat.as_text(k))
+          self.assertAllEqual("%s:%d" % (files[i], j + 1), tf.compat.as_text(k))
           self.assertAllEqual(self._LineText(i, j), v)
 
       with self.assertRaisesOpError("is closed and has insufficient elements "
@@ -328,8 +317,8 @@ class TextLineReaderTest(test.TestCase):
   def testSkipHeaderLines(self):
     files = self._CreateFiles()
     with self.test_session() as sess:
-      reader = io_ops.TextLineReader(skip_header_lines=1, name="test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.TextLineReader(skip_header_lines=1, name="test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       key, value = reader.read(queue)
 
       queue.enqueue_many([files]).run()
@@ -337,7 +326,7 @@ class TextLineReaderTest(test.TestCase):
       for i in range(self._num_files):
         for j in range(self._num_lines - 1):
           k, v = sess.run([key, value])
-          self.assertAllEqual("%s:%d" % (files[i], j + 2), compat.as_text(k))
+          self.assertAllEqual("%s:%d" % (files[i], j + 2), tf.compat.as_text(k))
           self.assertAllEqual(self._LineText(i, j + 1), v)
 
       with self.assertRaisesOpError("is closed and has insufficient elements "
@@ -345,257 +334,40 @@ class TextLineReaderTest(test.TestCase):
         k, v = sess.run([key, value])
 
 
-class FixedLengthRecordReaderTest(test.TestCase):
+class FixedLengthRecordReaderTest(tf.test.TestCase):
 
   def setUp(self):
     super(FixedLengthRecordReaderTest, self).setUp()
     self._num_files = 2
+    self._num_records = 7
     self._header_bytes = 5
     self._record_bytes = 3
     self._footer_bytes = 2
 
-    self._hop_bytes = 2
-
   def _Record(self, f, r):
-    return compat.as_bytes(str(f * 2 + r) * self._record_bytes)
-
-  def _OverlappedRecord(self, f, r):
-    record_str = "".join([
-        str(i)[0]
-        for i in range(r * self._hop_bytes,
-                       r * self._hop_bytes + self._record_bytes)
-    ])
-    return compat.as_bytes(record_str)
-
-  # gap_bytes=hop_bytes-record_bytes
-  def _CreateFiles(self, num_records, gap_bytes):
-    filenames = []
-    for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(), "fixed_length_record.%d.txt" % i)
-      filenames.append(fn)
-      with open(fn, "wb") as f:
-        f.write(b"H" * self._header_bytes)
-        if num_records > 0:
-          f.write(self._Record(i, 0))
-        for j in range(1, num_records):
-          if gap_bytes > 0:
-            f.write(b"G" * gap_bytes)
-          f.write(self._Record(i, j))
-        f.write(b"F" * self._footer_bytes)
-    return filenames
-
-  def _CreateOverlappedRecordFiles(self, num_overlapped_records):
-    filenames = []
-    for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(),
-                        "fixed_length_overlapped_record.%d.txt" % i)
-      filenames.append(fn)
-      with open(fn, "wb") as f:
-        f.write(b"H" * self._header_bytes)
-        if num_overlapped_records > 0:
-          all_records_str = "".join([
-              str(i)[0]
-              for i in range(self._record_bytes + self._hop_bytes *
-                             (num_overlapped_records - 1))
-          ])
-          f.write(compat.as_bytes(all_records_str))
-        f.write(b"F" * self._footer_bytes)
-    return filenames
-
-  # gap_bytes=hop_bytes-record_bytes
-  def _CreateGzipFiles(self, num_records, gap_bytes):
-    filenames = []
-    for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(), "fixed_length_record.%d.txt" % i)
-      filenames.append(fn)
-      with gzip.GzipFile(fn, "wb") as f:
-        f.write(b"H" * self._header_bytes)
-        if num_records > 0:
-          f.write(self._Record(i, 0))
-        for j in range(1, num_records):
-          if gap_bytes > 0:
-            f.write(b"G" * gap_bytes)
-          f.write(self._Record(i, j))
-        f.write(b"F" * self._footer_bytes)
-    return filenames
-
-  # gap_bytes=hop_bytes-record_bytes
-  def _CreateZlibFiles(self, num_records, gap_bytes):
-    filenames = []
-    for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(), "fixed_length_record.%d.txt" % i)
-      filenames.append(fn)
-      with open(fn+".tmp", "wb") as f:
-        f.write(b"H" * self._header_bytes)
-        if num_records > 0:
-          f.write(self._Record(i, 0))
-        for j in range(1, num_records):
-          if gap_bytes > 0:
-            f.write(b"G" * gap_bytes)
-          f.write(self._Record(i, j))
-        f.write(b"F" * self._footer_bytes)
-      with open(fn+".tmp", "rb") as f:
-        cdata = zlib.compress(f.read())
-        with open(fn, "wb") as zf:
-          zf.write(cdata)
-    return filenames
-
-  def _CreateGzipOverlappedRecordFiles(self, num_overlapped_records):
-    filenames = []
-    for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(),
-                        "fixed_length_overlapped_record.%d.txt" % i)
-      filenames.append(fn)
-      with gzip.GzipFile(fn, "wb") as f:
-        f.write(b"H" * self._header_bytes)
-        if num_overlapped_records > 0:
-          all_records_str = "".join([
-              str(i)[0]
-              for i in range(self._record_bytes + self._hop_bytes *
-                           (num_overlapped_records - 1))
-          ])
-          f.write(compat.as_bytes(all_records_str))
-        f.write(b"F" * self._footer_bytes)
-    return filenames
-
-  def _CreateZlibOverlappedRecordFiles(self, num_overlapped_records):
-    filenames = []
-    for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(),
-                        "fixed_length_overlapped_record.%d.txt" % i)
-      filenames.append(fn)
-      with open(fn+".tmp", "wb") as f:
-        f.write(b"H" * self._header_bytes)
-        if num_overlapped_records > 0:
-          all_records_str = "".join([
-              str(i)[0]
-              for i in range(self._record_bytes + self._hop_bytes *
-                             (num_overlapped_records - 1))
-          ])
-          f.write(compat.as_bytes(all_records_str))
-        f.write(b"F" * self._footer_bytes)
-      with open(fn+".tmp", "rb") as f:
-        cdata = zlib.compress(f.read())
-        with open(fn, "wb") as zf:
-          zf.write(cdata)
-    return filenames
-
-  # gap_bytes=hop_bytes-record_bytes
-  def _TestOneEpoch(self, files, num_records, gap_bytes, encoding=None):
-    hop_bytes = 0 if gap_bytes == 0 else self._record_bytes + gap_bytes
-    with self.test_session() as sess:
-      reader = io_ops.FixedLengthRecordReader(
-          header_bytes=self._header_bytes,
-          record_bytes=self._record_bytes,
-          footer_bytes=self._footer_bytes,
-          hop_bytes=hop_bytes,
-          encoding=encoding,
-          name="test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
-      key, value = reader.read(queue)
-
-      queue.enqueue_many([files]).run()
-      queue.close().run()
-      for i in range(self._num_files):
-        for j in range(num_records):
-          k, v = sess.run([key, value])
-          self.assertAllEqual("%s:%d" % (files[i], j), compat.as_text(k))
-          self.assertAllEqual(self._Record(i, j), v)
-
-      with self.assertRaisesOpError("is closed and has insufficient elements "
-                                    "\\(requested 1, current size 0\\)"):
-        k, v = sess.run([key, value])
-
-  def _TestOneEpochWithHopBytes(self, files, num_overlapped_records, encoding=None):
-    with self.test_session() as sess:
-      reader = io_ops.FixedLengthRecordReader(
-          header_bytes=self._header_bytes,
-          record_bytes=self._record_bytes,
-          footer_bytes=self._footer_bytes,
-          hop_bytes=self._hop_bytes,
-          encoding=encoding,
-          name="test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
-      key, value = reader.read(queue)
-
-      queue.enqueue_many([files]).run()
-      queue.close().run()
-      for i in range(self._num_files):
-        for j in range(num_overlapped_records):
-          k, v = sess.run([key, value])
-          print(v)
-          self.assertAllEqual("%s:%d" % (files[i], j), compat.as_text(k))
-          self.assertAllEqual(self._OverlappedRecord(i, j), v)
-
-      with self.assertRaisesOpError("is closed and has insufficient elements "
-                                    "\\(requested 1, current size 0\\)"):
-        k, v = sess.run([key, value])
-
-  def testOneEpoch(self):
-    for num_records in [0, 7]:
-      # gap_bytes=0: hop_bytes=0
-      # gap_bytes=1: hop_bytes=record_bytes+1
-      for gap_bytes in [0, 1]:
-        files = self._CreateFiles(num_records, gap_bytes)
-        self._TestOneEpoch(files, num_records, gap_bytes)
-
-  def testGzipOneEpoch(self):
-    for num_records in [0, 7]:
-      # gap_bytes=0: hop_bytes=0
-      # gap_bytes=1: hop_bytes=record_bytes+1
-      for gap_bytes in [0, 1]:
-        files = self._CreateGzipFiles(num_records, gap_bytes)
-        self._TestOneEpoch(files, num_records, gap_bytes, encoding="GZIP")
-
-  def testZlibOneEpoch(self):
-    for num_records in [0, 7]:
-      # gap_bytes=0: hop_bytes=0
-      # gap_bytes=1: hop_bytes=record_bytes+1
-      for gap_bytes in [0, 1]:
-        files = self._CreateZlibFiles(num_records, gap_bytes)
-        self._TestOneEpoch(files, num_records, gap_bytes, encoding="ZLIB")
-
-  def testOneEpochWithHopBytes(self):
-    for num_overlapped_records in [0, 2]:
-      files = self._CreateOverlappedRecordFiles(num_overlapped_records)
-      self._TestOneEpochWithHopBytes(files, num_overlapped_records)
-
-  def testGzipOneEpochWithHopBytes(self):
-    for num_overlapped_records in [0, 2]:
-      files = self._CreateGzipOverlappedRecordFiles(num_overlapped_records, )
-      self._TestOneEpochWithHopBytes(files, num_overlapped_records, encoding="GZIP")
-
-  def testZlibOneEpochWithHopBytes(self):
-    for num_overlapped_records in [0, 2]:
-      files = self._CreateZlibOverlappedRecordFiles(num_overlapped_records)
-      self._TestOneEpochWithHopBytes(files, num_overlapped_records, encoding="ZLIB")
-
-
-class TFRecordReaderTest(test.TestCase):
-
-  def setUp(self):
-    super(TFRecordReaderTest, self).setUp()
-    self._num_files = 2
-    self._num_records = 7
-
-  def _Record(self, f, r):
-    return compat.as_bytes("Record %d of file %d" % (r, f))
+    return tf.compat.as_bytes(str(f * 2 + r) * self._record_bytes)
 
   def _CreateFiles(self):
     filenames = []
     for i in range(self._num_files):
-      fn = os.path.join(self.get_temp_dir(), "tf_record.%d.txt" % i)
+      fn = os.path.join(self.get_temp_dir(), "fixed_length_record.%d.txt" % i)
       filenames.append(fn)
-      writer = tf_record.TFRecordWriter(fn)
-      for j in range(self._num_records):
-        writer.write(self._Record(i, j))
+      with open(fn, "wb") as f:
+        f.write(b"H" * self._header_bytes)
+        for j in range(self._num_records):
+          f.write(self._Record(i, j))
+        f.write(b"F" * self._footer_bytes)
     return filenames
 
   def testOneEpoch(self):
     files = self._CreateFiles()
     with self.test_session() as sess:
-      reader = io_ops.TFRecordReader(name="test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.FixedLengthRecordReader(
+          header_bytes=self._header_bytes,
+          record_bytes=self._record_bytes,
+          footer_bytes=self._footer_bytes,
+          name="test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       key, value = reader.read(queue)
 
       queue.enqueue_many([files]).run()
@@ -603,7 +375,47 @@ class TFRecordReaderTest(test.TestCase):
       for i in range(self._num_files):
         for j in range(self._num_records):
           k, v = sess.run([key, value])
-          self.assertTrue(compat.as_text(k).startswith("%s:" % files[i]))
+          self.assertAllEqual("%s:%d" % (files[i], j), tf.compat.as_text(k))
+          self.assertAllEqual(self._Record(i, j), v)
+
+      with self.assertRaisesOpError("is closed and has insufficient elements "
+                                    "\\(requested 1, current size 0\\)"):
+        k, v = sess.run([key, value])
+
+
+class TFRecordReaderTest(tf.test.TestCase):
+
+  def setUp(self):
+    super(TFRecordReaderTest, self).setUp()
+    self._num_files = 2
+    self._num_records = 7
+
+  def _Record(self, f, r):
+    return tf.compat.as_bytes("Record %d of file %d" % (r, f))
+
+  def _CreateFiles(self):
+    filenames = []
+    for i in range(self._num_files):
+      fn = os.path.join(self.get_temp_dir(), "tf_record.%d.txt" % i)
+      filenames.append(fn)
+      writer = tf.python_io.TFRecordWriter(fn)
+      for j in range(self._num_records):
+        writer.write(self._Record(i, j))
+    return filenames
+
+  def testOneEpoch(self):
+    files = self._CreateFiles()
+    with self.test_session() as sess:
+      reader = tf.TFRecordReader(name="test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
+      key, value = reader.read(queue)
+
+      queue.enqueue_many([files]).run()
+      queue.close().run()
+      for i in range(self._num_files):
+        for j in range(self._num_records):
+          k, v = sess.run([key, value])
+          self.assertTrue(tf.compat.as_text(k).startswith("%s:" % files[i]))
           self.assertAllEqual(self._Record(i, j), v)
 
       with self.assertRaisesOpError("is closed and has insufficient elements "
@@ -613,8 +425,8 @@ class TFRecordReaderTest(test.TestCase):
   def testReadUpTo(self):
     files = self._CreateFiles()
     with self.test_session() as sess:
-      reader = io_ops.TFRecordReader(name="test_reader")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.TFRecordReader(name="test_reader")
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       batch_size = 3
       key, value = reader.read_up_to(queue, batch_size)
 
@@ -631,7 +443,7 @@ class TFRecordReaderTest(test.TestCase):
           self.assertLessEqual(len(v), batch_size)
           num_k += len(k)
           num_v += len(v)
-        except errors_impl.OutOfRangeError:
+        except tf.errors.OutOfRangeError:
           break
 
       # Test that we have read everything
@@ -651,9 +463,9 @@ class TFRecordReaderTest(test.TestCase):
         zlib_files.append(zfn)
 
     with self.test_session() as sess:
-      options = tf_record.TFRecordOptions(TFRecordCompressionType.ZLIB)
-      reader = io_ops.TFRecordReader(name="test_reader", options=options)
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      options = tf.python_io.TFRecordOptions(TFRecordCompressionType.ZLIB)
+      reader = tf.TFRecordReader(name="test_reader", options=options)
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       key, value = reader.read(queue)
 
       queue.enqueue_many([zlib_files]).run()
@@ -661,7 +473,8 @@ class TFRecordReaderTest(test.TestCase):
       for i in range(self._num_files):
         for j in range(self._num_records):
           k, v = sess.run([key, value])
-          self.assertTrue(compat.as_text(k).startswith("%s:" % zlib_files[i]))
+          self.assertTrue(
+              tf.compat.as_text(k).startswith("%s:" % zlib_files[i]))
           self.assertAllEqual(self._Record(i, j), v)
 
   def testReadGzipFiles(self):
@@ -677,9 +490,9 @@ class TFRecordReaderTest(test.TestCase):
         gzip_files.append(zfn)
 
     with self.test_session() as sess:
-      options = tf_record.TFRecordOptions(TFRecordCompressionType.GZIP)
-      reader = io_ops.TFRecordReader(name="test_reader", options=options)
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      options = tf.python_io.TFRecordOptions(TFRecordCompressionType.GZIP)
+      reader = tf.TFRecordReader(name="test_reader", options=options)
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       key, value = reader.read(queue)
 
       queue.enqueue_many([gzip_files]).run()
@@ -687,11 +500,12 @@ class TFRecordReaderTest(test.TestCase):
       for i in range(self._num_files):
         for j in range(self._num_records):
           k, v = sess.run([key, value])
-          self.assertTrue(compat.as_text(k).startswith("%s:" % gzip_files[i]))
+          self.assertTrue(
+              tf.compat.as_text(k).startswith("%s:" % gzip_files[i]))
           self.assertAllEqual(self._Record(i, j), v)
 
 
-class TFRecordWriterZlibTest(test.TestCase):
+class TFRecordWriterZlibTest(tf.test.TestCase):
 
   def setUp(self):
     super(TFRecordWriterZlibTest, self).setUp()
@@ -699,16 +513,16 @@ class TFRecordWriterZlibTest(test.TestCase):
     self._num_records = 7
 
   def _Record(self, f, r):
-    return compat.as_bytes("Record %d of file %d" % (r, f))
+    return tf.compat.as_bytes("Record %d of file %d" % (r, f))
 
   def _CreateFiles(self):
     filenames = []
     for i in range(self._num_files):
       fn = os.path.join(self.get_temp_dir(), "tf_record.%d.txt" % i)
       filenames.append(fn)
-      options = tf_record.TFRecordOptions(
+      options = tf.python_io.TFRecordOptions(
           compression_type=TFRecordCompressionType.ZLIB)
-      writer = tf_record.TFRecordWriter(fn, options=options)
+      writer = tf.python_io.TFRecordWriter(fn, options=options)
       for j in range(self._num_records):
         writer.write(self._Record(i, j))
       writer.close()
@@ -718,7 +532,7 @@ class TFRecordWriterZlibTest(test.TestCase):
 
   def _WriteRecordsToFile(self, records, name="tf_record"):
     fn = os.path.join(self.get_temp_dir(), name)
-    writer = tf_record.TFRecordWriter(fn, options=None)
+    writer = tf.python_io.TFRecordWriter(fn, options=None)
     for r in records:
       writer.write(r)
     writer.close()
@@ -738,10 +552,10 @@ class TFRecordWriterZlibTest(test.TestCase):
   def testOneEpoch(self):
     files = self._CreateFiles()
     with self.test_session() as sess:
-      options = tf_record.TFRecordOptions(
+      options = tf.python_io.TFRecordOptions(
           compression_type=TFRecordCompressionType.ZLIB)
-      reader = io_ops.TFRecordReader(name="test_reader", options=options)
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
+      reader = tf.TFRecordReader(name="test_reader", options=options)
+      queue = tf.FIFOQueue(99, [tf.string], shapes=())
       key, value = reader.read(queue)
 
       queue.enqueue_many([files]).run()
@@ -749,7 +563,7 @@ class TFRecordWriterZlibTest(test.TestCase):
       for i in range(self._num_files):
         for j in range(self._num_records):
           k, v = sess.run([key, value])
-          self.assertTrue(compat.as_text(k).startswith("%s:" % files[i]))
+          self.assertTrue(tf.compat.as_text(k).startswith("%s:" % files[i]))
           self.assertAllEqual(self._Record(i, j), v)
 
       with self.assertRaisesOpError("is closed and has insufficient elements "
@@ -780,15 +594,15 @@ class TFRecordWriterZlibTest(test.TestCase):
       h.write(output)
 
     with self.test_session() as sess:
-      options = tf_record.TFRecordOptions(
+      options = tf.python_io.TFRecordOptions(
           compression_type=TFRecordCompressionType.ZLIB)
-      reader = io_ops.TFRecordReader(name="test_reader", options=options)
-      queue = data_flow_ops.FIFOQueue(1, [dtypes.string], shapes=())
+      reader = tf.TFRecordReader(name="test_reader", options=options)
+      queue = tf.FIFOQueue(1, [tf.string], shapes=())
       key, value = reader.read(queue)
       queue.enqueue(fn).run()
       queue.close().run()
       k, v = sess.run([key, value])
-      self.assertTrue(compat.as_text(k).startswith("%s:" % fn))
+      self.assertTrue(tf.compat.as_text(k).startswith("%s:" % fn))
       self.assertAllEqual(b"small record", v)
 
   def testZlibReadWrite(self):
@@ -799,10 +613,9 @@ class TFRecordWriterZlibTest(test.TestCase):
 
     # read the compressed contents and verify.
     actual = []
-    for r in tf_record.tf_record_iterator(
-        zfn,
-        options=tf_record.TFRecordOptions(
-            tf_record.TFRecordCompressionType.ZLIB)):
+    for r in tf.python_io.tf_record_iterator(
+        zfn, options=tf.python_io.TFRecordOptions(
+            tf.python_io.TFRecordCompressionType.ZLIB)):
       actual.append(r)
     self.assertEqual(actual, original)
 
@@ -816,12 +629,12 @@ class TFRecordWriterZlibTest(test.TestCase):
 
     # read the compressed contents and verify.
     actual = []
-    for r in tf_record.tf_record_iterator(
-        zfn,
-        options=tf_record.TFRecordOptions(
-            tf_record.TFRecordCompressionType.ZLIB)):
+    for r in tf.python_io.tf_record_iterator(
+        zfn, options=tf.python_io.TFRecordOptions(
+            tf.python_io.TFRecordCompressionType.ZLIB)):
       actual.append(r)
     self.assertEqual(actual, original)
+
 
   def testGzipReadWrite(self):
     """Verify that files produced are gzip compatible."""
@@ -836,29 +649,30 @@ class TFRecordWriterZlibTest(test.TestCase):
       f.write(cdata)
 
     actual = []
-    for r in tf_record.tf_record_iterator(
-        gzfn, options=tf_record.TFRecordOptions(TFRecordCompressionType.GZIP)):
+    for r in tf.python_io.tf_record_iterator(
+        gzfn,
+        options=tf.python_io.TFRecordOptions(TFRecordCompressionType.GZIP)):
       actual.append(r)
     self.assertEqual(actual, original)
 
 
-class TFRecordIteratorTest(test.TestCase):
+class TFRecordIteratorTest(tf.test.TestCase):
 
   def setUp(self):
     super(TFRecordIteratorTest, self).setUp()
     self._num_records = 7
 
   def _Record(self, r):
-    return compat.as_bytes("Record %d" % r)
+    return tf.compat.as_bytes("Record %d" % r)
 
   def _WriteCompressedRecordsToFile(
       self,
       records,
       name="tfrecord.z",
-      compression_type=tf_record.TFRecordCompressionType.ZLIB):
+      compression_type=tf.python_io.TFRecordCompressionType.ZLIB):
     fn = os.path.join(self.get_temp_dir(), name)
-    options = tf_record.TFRecordOptions(compression_type=compression_type)
-    writer = tf_record.TFRecordWriter(fn, options=options)
+    options = tf.python_io.TFRecordOptions(compression_type=compression_type)
+    writer = tf.python_io.TFRecordWriter(fn, options=options)
     for r in records:
       writer.write(r)
     writer.close()
@@ -877,9 +691,9 @@ class TFRecordIteratorTest(test.TestCase):
     fn = self._WriteCompressedRecordsToFile(
         [self._Record(i) for i in range(self._num_records)],
         "compressed_records")
-    options = tf_record.TFRecordOptions(
+    options = tf.python_io.TFRecordOptions(
         compression_type=TFRecordCompressionType.ZLIB)
-    reader = tf_record.tf_record_iterator(fn, options)
+    reader = tf.python_io.tf_record_iterator(fn, options)
     for i in range(self._num_records):
       record = next(reader)
       self.assertAllEqual(self._Record(i), record)
@@ -889,11 +703,11 @@ class TFRecordIteratorTest(test.TestCase):
   def testWriteZlibRead(self):
     """Verify compression with TFRecordWriter is zlib library compatible."""
     original = [b"foo", b"bar"]
-    fn = self._WriteCompressedRecordsToFile(original,
-                                            "write_zlib_read.tfrecord.z")
+    fn = self._WriteCompressedRecordsToFile(
+        original, "write_zlib_read.tfrecord.z")
     zfn = self._ZlibDecompressFile(fn, "write_zlib_read.tfrecord")
     actual = []
-    for r in tf_record.tf_record_iterator(zfn):
+    for r in tf.python_io.tf_record_iterator(zfn):
       actual.append(r)
     self.assertEqual(actual, original)
 
@@ -901,11 +715,11 @@ class TFRecordIteratorTest(test.TestCase):
     """Verify compression for large records is zlib library compatible."""
     # Make it large (about 5MB)
     original = [_TEXT * 10240]
-    fn = self._WriteCompressedRecordsToFile(original,
-                                            "write_zlib_read_large.tfrecord.z")
+    fn = self._WriteCompressedRecordsToFile(
+        original, "write_zlib_read_large.tfrecord.z")
     zfn = self._ZlibDecompressFile(fn, "write_zlib_read_large.tf_record")
     actual = []
-    for r in tf_record.tf_record_iterator(zfn):
+    for r in tf.python_io.tf_record_iterator(zfn):
       actual.append(r)
     self.assertEqual(actual, original)
 
@@ -923,32 +737,17 @@ class TFRecordIteratorTest(test.TestCase):
       f.write(cdata)
 
     actual = []
-    for r in tf_record.tf_record_iterator(zfn):
+    for r in tf.python_io.tf_record_iterator(zfn):
       actual.append(r)
     self.assertEqual(actual, original)
 
-  def testBadFile(self):
-    """Verify that tf_record_iterator throws an exception on bad TFRecords."""
-    fn = os.path.join(self.get_temp_dir(), "bad_file")
-    with tf_record.TFRecordWriter(fn) as writer:
-      writer.write(b"123")
-    fn_truncated = os.path.join(self.get_temp_dir(), "bad_file_truncated")
-    with open(fn, "rb") as f:
-      with open(fn_truncated, "wb") as f2:
-        # DataLossError requires that we've written the header, so this must
-        # be at least 12 bytes.
-        f2.write(f.read(14))
-    with self.assertRaises(errors_impl.DataLossError):
-      for _ in tf_record.tf_record_iterator(fn_truncated):
-        pass
 
-
-class AsyncReaderTest(test.TestCase):
+class AsyncReaderTest(tf.test.TestCase):
 
   def testNoDeadlockFromQueue(self):
     """Tests that reading does not block main execution threads."""
-    config = config_pb2.ConfigProto(
-        inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
+    config = tf.ConfigProto(inter_op_parallelism_threads=1,
+                            intra_op_parallelism_threads=1)
     with self.test_session(config=config) as sess:
       thread_data_t = collections.namedtuple("thread_data_t",
                                              ["thread", "queue", "output"])
@@ -956,17 +755,16 @@ class AsyncReaderTest(test.TestCase):
 
       # Create different readers, each with its own queue.
       for i in range(3):
-        queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
-        reader = io_ops.TextLineReader()
+        queue = tf.FIFOQueue(99, [tf.string], shapes=())
+        reader = tf.TextLineReader()
         _, line = reader.read(queue)
         output = []
-        t = threading.Thread(
-            target=AsyncReaderTest._RunSessionAndSave,
-            args=(sess, [line], output))
+        t = threading.Thread(target=AsyncReaderTest._RunSessionAndSave,
+                             args=(sess, [line], output))
         thread_data.append(thread_data_t(t, queue, output))
 
       # Start all readers. They are all blocked waiting for queue entries.
-      sess.run(variables.global_variables_initializer())
+      sess.run(tf.initialize_all_variables())
       for d in thread_data:
         d.thread.start()
 
@@ -984,51 +782,5 @@ class AsyncReaderTest(test.TestCase):
     output.append(sess.run(args))
 
 
-class LMDBReaderTest(test.TestCase):
-
-  def setUp(self):
-    super(LMDBReaderTest, self).setUp()
-    # Copy database out because we need the path to be writable to use locks.
-    path = os.path.join(prefix_path, "lmdb", "testdata", "data.mdb")
-    self.db_path = os.path.join(self.get_temp_dir(), "data.mdb")
-    shutil.copy(path, self.db_path)
-
-  def testReadFromFile(self):
-    with self.test_session() as sess:
-      reader = io_ops.LMDBReader(name="test_read_from_file")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
-      key, value = reader.read(queue)
-
-      queue.enqueue([self.db_path]).run()
-      queue.close().run()
-      for i in range(10):
-        k, v = sess.run([key, value])
-        self.assertAllEqual(compat.as_bytes(k), compat.as_bytes(str(i)))
-        self.assertAllEqual(
-            compat.as_bytes(v), compat.as_bytes(str(chr(ord("a") + i))))
-
-      with self.assertRaisesOpError("is closed and has insufficient elements "
-                                    "\\(requested 1, current size 0\\)"):
-        k, v = sess.run([key, value])
-
-  def testReadFromFolder(self):
-    with self.test_session() as sess:
-      reader = io_ops.LMDBReader(name="test_read_from_folder")
-      queue = data_flow_ops.FIFOQueue(99, [dtypes.string], shapes=())
-      key, value = reader.read(queue)
-
-      queue.enqueue([self.db_path]).run()
-      queue.close().run()
-      for i in range(10):
-        k, v = sess.run([key, value])
-        self.assertAllEqual(compat.as_bytes(k), compat.as_bytes(str(i)))
-        self.assertAllEqual(
-            compat.as_bytes(v), compat.as_bytes(str(chr(ord("a") + i))))
-
-      with self.assertRaisesOpError("is closed and has insufficient elements "
-                                    "\\(requested 1, current size 0\\)"):
-        k, v = sess.run([key, value])
-
-
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

@@ -15,8 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/platform/profile_utils/android_armv7a_cpu_utils_helper.h"
 
-#if defined(__ANDROID__) && (__ANDROID_API__ >= 21) && \
-    (defined(__ARM_ARCH_7A__) || defined(__aarch64__))
+#if defined(__ANDROID__) && defined(__ARM_ARCH_7A__) && (__ANDROID_API__ >= 21)
 
 #include <asm/unistd.h>
 #include <linux/perf_event.h>
@@ -25,7 +24,6 @@ limitations under the License.
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "tensorflow/core/lib/strings/stringprintf.h"
@@ -114,18 +112,39 @@ int64 AndroidArmV7ACpuUtilsHelper::ReadCpuFrequencyFile(
   if (fp == nullptr) {
     return INVALID_CPU_FREQUENCY;
   }
-  int64 freq_in_khz = INVALID_CPU_FREQUENCY;
-  const int retval = fscanf(fp, "%lld", &freq_in_khz);
+  int64 freq = INVALID_CPU_FREQUENCY;
+  const int retval = fscanf(fp, "%lld", &freq);
   if (retval < 0) {
     LOG(WARNING) << "Failed to \"" << file_path << "\"";
     return INVALID_CPU_FREQUENCY;
   }
   pclose(fp);
-  return freq_in_khz * 1000;  // The file contains cpu frequency in khz
+  return freq;
 }
 
 }  // namespace profile_utils
 }  // namespace tensorflow
 
-#endif  // defined(__ANDROID__) && (__ANDROID_API__ >= 21) &&
-        // (defined(__ARM_ARCH_7A__) || defined(__aarch64__))
+// defined(__ANDROID__) && defined(__ARM_ARCH_7A__) && (__ANDROID_API__ >= 21)
+#else
+
+// Dummy implementations to avoid link error.
+
+namespace tensorflow {
+namespace profile_utils {
+
+void AndroidArmV7ACpuUtilsHelper::ResetClockCycle() {}
+uint64 AndroidArmV7ACpuUtilsHelper::GetCurrentClockCycle() { return 1; }
+void AndroidArmV7ACpuUtilsHelper::EnableClockCycleProfiling(bool) {}
+int AndroidArmV7ACpuUtilsHelper::OpenPerfEvent(perf_event_attr *const,
+                                               const pid_t, const int,
+                                               const int, const unsigned long) {
+  return 0;
+}
+int64 AndroidArmV7ACpuUtilsHelper::CalculateCpuFrequency() { return 0; }
+
+}  // namespace profile_utils
+}  // namespace tensorflow
+
+// defined(__ANDROID__) && defined(__ARM_ARCH_7A__) && (__ANDROID_API__ >= 21)
+#endif

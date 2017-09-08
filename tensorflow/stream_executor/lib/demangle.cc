@@ -37,11 +37,11 @@ namespace port {
 string Demangle(const char *mangled) {
   string demangled;
   int status = 0;
-  char *result = nullptr;
+  char *result = NULL;
 #if HAS_CXA_DEMANGLE
-  result = abi::__cxa_demangle(mangled, nullptr, nullptr, &status);
+  result = abi::__cxa_demangle(mangled, NULL, NULL, &status);
 #endif
-  if (status == 0 && result != nullptr) {  // Demangling succeeded.
+  if (status == 0 && result != NULL) {  // Demangling succeeeded.
     demangled.append(result);
     free(result);
   }

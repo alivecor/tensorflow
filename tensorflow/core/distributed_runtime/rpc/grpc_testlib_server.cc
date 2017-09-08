@@ -27,7 +27,6 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/init_main.h"
-#include "tensorflow/core/protobuf/cluster.pb.h"
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/util/command_line_flags.h"
 
@@ -112,8 +111,8 @@ int main(int argc, char* argv[]) {
     LOG(ERROR) << "Could not create server: " << s.error_message();
     return -1;
   }
-  TF_QCHECK_OK(svr->Start());
-  TF_QCHECK_OK(svr->Join());
+  svr->Start();
+  svr->Join();
 
   // NOTE(mrry): Unreachable code.
   return 0;

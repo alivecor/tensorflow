@@ -19,51 +19,32 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-from tensorflow.contrib.framework.python.ops import prettyprint_ops
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import sparse_tensor
-from tensorflow.python.ops import sparse_ops
-from tensorflow.python.ops import tensor_array_ops
-from tensorflow.python.ops import variables
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class PrettyPrintOpsTest(test.TestCase):
+class PrettyPrintOpsTest(tf.test.TestCase):
 
   def testPrintTensorPassthrough(self):
-    a = constant_op.constant([1])
-    a = prettyprint_ops.print_op(a)
+    a = tf.constant([1])
+    a = tf.contrib.framework.print_op(a)
     with self.test_session():
-      self.assertEqual(a.eval(), constant_op.constant([1]).eval())
+      self.assertEqual(a.eval(), tf.constant([1]).eval())
 
   def testPrintSparseTensorPassthrough(self):
-    a = sparse_tensor.SparseTensor(
-        indices=[[0, 0], [1, 2]], values=[1, 2], dense_shape=[3, 4])
-    b = sparse_tensor.SparseTensor(
-        indices=[[0, 0], [1, 2]], values=[1, 2], dense_shape=[3, 4])
-    a = prettyprint_ops.print_op(a)
+    a = tf.SparseTensor(indices=[[0, 0], [1, 2]], values=[1, 2], shape=[3, 4])
+    b = tf.SparseTensor(indices=[[0, 0], [1, 2]], values=[1, 2], shape=[3, 4])
+    a = tf.contrib.framework.print_op(a)
     with self.test_session():
-      self.assertAllEqual(
-          sparse_ops.sparse_tensor_to_dense(a).eval(),
-          sparse_ops.sparse_tensor_to_dense(b).eval())
+      self.assertAllEqual(tf.sparse_tensor_to_dense(a).eval(),
+                          tf.sparse_tensor_to_dense(b).eval())
 
   def testPrintTensorArrayPassthrough(self):
-    a = tensor_array_ops.TensorArray(
-        size=2, dtype=dtypes.int32, clear_after_read=False)
+    a = tf.TensorArray(size=2, dtype=tf.int32, clear_after_read=False)
     a = a.write(1, 1)
     a = a.write(0, 0)
-    a = prettyprint_ops.print_op(a)
+    a = tf.contrib.framework.print_op(a)
     with self.test_session():
-      self.assertAllEqual(a.stack().eval(), constant_op.constant([0, 1]).eval())
-
-  def testPrintVariable(self):
-    a = variables.Variable(1.0)
-    a = prettyprint_ops.print_op(a)
-    with self.test_session():
-      variables.global_variables_initializer().run()
-      a.eval()
-
+      self.assertAllEqual(a.pack().eval(), tf.constant([0, 1]).eval())
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

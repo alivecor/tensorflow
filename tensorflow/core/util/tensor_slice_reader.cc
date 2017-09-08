@@ -102,8 +102,7 @@ TensorSliceReader::TensorSliceReader(const string& filepattern)
 
 TensorSliceReader::TensorSliceReader(const string& filepattern,
                                      OpenTableFunction open_function)
-    : TensorSliceReader(filepattern, std::move(open_function), kLoadAllShards) {
-}
+    : TensorSliceReader(filepattern, open_function, kLoadAllShards) {}
 
 TensorSliceReader::TensorSliceReader(const string& filepattern,
                                      OpenTableFunction open_function,
@@ -260,7 +259,6 @@ Status TensorSliceReader::GetTensor(
     READER_COPY(DT_INT16);
     READER_COPY(DT_INT8);
     READER_COPY(DT_INT64);
-    READER_COPY(DT_STRING);
     default:
       return errors::Unimplemented("Data type not supported");
   }

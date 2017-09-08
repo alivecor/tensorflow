@@ -17,7 +17,6 @@ limitations under the License.
 
 #include <utility>
 
-#include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/io/table_builder.h"
 #include "tensorflow/core/lib/random/random.h"
@@ -124,7 +123,7 @@ Status TensorSliceWriter::Finish() {
       LOG(ERROR) << "Failed to rename file " << tmpname_ << " to " << filename_;
     }
   } else {
-    Env::Default()->DeleteFile(tmpname_).IgnoreError();
+    Env::Default()->DeleteFile(tmpname_);
   }
   return s;
 }

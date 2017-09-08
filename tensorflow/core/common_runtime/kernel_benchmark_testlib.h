@@ -35,11 +35,10 @@ namespace test {
 
 class Benchmark {
  public:
-  // "device" must be either "cpu" or "gpu".  Takes ownership of "g",
-  // "init", and one reference on "rendez" (if not null).
+  // "device" must be either "cpu" or "gpu".  Takes ownership of "g"
+  // and "init".
   Benchmark(const string& device, Graph* g,
-            const SessionOptions* options = nullptr, Graph* init = nullptr,
-            Rendezvous* rendez = nullptr);
+            const SessionOptions* options = nullptr, Graph* init = nullptr);
   ~Benchmark();
 
   // Executes the graph for "iters" times.

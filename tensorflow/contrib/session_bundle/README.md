@@ -1,9 +1,5 @@
 # TensorFlow Inference Model Format
 
-WARNING: SessionBundle has been deprecated and is no longer supported. Switch to
-[SavedModel](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/README.md)
-immediately.
-
 [TOC]
 
 ## Overview

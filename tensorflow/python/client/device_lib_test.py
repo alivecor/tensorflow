@@ -12,16 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for the SWIG-wrapped device lib."""
 
+"""Tests for the SWIG-wrapped device lib."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow as tf
+
 from tensorflow.python.client import device_lib
 from tensorflow.python.framework import test_util
 from tensorflow.python.platform import googletest
-from tensorflow.python.platform import test
 
 
 class DeviceLibTest(test_util.TensorFlowTestCase):
@@ -32,9 +33,9 @@ class DeviceLibTest(test_util.TensorFlowTestCase):
     self.assertEqual(devices[0].device_type, "CPU")
 
     # GPU test
-    if test.is_gpu_available():
+    if tf.test.is_built_with_cuda():
       self.assertGreater(len(devices), 1)
-      self.assertTrue("GPU" in [d.device_type for d in devices] or "SYCL" in [d.device_type for d in devices])
+      self.assertTrue("GPU" in [d.device_type for d in devices])
 
 
 if __name__ == "__main__":

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for tensorflow.ops.data_flow_ops.PriorityQueue."""
 
+"""Tests for tensorflow.ops.data_flow_ops.PriorityQueue."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -23,29 +23,21 @@ import random
 import threading
 
 import numpy as np
+import tensorflow as tf
 
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import errors_impl
-from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import data_flow_ops
-import tensorflow.python.ops.nn_grad  # pylint: disable=unused-import
-from tensorflow.python.platform import test
 
 
-class PriorityQueueTest(test.TestCase):
+class PriorityQueueTest(tf.test.TestCase):
 
   def testRoundTripInsertReadOnceSorts(self):
     with self.test_session() as sess:
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.string, dtypes.string), (
-          (), ()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.string, tf.string), ((), ()))
       elem = np.random.randint(-5, 5, size=100).astype(np.int64)
       side_value_0 = np.random.rand(100).astype(bytes)
       side_value_1 = np.random.rand(100).astype(bytes)
-      enq_list = [
-          q.enqueue((e, constant_op.constant(v0), constant_op.constant(v1)))
-          for e, v0, v1 in zip(elem, side_value_0, side_value_1)
-      ]
+      enq_list = [q.enqueue((e, tf.constant(v0), tf.constant(v1)))
+                  for e, v0, v1 in zip(elem, side_value_0, side_value_1)]
       for enq in enq_list:
         enq.run()
 
@@ -68,17 +60,13 @@ class PriorityQueueTest(test.TestCase):
 
   def testRoundTripInsertMultiThreadedReadOnceSorts(self):
     with self.test_session() as sess:
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.string, dtypes.string), (
-          (), ()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.string, tf.string), ((), ()))
       elem = np.random.randint(-5, 5, size=100).astype(np.int64)
       side_value_0 = np.random.rand(100).astype(bytes)
       side_value_1 = np.random.rand(100).astype(bytes)
 
-      enqueue_ops = [
-          q.enqueue((e, constant_op.constant(v0), constant_op.constant(v1)))
-          for e, v0, v1 in zip(elem, side_value_0, side_value_1)
-      ]
-
+      enqueue_ops = [q.enqueue((e, tf.constant(v0), tf.constant(v1)))
+                     for e, v0, v1 in zip(elem, side_value_0, side_value_1)]
       # Run one producer thread for each element in elems.
       def enqueue(enqueue_op):
         sess.run(enqueue_op)
@@ -86,9 +74,7 @@ class PriorityQueueTest(test.TestCase):
       dequeue_op = q.dequeue_many(100)
 
       enqueue_threads = [
-          self.checkedThread(
-              target=enqueue, args=(op,)) for op in enqueue_ops
-      ]
+          self.checkedThread(target=enqueue, args=(op,)) for op in enqueue_ops]
 
       for t in enqueue_threads:
         t.start()
@@ -114,20 +100,18 @@ class PriorityQueueTest(test.TestCase):
 
   def testRoundTripFillsCapacityMultiThreadedEnqueueAndDequeue(self):
     with self.test_session() as sess:
-      q = data_flow_ops.PriorityQueue(10, (dtypes.int64), (()))
+      q = data_flow_ops.PriorityQueue(10, (tf.int64), (()))
 
       num_threads = 40
       enqueue_counts = np.random.randint(10, size=num_threads)
       enqueue_values = [
-          np.random.randint(
-              5, size=count) for count in enqueue_counts
-      ]
+          np.random.randint(5, size=count) for count in enqueue_counts]
       enqueue_ops = [
-          q.enqueue_many((values, values)) for values in enqueue_values
-      ]
+          q.enqueue_many((values, values)) for values in enqueue_values]
       shuffled_counts = copy.deepcopy(enqueue_counts)
       random.shuffle(shuffled_counts)
-      dequeue_ops = [q.dequeue_many(count) for count in shuffled_counts]
+      dequeue_ops = [
+          q.dequeue_many(count) for count in shuffled_counts]
       all_enqueued_values = np.hstack(enqueue_values)
 
       # Run one producer thread for each element in elems.
@@ -142,13 +126,9 @@ class PriorityQueueTest(test.TestCase):
         dequeued.extend(dequeue_indices)
 
       enqueue_threads = [
-          self.checkedThread(
-              target=enqueue, args=(op,)) for op in enqueue_ops
-      ]
+          self.checkedThread(target=enqueue, args=(op,)) for op in enqueue_ops]
       dequeue_threads = [
-          self.checkedThread(
-              target=dequeue, args=(op,)) for op in dequeue_ops
-      ]
+          self.checkedThread(target=dequeue, args=(op,)) for op in dequeue_ops]
 
       # Dequeue and check
       for t in dequeue_threads:
@@ -164,20 +144,18 @@ class PriorityQueueTest(test.TestCase):
 
   def testRoundTripInsertManyMultiThreadedReadManyMultithreadedSorts(self):
     with self.test_session() as sess:
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.int64), (()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.int64), (()))
 
       num_threads = 40
       enqueue_counts = np.random.randint(10, size=num_threads)
       enqueue_values = [
-          np.random.randint(
-              5, size=count) for count in enqueue_counts
-      ]
+          np.random.randint(5, size=count) for count in enqueue_counts]
       enqueue_ops = [
-          q.enqueue_many((values, values)) for values in enqueue_values
-      ]
+          q.enqueue_many((values, values)) for values in enqueue_values]
       shuffled_counts = copy.deepcopy(enqueue_counts)
       random.shuffle(shuffled_counts)
-      dequeue_ops = [q.dequeue_many(count) for count in shuffled_counts]
+      dequeue_ops = [
+          q.dequeue_many(count) for count in shuffled_counts]
       all_enqueued_values = np.hstack(enqueue_values)
 
       dequeue_wait = threading.Condition()
@@ -195,13 +173,10 @@ class PriorityQueueTest(test.TestCase):
 
       dequeued = []
       enqueue_threads = [
-          self.checkedThread(
-              target=enqueue, args=(op,)) for op in enqueue_ops
-      ]
+          self.checkedThread(target=enqueue, args=(op,)) for op in enqueue_ops]
       dequeue_threads = [
-          self.checkedThread(
-              target=dequeue, args=(op, dequeued)) for op in dequeue_ops
-      ]
+          self.checkedThread(target=dequeue, args=(op, dequeued))
+          for op in dequeue_ops]
 
       for t in enqueue_threads:
         t.start()
@@ -220,20 +195,16 @@ class PriorityQueueTest(test.TestCase):
 
   def testRoundTripInsertManyMultiThreadedReadOnceSorts(self):
     with self.test_session() as sess:
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.string, dtypes.string), (
-          (), ()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.string, tf.string), ((), ()))
       elem = np.random.randint(-5, 5, size=100).astype(np.int64)
       side_value_0 = np.random.rand(100).astype(bytes)
       side_value_1 = np.random.rand(100).astype(bytes)
 
       batch = 5
-      enqueue_ops = [
-          q.enqueue_many((elem[i * batch:(i + 1) * batch],
-                          side_value_0[i * batch:(i + 1) * batch],
-                          side_value_1[i * batch:(i + 1) * batch]))
-          for i in range(20)
-      ]
-
+      enqueue_ops = [q.enqueue_many((elem[i*batch:(i+1)*batch],
+                                     side_value_0[i*batch:(i+1)*batch],
+                                     side_value_1[i*batch:(i+1)*batch]))
+                     for i in range(20)]
       # Run one producer thread for each element in elems.
       def enqueue(enqueue_op):
         sess.run(enqueue_op)
@@ -241,9 +212,7 @@ class PriorityQueueTest(test.TestCase):
       dequeue_op = q.dequeue_many(100)
 
       enqueue_threads = [
-          self.checkedThread(
-              target=enqueue, args=(op,)) for op in enqueue_ops
-      ]
+          self.checkedThread(target=enqueue, args=(op,)) for op in enqueue_ops]
 
       for t in enqueue_threads:
         t.start()
@@ -269,8 +238,7 @@ class PriorityQueueTest(test.TestCase):
 
   def testRoundTripInsertOnceReadOnceSorts(self):
     with self.test_session() as sess:
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.string, dtypes.string), (
-          (), ()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.string, tf.string), ((), ()))
       elem = np.random.randint(-100, 100, size=1000).astype(np.int64)
       side_value_0 = np.random.rand(1000).astype(bytes)
       side_value_1 = np.random.rand(1000).astype(bytes)
@@ -290,15 +258,16 @@ class PriorityQueueTest(test.TestCase):
 
   def testRoundTripInsertOnceReadManySorts(self):
     with self.test_session():
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.int64), (()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.int64), (()))
       elem = np.random.randint(-100, 100, size=1000).astype(np.int64)
       q.enqueue_many((elem, elem)).run()
-      deq_values = np.hstack((q.dequeue_many(100)[0].eval() for _ in range(10)))
+      deq_values = np.hstack(
+          (q.dequeue_many(100)[0].eval() for _ in range(10)))
       self.assertAllEqual(deq_values, sorted(elem))
 
   def testRoundTripInsertOnceReadOnceLotsSorts(self):
     with self.test_session():
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.int64), (()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.int64), (()))
       elem = np.random.randint(-100, 100, size=1000).astype(np.int64)
       q.enqueue_many((elem, elem)).run()
       dequeue_op = q.dequeue()
@@ -307,37 +276,31 @@ class PriorityQueueTest(test.TestCase):
 
   def testInsertingNonInt64Fails(self):
     with self.test_session():
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.string), (()))
+      q = data_flow_ops.PriorityQueue(2000, (tf.string), (()))
       with self.assertRaises(TypeError):
         q.enqueue_many((["a", "b", "c"], ["a", "b", "c"])).run()
 
   def testInsertingNonScalarFails(self):
     with self.test_session() as sess:
-      input_priority = array_ops.placeholder(dtypes.int64)
-      input_other = array_ops.placeholder(dtypes.string)
-      q = data_flow_ops.PriorityQueue(2000, (dtypes.string,), (()))
+      input_priority = tf.placeholder(tf.int64)
+      input_other = tf.placeholder(tf.string)
+      q = data_flow_ops.PriorityQueue(2000, (tf.string,), (()))
 
       with self.assertRaisesRegexp(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           r"Shape mismatch in tuple component 0. Expected \[\], got \[2\]"):
         sess.run([q.enqueue((input_priority, input_other))],
-                 feed_dict={
-                     input_priority: np.array(
-                         [0, 2], dtype=np.int64),
-                     input_other: np.random.rand(3, 5).astype(bytes)
-                 })
+                 feed_dict={input_priority: np.array([0, 2], dtype=np.int64),
+                            input_other: np.random.rand(3, 5).astype(bytes)})
 
       with self.assertRaisesRegexp(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           r"Shape mismatch in tuple component 0. Expected \[2\], got \[2,2\]"):
-        sess.run(
-            [q.enqueue_many((input_priority, input_other))],
-            feed_dict={
-                input_priority: np.array(
-                    [[0, 2], [3, 4]], dtype=np.int64),
-                input_other: np.random.rand(2, 3).astype(bytes)
-            })
+        sess.run([q.enqueue_many((input_priority, input_other))],
+                 feed_dict={input_priority: np.array([[0, 2], [3, 4]],
+                                                     dtype=np.int64),
+                            input_other: np.random.rand(2, 3).astype(bytes)})
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

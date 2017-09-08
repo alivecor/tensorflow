@@ -82,9 +82,11 @@ Status OpCompatibilityLib::ValidateCompatible(Env* env, int* changed_ops,
   {  // Read op history.
     printf("Reading op history from %s...\n", op_history_file_.c_str());
     string op_history_str;
-    TF_RETURN_IF_ERROR(
-        ReadFileToString(env, op_history_file_, &op_history_str));
-    protobuf::TextFormat::ParseFromString(op_history_str, &in_op_history);
+    Status status = ReadFileToString(env, op_history_file_, &op_history_str);
+    if (!errors::IsNotFound(status)) {
+      if (!status.ok()) return status;
+      protobuf::TextFormat::ParseFromString(op_history_str, &in_op_history);
+    }
   }
 
   int cur = 0;

@@ -15,12 +15,8 @@
 # ==============================================================================
 # Install Hadoop
 
-HADOOP_VERSION="2.7.3"
+set -e
 
-set +e
-if [[ ! -f /usr/local/hadoop-${HADOOP_VERSION}/bin/hadoop ]]; then
-  set -e
-  wget -q http://www-us.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz
-  tar xzf hadoop-${HADOOP_VERSION}.tar.gz -C /usr/local
-fi
-ln -sf /usr/local/hadoop-${HADOOP_VERSION} /usr/local/hadoop
+wget -q http://www-us.apache.org/dist/hadoop/common/hadoop-2.7.3/hadoop-2.7.3.tar.gz
+tar xzf hadoop-2.7.3.tar.gz -C /usr/local
+ln -s /usr/local/hadoop-2.7.3 /usr/local/hadoop

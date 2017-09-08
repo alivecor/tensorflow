@@ -24,17 +24,6 @@
 #     TF_GPU_COUNT = Number of GPUs available. This HAS TO BE IN SYNC with the
 #                    value of --local_test_jobs flag for bazel.
 
-BASH_VER_MAJOR=$(echo ${BASH_VERSION} | cut -d '.' -f 1)
-BASH_VER_MINOR=$(echo ${BASH_VERSION} | cut -d '.' -f 2)
-
-if [[ ${BASH_VER_MAJOR} -lt 4 ]]; then
-  echo "Insufficient bash version: ${BASH_VERSION} < 4.2" >&2
-  exit 1
-elif [[ ${BASH_VER_MAJOR} -eq 4 ]] && [[ ${BASH_VER_MINOR} -lt 2 ]]; then
-  echo "Insufficient bash version: ${BASH_VERSION} < 4.2" >&2
-  exit 1
-fi
-
 TF_GPU_COUNT=${TF_GPU_COUNT:-8}
 
 for i in `seq 0 $((TF_GPU_COUNT-1))`; do
@@ -48,9 +37,8 @@ for i in `seq 0 $((TF_GPU_COUNT-1))`; do
       echo "Running test $@ on GPU $CUDA_VISIBLE_DEVICES"
       $@
     )
-    return_code=$?
     flock -u "$lock_fd"
-    exit $return_code
+    exit 0
   fi
 done
 

@@ -12,23 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for CandidateSamplerOp."""
 
+"""Tests for CandidateSamplerOp."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import candidate_sampling_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class RangeSamplerOpsTest(test.TestCase):
+class RangeSamplerOpsTest(tf.test.TestCase):
 
   BATCH_SIZE = 3
   NUM_TRUE = 2
@@ -39,9 +33,9 @@ class RangeSamplerOpsTest(test.TestCase):
 
   def testTrueCandidates(self):
     with self.test_session() as sess:
-      indices = constant_op.constant([0, 0, 1, 1, 2, 2])
-      true_candidates_vec = constant_op.constant([1, 2, 0, 4, 3, 3])
-      true_candidates_matrix = array_ops.reshape(
+      indices = tf.constant([0, 0, 1, 1, 2, 2])
+      true_candidates_vec = tf.constant([1, 2, 0, 4, 3, 3])
+      true_candidates_matrix = tf.reshape(
           true_candidates_vec, [self.BATCH_SIZE, self.NUM_TRUE])
       indices_val, true_candidates_val = sess.run(
           [indices, true_candidates_matrix])
@@ -51,9 +45,9 @@ class RangeSamplerOpsTest(test.TestCase):
 
   def testSampledCandidates(self):
     with self.test_session():
-      true_classes = constant_op.constant(
-          [[1, 2], [0, 4], [3, 3]], dtype=dtypes.int64)
-      sampled_candidates, _, _ = candidate_sampling_ops.all_candidate_sampler(
+      true_classes = tf.constant([[1, 2], [0, 4], [3, 3]],
+                                 dtype=tf.int64)
+      sampled_candidates, _, _ = tf.nn.all_candidate_sampler(
           true_classes, self.NUM_TRUE, self.NUM_SAMPLED, True)
       result = sampled_candidates.eval()
 
@@ -63,26 +57,26 @@ class RangeSamplerOpsTest(test.TestCase):
 
   def testTrueLogExpectedCount(self):
     with self.test_session():
-      true_classes = constant_op.constant(
-          [[1, 2], [0, 4], [3, 3]], dtype=dtypes.int64)
-      _, true_expected_count, _ = candidate_sampling_ops.all_candidate_sampler(
+      true_classes = tf.constant([[1, 2], [0, 4], [3, 3]],
+                                 dtype=tf.int64)
+      _, true_expected_count, _ = tf.nn.all_candidate_sampler(
           true_classes, self.NUM_TRUE, self.NUM_SAMPLED, True)
-      true_log_expected_count = math_ops.log(true_expected_count)
+      true_log_expected_count = tf.log(true_expected_count)
       result = true_log_expected_count.eval()
 
     self.assertAllEqual(result, [[0.0] * self.NUM_TRUE] * self.BATCH_SIZE)
-    self.assertEqual(true_expected_count.get_shape(),
-                     [self.BATCH_SIZE, self.NUM_TRUE])
-    self.assertEqual(true_log_expected_count.get_shape(),
-                     [self.BATCH_SIZE, self.NUM_TRUE])
+    self.assertEqual(true_expected_count.get_shape(), [self.BATCH_SIZE,
+                                                       self.NUM_TRUE])
+    self.assertEqual(true_log_expected_count.get_shape(), [self.BATCH_SIZE,
+                                                           self.NUM_TRUE])
 
   def testSampledLogExpectedCount(self):
     with self.test_session():
-      true_classes = constant_op.constant(
-          [[1, 2], [0, 4], [3, 3]], dtype=dtypes.int64)
-      _, _, sampled_expected_count = candidate_sampling_ops.all_candidate_sampler(
+      true_classes = tf.constant([[1, 2], [0, 4], [3, 3]],
+                                 dtype=tf.int64)
+      _, _, sampled_expected_count = tf.nn.all_candidate_sampler(
           true_classes, self.NUM_TRUE, self.NUM_SAMPLED, True)
-      sampled_log_expected_count = math_ops.log(sampled_expected_count)
+      sampled_log_expected_count = tf.log(sampled_expected_count)
       result = sampled_log_expected_count.eval()
 
     self.assertAllEqual(result, [0.0] * self.NUM_SAMPLED)
@@ -91,11 +85,11 @@ class RangeSamplerOpsTest(test.TestCase):
 
   def testAccidentalHits(self):
     with self.test_session() as sess:
-      true_classes = constant_op.constant(
-          [[1, 2], [0, 4], [3, 3]], dtype=dtypes.int64)
-      sampled_candidates, _, _ = candidate_sampling_ops.all_candidate_sampler(
+      true_classes = tf.constant([[1, 2], [0, 4], [3, 3]],
+                                          dtype=tf.int64)
+      sampled_candidates, _, _ = tf.nn.all_candidate_sampler(
           true_classes, self.NUM_TRUE, self.NUM_SAMPLED, True)
-      accidental_hits = candidate_sampling_ops.compute_accidental_hits(
+      accidental_hits = tf.nn.compute_accidental_hits(
           true_classes, sampled_candidates, self.NUM_TRUE)
       indices, ids, weights = sess.run(accidental_hits)
 
@@ -110,12 +104,16 @@ class RangeSamplerOpsTest(test.TestCase):
 
     def draw(seed):
       with self.test_session():
-        true_classes = constant_op.constant(
-            [[1, 2], [0, 4], [3, 3]], dtype=dtypes.int64)
-        sampled, _, _ = candidate_sampling_ops.log_uniform_candidate_sampler(
-            true_classes, self.NUM_TRUE, self.NUM_SAMPLED, True, 5, seed=seed)
+        true_classes = tf.constant([[1, 2], [0, 4], [3, 3]],
+                                   dtype=tf.int64)
+        sampled, _, _ = tf.nn.log_uniform_candidate_sampler(
+            true_classes,
+            self.NUM_TRUE,
+            self.NUM_SAMPLED,
+            True,
+            5,
+            seed=seed)
         return sampled.eval()
-
     # Non-zero seed. Repeatable.
     for seed in [1, 12, 123, 1234]:
       self.assertAllEqual(draw(seed), draw(seed))
@@ -130,4 +128,4 @@ class RangeSamplerOpsTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

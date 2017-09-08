@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Functional tests for scan ops."""
 
 from __future__ import absolute_import
@@ -19,12 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import errors_impl
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import gradient_checker
-from tensorflow.python.ops import math_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
 def numpy_reverse(x, axis):
@@ -32,9 +28,8 @@ def numpy_reverse(x, axis):
   if axis < 0:
     axis = length + axis
 
-  ix = [
-      slice(None, None, -1) if i == axis else slice(None) for i in range(length)
-  ]
+  ix = [slice(None, None, -1)
+        if i == axis else slice(None) for i in range(length)]
   return x[ix]
 
 
@@ -48,10 +43,10 @@ def handle_options(func, x, axis, exclusive, reverse):
     x = numpy_reverse(x, axis)
 
   if exclusive:
-    ix_head = [slice(0, 1) if i == axis else slice(None) for i in range(length)]
-    ix_init = [
-        slice(0, -1) if i == axis else slice(None) for i in range(length)
-    ]
+    ix_head = [slice(0, 1) if i == axis else slice(None)
+               for i in range(length)]
+    ix_init = [slice(0, -1) if i == axis else slice(None)
+               for i in range(length)]
     if func == np.cumsum:
       init = np.zeros_like(x[ix_head])
     elif func == np.cumprod:
@@ -67,17 +62,15 @@ def handle_options(func, x, axis, exclusive, reverse):
   return x
 
 
-class CumsumTest(test.TestCase):
+class CumsumTest(tf.test.TestCase):
 
-  valid_dtypes = [
-      np.int32, np.int64, np.float16, np.float32, np.float64, np.complex64,
-      np.complex128
-  ]
+  valid_dtypes = [np.int32, np.int64, np.float16, np.float32,
+                  np.float64, np.complex64, np.complex128]
 
   def _compare(self, x, axis, exclusive, reverse):
     np_out = handle_options(np.cumsum, x, axis, exclusive, reverse)
     with self.test_session(use_gpu=True):
-      tf_out = math_ops.cumsum(x, axis, exclusive, reverse).eval()
+      tf_out = tf.cumsum(x, axis, exclusive, reverse).eval()
 
     self.assertAllClose(np_out, tf_out)
 
@@ -118,28 +111,32 @@ class CumsumTest(test.TestCase):
 
   def testInvalidAxis(self):
     x = np.arange(0, 10).reshape([2, 5]).astype(np.float32)
-    input_tensor = ops.convert_to_tensor(x)
+    input_tensor = tf.convert_to_tensor(x)
     with self.test_session(use_gpu=True):
       with self.assertRaisesWithPredicateMatch(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           lambda e: "Expected scan axis in the range [-2, 2)" in str(e)):
-        math_ops.cumsum(input_tensor, -3).eval()
+        tf.cumsum(input_tensor, -3).eval()
       with self.assertRaisesWithPredicateMatch(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           lambda e: "Expected scan axis in the range [-2, 2)" in str(e)):
-        math_ops.cumsum(input_tensor, 2).eval()
+        tf.cumsum(input_tensor, 2).eval()
       with self.assertRaisesWithPredicateMatch(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           lambda e: "axis must be a scalar" in str(e)):
-        math_ops.cumsum(input_tensor, [0]).eval()
+        tf.cumsum(input_tensor, [0]).eval()
 
   def _compareGradient(self, shape, axis, exclusive, reverse):
     x = np.arange(0, 50).reshape(shape).astype(np.float64)
     with self.test_session(use_gpu=True):
-      t = ops.convert_to_tensor(x)
-      result = math_ops.cumsum(t, axis, exclusive, reverse)
-      jacob_t, jacob_n = gradient_checker.compute_gradient(
-          t, shape, result, shape, x_init_value=x, delta=1)
+      t = tf.convert_to_tensor(x)
+      result = tf.cumsum(t, axis, exclusive, reverse)
+      jacob_t, jacob_n = tf.test.compute_gradient(t,
+                                                  shape,
+                                                  result,
+                                                  shape,
+                                                  x_init_value=x,
+                                                  delta=1)
     self.assertAllClose(jacob_t, jacob_n, rtol=1e-8, atol=1e-8)
 
   def testGradient(self):
@@ -165,17 +162,15 @@ class CumsumTest(test.TestCase):
           self._compareGradient([5, 10], axis, exclusive, reverse)
 
 
-class CumprodTest(test.TestCase):
+class CumprodTest(tf.test.TestCase):
 
-  valid_dtypes = [
-      np.int32, np.int64, np.float16, np.float32, np.float64, np.complex64,
-      np.complex128
-  ]
+  valid_dtypes = [np.int32, np.int64, np.float16, np.float32,
+                  np.float64, np.complex64, np.complex128]
 
   def _compare(self, x, axis, exclusive, reverse):
     np_out = handle_options(np.cumprod, x, axis, exclusive, reverse)
     with self.test_session(use_gpu=True):
-      tf_out = math_ops.cumprod(x, axis, exclusive, reverse).eval()
+      tf_out = tf.cumprod(x, axis, exclusive, reverse).eval()
 
     self.assertAllClose(np_out, tf_out)
 
@@ -216,28 +211,32 @@ class CumprodTest(test.TestCase):
 
   def testInvalidAxis(self):
     x = np.arange(0, 10).reshape([2, 5]).astype(np.float32)
-    input_tensor = ops.convert_to_tensor(x)
+    input_tensor = tf.convert_to_tensor(x)
     with self.test_session(use_gpu=True):
       with self.assertRaisesWithPredicateMatch(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           lambda e: "Expected scan axis in the range [-2, 2)" in str(e)):
-        math_ops.cumprod(input_tensor, -3).eval()
+        tf.cumprod(input_tensor, -3).eval()
       with self.assertRaisesWithPredicateMatch(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           lambda e: "Expected scan axis in the range [-2, 2)" in str(e)):
-        math_ops.cumprod(input_tensor, 2).eval()
+        tf.cumprod(input_tensor, 2).eval()
       with self.assertRaisesWithPredicateMatch(
-          errors_impl.InvalidArgumentError,
+          tf.errors.InvalidArgumentError,
           lambda e: "axis must be a scalar" in str(e)):
-        math_ops.cumprod(input_tensor, [0]).eval()
+        tf.cumprod(input_tensor, [0]).eval()
 
   def _compareGradient(self, shape, axis, exclusive, reverse):
     x = np.arange(1, 9).reshape(shape).astype(np.float64)
     with self.test_session(use_gpu=True):
-      t = ops.convert_to_tensor(x)
-      result = math_ops.cumprod(t, axis, exclusive, reverse)
-      jacob_t, jacob_n = gradient_checker.compute_gradient(
-          t, shape, result, shape, x_init_value=x, delta=1)
+      t = tf.convert_to_tensor(x)
+      result = tf.cumprod(t, axis, exclusive, reverse)
+      jacob_t, jacob_n = tf.test.compute_gradient(t,
+                                                  shape,
+                                                  result,
+                                                  shape,
+                                                  x_init_value=x,
+                                                  delta=1)
     self.assertAllClose(jacob_t, jacob_n, rtol=1e-8, atol=1e-8)
 
   def testGradient(self):
@@ -264,4 +263,4 @@ class CumprodTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

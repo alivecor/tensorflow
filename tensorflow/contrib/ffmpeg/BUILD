@@ -83,13 +83,10 @@ tf_gen_op_wrapper_py(
 
 tf_py_test(
     name = "decode_audio_op_test",
-    size = "small",
     srcs = ["decode_audio_op_test.py"],
     additional_deps = [
         ":ffmpeg_ops_py",
-        "@six_archive//:six",
-        "//tensorflow/python:array_ops",
-        "//tensorflow/python:client_testlib",
+        "//tensorflow:tensorflow_py",
         "//tensorflow/python:platform",
     ],
     data = [
@@ -100,13 +97,10 @@ tf_py_test(
 
 tf_py_test(
     name = "encode_audio_op_test",
-    size = "small",
     srcs = ["encode_audio_op_test.py"],
     additional_deps = [
         ":ffmpeg_ops_py",
-        "@six_archive//:six",
-        "//tensorflow/python:array_ops",
-        "//tensorflow/python:client_testlib",
+        "//tensorflow:tensorflow_py",
         "//tensorflow/python:platform",
     ],
     data = [
@@ -127,10 +121,6 @@ py_library(
     deps = [
         ":decode_audio_op_py",
         ":encode_audio_op_py",
-        "//tensorflow/contrib/util:util_py",
-        "//tensorflow/python:framework_for_generated_wrappers",
-        "//tensorflow/python:platform",
-        "//tensorflow/python:util",
     ],
 )
 

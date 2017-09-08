@@ -84,7 +84,7 @@ class SerializationTraits<tensorflow::TensorResponse>
   }
   static Status Deserialize(grpc_byte_buffer* buffer,
                             tensorflow::TensorResponse* msg,
-                            int max_message_size = INT_MAX) {
+                            int max_message_size) {
     if (buffer == nullptr) {
       return Status(StatusCode::INTERNAL, "No payload");
     }
@@ -109,7 +109,6 @@ namespace tensorflow {
 // Names of worker methods.
 enum class GrpcWorkerMethod {
   kGetStatus,
-  kCreateWorkerSession,
   kRegisterGraph,
   kDeregisterGraph,
   kRunGraph,
@@ -130,7 +129,7 @@ namespace grpc {
 // definition in "//tensorflow/core/protobuf/worker_service.proto",
 // and the gRPC generated stub and service classes.
 // See the proto file for the definition of methods and messages.
-class WorkerService final {
+class WorkerService GRPC_FINAL {
  public:
   class AsyncService : public ::grpc::Service {
    public:

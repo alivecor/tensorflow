@@ -12,32 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Tests for StringToHashBucket op from string_ops."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import string_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class StringToHashBucketOpTest(test.TestCase):
+class StringToHashBucketOpTest(tf.test.TestCase):
 
   def testStringToOneHashBucketFast(self):
     with self.test_session():
-      input_string = array_ops.placeholder(dtypes.string)
-      output = string_ops.string_to_hash_bucket_fast(input_string, 1)
+      input_string = tf.placeholder(tf.string)
+      output = tf.string_to_hash_bucket_fast(input_string, 1)
       result = output.eval(feed_dict={input_string: ['a', 'b', 'c']})
 
       self.assertAllEqual([0, 0, 0], result)
 
   def testStringToHashBucketsFast(self):
     with self.test_session():
-      input_string = array_ops.placeholder(dtypes.string)
-      output = string_ops.string_to_hash_bucket_fast(input_string, 10)
+      input_string = tf.placeholder(tf.string)
+      output = tf.string_to_hash_bucket_fast(input_string, 10)
       result = output.eval(feed_dict={input_string: ['a', 'b', 'c', 'd']})
 
       # Fingerprint64('a') -> 12917804110809363939 -> mod 10 -> 9
@@ -48,17 +45,21 @@ class StringToHashBucketOpTest(test.TestCase):
 
   def testStringToOneHashBucketLegacyHash(self):
     with self.test_session():
-      input_string = array_ops.placeholder(dtypes.string)
-      output = string_ops.string_to_hash_bucket(input_string, 1)
-      result = output.eval(feed_dict={input_string: ['a', 'b', 'c']})
+      input_string = tf.placeholder(tf.string)
+      output = tf.string_to_hash_bucket(input_string, 1)
+      result = output.eval(feed_dict={
+          input_string: ['a', 'b', 'c']
+      })
 
       self.assertAllEqual([0, 0, 0], result)
 
   def testStringToHashBucketsLegacyHash(self):
     with self.test_session():
-      input_string = array_ops.placeholder(dtypes.string)
-      output = string_ops.string_to_hash_bucket(input_string, 10)
-      result = output.eval(feed_dict={input_string: ['a', 'b', 'c']})
+      input_string = tf.placeholder(tf.string)
+      output = tf.string_to_hash_bucket(input_string, 10)
+      result = output.eval(feed_dict={
+          input_string: ['a', 'b', 'c']
+      })
 
       # Hash64('a') -> 2996632905371535868 -> mod 10 -> 8
       # Hash64('b') -> 5795986006276551370 -> mod 10 -> 0
@@ -67,16 +68,16 @@ class StringToHashBucketOpTest(test.TestCase):
 
   def testStringToOneHashBucketStrongOneHashBucket(self):
     with self.test_session():
-      input_string = constant_op.constant(['a', 'b', 'c'])
-      output = string_ops.string_to_hash_bucket_strong(
-          input_string, 1, key=[123, 345])
+      input_string = tf.constant(['a', 'b', 'c'])
+      output = tf.string_to_hash_bucket_strong(input_string, 1, key=[123, 345])
       self.assertAllEqual([0, 0, 0], output.eval())
 
   def testStringToHashBucketsStrong(self):
     with self.test_session():
-      input_string = constant_op.constant(['a', 'b', 'c'])
-      output = string_ops.string_to_hash_bucket_strong(
-          input_string, 10, key=[98765, 132])
+      input_string = tf.constant(['a', 'b', 'c'])
+      output = tf.string_to_hash_bucket_strong(input_string,
+                                               10,
+                                               key=[98765, 132])
       # key = [98765, 132]
       # StrongKeyedHash(key, 'a') -> 7157389809176466784 -> mod 10 -> 4
       # StrongKeyedHash(key, 'b') -> 15805638358933211562 -> mod 10 -> 2
@@ -85,11 +86,10 @@ class StringToHashBucketOpTest(test.TestCase):
 
   def testStringToHashBucketsStrongInvalidKey(self):
     with self.test_session():
-      input_string = constant_op.constant(['a', 'b', 'c'])
+      input_string = tf.constant(['a', 'b', 'c'])
       with self.assertRaisesOpError('Key must have 2 elements'):
-        string_ops.string_to_hash_bucket_strong(
-            input_string, 10, key=[98765]).eval()
+        tf.string_to_hash_bucket_strong(input_string, 10, key=[98765]).eval()
 
 
 if __name__ == '__main__':
-  test.main()
+  tf.test.main()

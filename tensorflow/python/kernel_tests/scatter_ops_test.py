@@ -13,18 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 """Tests for tensorflow.ops.tf.scatter."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import state_ops
-from tensorflow.python.ops import variables
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
 def _AsType(v, vtype):
@@ -59,17 +53,21 @@ def _NumpyUpdate(ref, indices, updates):
 
 
 _TF_OPS_TO_NUMPY = {
-    state_ops.scatter_update: _NumpyUpdate,
-    state_ops.scatter_add: _NumpyAdd,
-    state_ops.scatter_sub: _NumpySub,
-    state_ops.scatter_mul: _NumpyMul,
-    state_ops.scatter_div: _NumpyDiv,
+    tf.scatter_update: _NumpyUpdate,
+    tf.scatter_add: _NumpyAdd,
+    tf.scatter_sub: _NumpySub,
+    tf.scatter_mul: _NumpyMul,
+    tf.scatter_div: _NumpyDiv,
 }
 
 
-class ScatterTest(test.TestCase):
+class ScatterTest(tf.test.TestCase):
 
-  def _VariableRankTest(self, tf_scatter, vtype, itype, repeat_indices=False):
+  def _VariableRankTest(self,
+                        tf_scatter,
+                        vtype,
+                        itype,
+                        repeat_indices=False):
     np.random.seed(8)
     with self.test_session(use_gpu=True):
       for indices_shape in (), (2,), (3, 7), (3, 4, 7):
@@ -91,11 +89,9 @@ class ScatterTest(test.TestCase):
           indices = indices.reshape(indices_shape)
           updates = _AsType(
               np.random.randn(*(indices_shape + extra_shape)), vtype)
-
           # Clips small values to avoid division by zero.
           def clip_small_values(x):
             return 1e-4 * np.sign(x) if np.abs(x) < 1e-4 else x
-
           updates = np.vectorize(clip_small_values)(updates)
           old = _AsType(np.random.randn(*((first_dim,) + extra_shape)), vtype)
 
@@ -104,7 +100,7 @@ class ScatterTest(test.TestCase):
           np_scatter = _TF_OPS_TO_NUMPY[tf_scatter]
           np_scatter(new, indices, updates)
           # Scatter via tensorflow
-          ref = variables.Variable(old)
+          ref = tf.Variable(old)
           ref.initializer.run()
           tf_scatter(ref, indices, updates).eval()
           self.assertAllClose(ref.eval(), new)
@@ -115,40 +111,38 @@ class ScatterTest(test.TestCase):
         self._VariableRankTest(tf_scatter, vtype, itype, repeat_indices)
 
   def testVariableRankUpdate(self):
-    self._VariableRankTests(state_ops.scatter_update)
+    self._VariableRankTests(tf.scatter_update)
 
   def testVariableRankAdd(self):
-    self._VariableRankTests(state_ops.scatter_add)
+    self._VariableRankTests(tf.scatter_add)
 
   def testVariableRankSub(self):
-    self._VariableRankTests(state_ops.scatter_sub)
+    self._VariableRankTests(tf.scatter_sub)
 
   def testVariableRankMul(self):
-    self._VariableRankTests(state_ops.scatter_mul)
+    self._VariableRankTests(tf.scatter_mul)
 
   def testVariableRankDiv(self):
-    self._VariableRankTests(state_ops.scatter_div)
+    self._VariableRankTests(tf.scatter_div)
 
   def testRepeatIndicesAdd(self):
-    self._VariableRankTests(state_ops.scatter_add, True)
+    self._VariableRankTests(tf.scatter_add, True)
 
   def testRepeatIndicesSub(self):
-    self._VariableRankTests(state_ops.scatter_sub, True)
+    self._VariableRankTests(tf.scatter_sub, True)
 
   def testRepeatIndicesMul(self):
-    self._VariableRankTests(state_ops.scatter_mul, True)
+    self._VariableRankTests(tf.scatter_mul, True)
 
   def testRepeatIndicesDiv(self):
-    self._VariableRankTests(state_ops.scatter_div, True)
+    self._VariableRankTests(tf.scatter_div, True)
 
   def testBooleanScatterUpdate(self):
-    if not test.is_gpu_available():
+    if not tf.test.is_gpu_available():
       with self.test_session(use_gpu=False) as session:
-        var = variables.Variable([True, False])
-        update0 = state_ops.scatter_update(var, 1, True)
-        update1 = state_ops.scatter_update(
-            var, constant_op.constant(
-                0, dtype=dtypes.int64), False)
+        var = tf.Variable([True, False])
+        update0 = tf.scatter_update(var, 1, True)
+        update1 = tf.scatter_update(var, tf.constant(0, dtype=tf.int64), False)
         var.initializer.run()
 
         session.run([update0, update1])
@@ -159,9 +153,9 @@ class ScatterTest(test.TestCase):
     for op, _ in _TF_OPS_TO_NUMPY.items():
       params = np.array([1, 2, 3, 4, 5, 6]).astype(np.float32)
       updates = np.array([-3, -4, -5]).astype(np.float32)
-      if not test.is_gpu_available():
+      if not tf.test.is_gpu_available():
         with self.test_session(use_gpu=False):
-          ref = variables.Variable(params)
+          ref = tf.Variable(params)
           ref.initializer.run()
 
           # Indices all in range, no problem.
@@ -180,7 +174,7 @@ class ScatterTest(test.TestCase):
 
   # TODO(fpmc): Re-enable this test when gpu_pip test actually runs on a GPU.
   def _disabledTestScatterOutOfRangeGpu(self):
-    if test.is_gpu_available():
+    if tf.test.is_gpu_available():
       return
     for op, _ in _TF_OPS_TO_NUMPY.items():
       params = np.array([1, 2, 3, 4, 5, 6]).astype(np.float32)
@@ -188,7 +182,7 @@ class ScatterTest(test.TestCase):
       # With GPU, the code ignores indices that are out of range.
       # We don't test the implementation; just test there's no failures.
       with self.test_session(force_gpu=True):
-        ref = variables.Variable(params)
+        ref = tf.Variable(params)
         ref.initializer.run()
 
         # Indices all in range, no problem.
@@ -203,4 +197,4 @@ class ScatterTest(test.TestCase):
 
 
 if __name__ == '__main__':
-  test.main()
+  tf.test.main()

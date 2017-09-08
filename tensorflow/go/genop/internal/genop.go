@@ -1,18 +1,16 @@
-/*
-Copyright 2016 The TensorFlow Authors. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 // Package internal generates Go source code with functions for TensorFlow operations.
 //
@@ -158,13 +156,12 @@ func makeOutputList(op *tf.Operation, start int, output string) ([]tf.Output, in
 `))
 
 	tmplOp = template.Must(template.New("op").Funcs(template.FuncMap{
-		"MakeComment":       makeComment,
-		"GoType":            goType,
-		"CamelCase":         camelCase,
-		"Identifier":        identifier,
-		"IsListArg":         isListArg,
-		"IsListAttr":        isListAttr,
-		"StripLeadingColon": stripLeadingColon,
+		"MakeComment": makeComment,
+		"GoType":      goType,
+		"CamelCase":   camelCase,
+		"Identifier":  identifier,
+		"IsListArg":   isListArg,
+		"IsListAttr":  isListAttr,
 	}).Parse(`
 {{if .OptionalAttrs -}}
 {{/* Type for specifying all optional attributes. */ -}}
@@ -177,7 +174,7 @@ type {{.Op.Name}}Attr func(optionalAttr)
 //
 // value: {{MakeComment .Description}}
 {{- end}}
-// If not specified, defaults to {{StripLeadingColon .DefaultValue}}
+// If not specified, defaults to {{.DefaultValue}}
 {{- if .HasMinimum}}
 //
 // {{if IsListAttr .}}REQUIRES: len(value) >= {{.Minimum}}{{else}}REQUIRES: value >= {{.Minimum}}{{end}}
@@ -215,10 +212,6 @@ func {{$.Op.Name}}{{CamelCase .Name}}(value {{GoType .Type}}) {{$.Op.Name}}Attr 
 {{- end -}}
 {{- end -}}
 
-{{- if (not .Op.OutputArg) }}
-//
-// Returns the created operation.
-{{- else }}
 {{- if .DescribeOutputs}}
 //
 {{- if ((len .Op.OutputArg) eq 1) }}
@@ -227,7 +220,6 @@ func {{$.Op.Name}}{{CamelCase .Name}}(value {{GoType .Type}}) {{$.Op.Name}}Attr 
 // Returns:
 {{- range .Op.OutputArg}}
 //	{{Identifier .Name}}{{if .Description}}: {{MakeComment .Description}}{{end}}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -252,16 +244,10 @@ func {{.Op.Name}}
 {{if .OptionalAttrs}}, optional ...{{.Op.Name}}Attr{{end -}}
 )
 
-{{- /* Construct outputs: len(OpDef.OutputArg) or a *tf.Operation */ -}}
+{{- /* Construct outputs: len(OpDef.OutputArg) + 1 (for error) */ -}}
 
-{{if .Op.OutputArg -}}
-({{range $i,$a := .Op.OutputArg}}{{if $i}}, {{end}}{{Identifier $a.Name}} {{if IsListArg $a}}[]{{end}}tf.Output{{end -}})
-{{- else -}}
-(o *tf.Operation)
-{{- end }} {
-	if scope.Err() != nil {
-		return
-	}
+({{range $i,$a := .Op.OutputArg}}{{if $i}}, {{end}}{{Identifier $a.Name}} {{if IsListArg $a}}[]{{end}}tf.Output{{end -}}
+{{if .Op.OutputArg}}, {{end}}err error) {
 	{{if .HasAttrs -}}
 	attrs := map[string]interface{}{ {{- range .RequiredAttrs}}{{printf "%q" .Name}}: {{Identifier .Name}},{{end}}}
 	{{if .OptionalAttrs -}}
@@ -276,37 +262,25 @@ func {{.Op.Name}}
 		Input: []tf.Input{
 			{{range .Op.InputArg}}{{if IsListArg .}}tf.OutputList({{Identifier .Name}}){{else}}{{Identifier .Name}}{{end}}, {{end}}
 		},
-		{{- end}}
-		{{- if .HasAttrs}}
-		Attrs: attrs,
-		{{- end}}
+		{{end}}
+		{{- if .HasAttrs}}Attrs: attrs,{{end}}
 	}
-	{{- if .Op.OutputArg}}
+	{{if .Op.OutputArg}}op, err :={{else}}_, err ={{end}} scope.Graph().AddOperation(opspec)
 	{{- if .HasListOutput}}
-	op := scope.AddOperation(opspec)
-	if scope.Err() != nil {
-		return
-	}
 	var idx int
-	var err error
 	{{- range $i, $a := .Op.OutputArg}}
 	{{- if IsListArg $a}}
 	if {{Identifier .Name}}, idx, err = makeOutputList(op, idx, {{printf "%q" .Name}}); err != nil {
-		scope.UpdateErr({{printf "%q" $.Op.Name}}, err)
-		return
+		return {{range $.Op.OutputArg}}{{Identifier .Name}}, {{end}}err
 	}
 	{{- else }}
 	{{Identifier .Name}} = op.Output(idx)
-	{{- end }}{{- /* if IsListArg */}}
-	{{- end }}{{- /* range .Op.OutputArg */}}
-	return {{range $i, $a := .Op.OutputArg}}{{if $i}}, {{end}}{{Identifier .Name}}{{end}}
+	{{- end }}
+	{{- end }}
+	return {{range .Op.OutputArg}}{{Identifier .Name}}, {{end}}err
 	{{- else }}
-	op := scope.AddOperation(opspec)
-	return {{range $i, $a := .Op.OutputArg}}{{if $i}}, {{end}}op.Output({{$i}}){{end}}
-	{{- end }}{{- /* if .HasListOutput */}}
-	{{- else }}
-	return scope.AddOperation(opspec)
-	{{- end }}{{- /* if .Op.OutputArg */}}
+	return {{range $i, $a := .Op.OutputArg}}op.Output({{$i}}), {{end}}err
+	{{- end }}
 }
 `))
 )
@@ -397,7 +371,7 @@ func goType(tfType string) (string, error) {
 	var gotype string
 	switch tfType {
 	case "int":
-		gotype = "int64"
+		gotype = "int"
 	case "float":
 		gotype = "float32"
 	case "bool":
@@ -405,7 +379,7 @@ func goType(tfType string) (string, error) {
 	case "type":
 		gotype = "tf.DataType"
 	case "shape":
-		gotype = "tf.Shape"
+		gotype = "[]int64"
 	case "tensor":
 		gotype = "tf.Tensor"
 	case "string":
@@ -453,23 +427,6 @@ func isListArg(argdef *pb.OpDef_ArgDef) bool {
 func isListAttr(attrdef *pb.OpDef_AttrDef) bool {
 	list, _ := parseTFType(attrdef.Type)
 	return list
-}
-
-// stripLeadingColon removes the prefix of the string up to the first colon.
-//
-// This is useful when 's' corresponds to a "oneof" protocol buffer message.
-// For example, consider the protocol buffer message:
-//   oneof value { bool b = 1;  int64 i = 2; }
-// String() on a Go corresponding object (using proto.CompactTextString) will
-// print "b:true", or "i:7" etc. This function strips out the leading "b:" or
-// "i:".
-func stripLeadingColon(s fmt.Stringer) string {
-	x := s.String()
-	y := strings.SplitN(x, ":", 2)
-	if len(y) < 2 {
-		return x
-	}
-	return y[1]
 }
 
 func parseTFType(tfType string) (list bool, typ string) {

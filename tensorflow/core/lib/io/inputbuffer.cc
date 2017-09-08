@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "tensorflow/core/lib/io/inputbuffer.h"
 #include "tensorflow/core/lib/core/errors.h"
-#include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
 namespace io {
@@ -44,26 +43,25 @@ Status InputBuffer::FillBuffer() {
 
 Status InputBuffer::ReadLine(string* result) {
   result->clear();
+  int i;
   Status s;
-  do {
-    size_t buf_remain = limit_ - pos_;
-    char* newline = static_cast<char*>(memchr(pos_, '\n', buf_remain));
-    if (newline != nullptr) {
-      size_t result_len = newline - pos_;
-      result->append(pos_, result_len);
-      pos_ = newline + 1;
-      if (!result->empty() && result->back() == '\r') {
-        result->resize(result->size() - 1);
+  for (i = 0;; i++) {
+    if (pos_ == limit_) {
+      // Get more data into buffer
+      s = FillBuffer();
+      if (limit_ == buf_) {
+        break;
       }
+    }
+    char c = *pos_++;
+    if (c == '\n') {
+      // We don't append the '\n' to *result
       return Status::OK();
     }
-    if (buf_remain > 0) result->append(pos_, buf_remain);
-    // Get more data into buffer
-    s = FillBuffer();
-    DCHECK_EQ(pos_, buf_);
-  } while (limit_ != buf_);
-  if (!result->empty() && result->back() == '\r') {
-    result->resize(result->size() - 1);
+    // We don't append '\r' to *result
+    if (c != '\r') {
+      *result += c;
+    }
   }
   if (errors::IsOutOfRange(s) && !result->empty()) {
     return Status::OK();

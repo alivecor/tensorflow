@@ -119,9 +119,11 @@ class DeviceMemory final : public DeviceMemoryBase {
       : DeviceMemoryBase(const_cast<DeviceMemoryBase &>(other).opaque(),
                          other.size(), other.is_sub_buffer()) {}
 
+  static constexpr size_t kElemSize = sizeof(ElemT);
+
   // Returns the number of elements of type ElemT that constitute this
   // allocation.
-  uint64 ElementCount() const { return size() / sizeof(ElemT); }
+  uint64 ElementCount() const { return size() / kElemSize; }
 
   // Returns whether this is a single-element allocation.
   bool IsScalar() const { return ElementCount() == 1; }
@@ -138,10 +140,27 @@ class DeviceMemory final : public DeviceMemoryBase {
   void ResetFromByteSize(void *opaque, uint64 bytes) {
     // TODO(leary) when NVCC is eliminated we can add this check (and the
     // logging include it requires).
-    // CHECK_EQ(0, bytes % sizeof(ElemT));
+    // CHECK_EQ(0, bytes % kElemSize);
     DeviceMemoryBase::Reset(opaque, bytes);
   }
 
+  // ------------------------------------------------------------
+  // DO NOT USE - FASTR TEAM-INTERNAL FUNCTIONS
+  // Used internally by gcudacc.
+#ifdef __GCUDACC__
+  // Implicit conversion operators needed to support mixed mode. Since buffer
+  // sizes aren't used in the CUDA launching process, and since the constructed
+  // objects are all temporary, this is safe.
+  // Linter warning disabled as we require an implicit conversion.
+  DeviceMemory(const ElemT *opaque) :  // NOLINT
+        DeviceMemoryBase(reinterpret_cast<void *>(const_cast<ElemT *>(opaque)),
+                         0) {}
+
+  operator ElemT *() { return reinterpret_cast<ElemT *>(opaque()); }
+  operator const ElemT *() {
+    return const_cast<const ElemT *>(reinterpret_cast<ElemT *>(opaque()));
+  }
+#endif
   // ------------------------------------------------------------
 
  protected:
@@ -180,11 +199,6 @@ class SharedDeviceMemory final : public DeviceMemoryBase {
 template <typename ElemT>
 class ScopedDeviceMemory {
  public:
-  // Default construction initializes the internal state to nullptr.  This
-  // mirrors the std::unique_ptr<> functionality, where default construction
-  // produces a nullptr unique_ptr, which can be assigned later.
-  ScopedDeviceMemory();
-
   // Parameters:
   //  parent: Executor used to deallocate memory when this instance goes
   //          out of scope.

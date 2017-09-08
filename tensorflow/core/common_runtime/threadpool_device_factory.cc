@@ -44,7 +44,6 @@ class ThreadPoolDeviceFactory : public DeviceFactory {
     return Status::OK();
   }
 };
-
-REGISTER_LOCAL_DEVICE_FACTORY("CPU", ThreadPoolDeviceFactory, 60);
+REGISTER_LOCAL_DEVICE_FACTORY("CPU", ThreadPoolDeviceFactory);
 
 }  // namespace tensorflow

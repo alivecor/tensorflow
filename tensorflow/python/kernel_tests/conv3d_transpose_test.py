@@ -12,24 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for convolution related functionality in tensorflow.ops.nn."""
 
+"""Tests for convolution related functionality in tensorflow.ops.nn."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import gradient_checker
-from tensorflow.python.ops import nn_ops
-import tensorflow.python.ops.nn_grad  # pylint: disable=unused-import
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class Conv3DTransposeTest(test.TestCase):
+class Conv3DTransposeTest(tf.test.TestCase):
 
   def testConv3DTransposeSingleStride(self):
     with self.test_session():
@@ -42,12 +36,10 @@ class Conv3DTransposeTest(test.TestCase):
       # Filter: [kernel_depth, kernel_height, kernel_width, out_depth, in_depth]
       f_shape = [3, 3, 3, 2, 3]
 
-      x = constant_op.constant(
-          1.0, shape=x_shape, name="x", dtype=dtypes.float32)
-      f = constant_op.constant(
-          1.0, shape=f_shape, name="filter", dtype=dtypes.float32)
-      output = nn_ops.conv3d_transpose(
-          x, f, y_shape, strides=strides, padding="SAME")
+      x = tf.constant(1.0, shape=x_shape, name="x", dtype=tf.float32)
+      f = tf.constant(1.0, shape=f_shape, name="filter", dtype=tf.float32)
+      output = tf.nn.conv3d_transpose(x, f, y_shape, strides=strides,
+                                      padding="SAME")
       value = output.eval()
 
       # We count the number of cells being added at the locations in the output.
@@ -92,12 +84,10 @@ class Conv3DTransposeTest(test.TestCase):
       # Filter: [kernel_depth, kernel_height, kernel_width, out_depth, in_depth]
       f_shape = [3, 3, 3, 2, 3]
 
-      x = constant_op.constant(
-          1.0, shape=x_shape, name="x", dtype=dtypes.float32)
-      f = constant_op.constant(
-          1.0, shape=f_shape, name="filter", dtype=dtypes.float32)
-      output = nn_ops.conv3d_transpose(
-          x, f, y_shape, strides=strides, padding="SAME")
+      x = tf.constant(1.0, shape=x_shape, name="x", dtype=tf.float32)
+      f = tf.constant(1.0, shape=f_shape, name="filter", dtype=tf.float32)
+      output = tf.nn.conv3d_transpose(x, f, y_shape, strides=strides,
+                                      padding="SAME")
       value = output.eval()
 
       for n in xrange(x_shape[0]):
@@ -130,12 +120,10 @@ class Conv3DTransposeTest(test.TestCase):
       # Filter: [kernel_depth, kernel_height, kernel_width, out_depth, in_depth]
       f_shape = [3, 3, 3, 2, 3]
 
-      x = constant_op.constant(
-          1.0, shape=x_shape, name="x", dtype=dtypes.float32)
-      f = constant_op.constant(
-          1.0, shape=f_shape, name="filter", dtype=dtypes.float32)
-      output = nn_ops.conv3d_transpose(
-          x, f, y_shape, strides=strides, padding="VALID")
+      x = tf.constant(1.0, shape=x_shape, name="x", dtype=tf.float32)
+      f = tf.constant(1.0, shape=f_shape, name="filter", dtype=tf.float32)
+      output = tf.nn.conv3d_transpose(x, f, y_shape, strides=strides,
+                                      padding="VALID")
       value = output.eval()
 
       cache_values = np.zeros(y_shape, dtype=np.float32)
@@ -181,16 +169,16 @@ class Conv3DTransposeTest(test.TestCase):
     x_val = np.random.random_sample(x_shape).astype(np.float64)
     f_val = np.random.random_sample(f_shape).astype(np.float64)
     with self.test_session():
-      x = constant_op.constant(x_val, name="x", dtype=dtypes.float32)
-      f = constant_op.constant(f_val, name="f", dtype=dtypes.float32)
-      output = nn_ops.conv3d_transpose(
-          x, f, y_shape, strides=strides, padding="SAME")
-      err = gradient_checker.compute_gradient_error([x, f], [x_shape, f_shape],
-                                                    output, y_shape)
+      x = tf.constant(x_val, name="x", dtype=tf.float32)
+      f = tf.constant(f_val, name="f", dtype=tf.float32)
+      output = tf.nn.conv3d_transpose(x, f, y_shape, strides=strides,
+                                      padding="SAME")
+      err = tf.test.compute_gradient_error(
+          [x, f], [x_shape, f_shape], output, y_shape)
     print("conv3d_transpose gradient err = %g " % err)
     err_tolerance = 0.0005
     self.assertLess(err, err_tolerance)
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

@@ -27,13 +27,6 @@ EventMgr::EventMgr(gpu::StreamExecutor* se, const GPUOptions& gpu_options)
       deferred_bytes_threshold_(gpu_options.deferred_deletion_bytes()
                                     ? gpu_options.deferred_deletion_bytes()
                                     : 8 * 1048576),
-      polling_active_delay_usecs_(gpu_options.polling_active_delay_usecs()
-                                      ? gpu_options.polling_active_delay_usecs()
-                                      : 10),
-      polling_inactive_delay_msecs_(
-          gpu_options.polling_inactive_delay_msecs()
-              ? gpu_options.polling_inactive_delay_msecs()
-              : 1),
       accumulated_stream_(nullptr),
       accumulated_tensors_(new TensorReferenceVector),
       accumulated_tensor_bytes_(0),
@@ -77,14 +70,14 @@ EventMgr::~EventMgr() {
 }
 
 void EventMgr::StartPollingLoop() {
-  CHECK(polling_stopped_ == nullptr);
+  CHECK(polling_stopped_.get() == nullptr);
   stop_polling_.reset(new Notification);
   polling_stopped_.reset(new Notification);
   threadpool_.Schedule([this]() { PollLoop(); });
 }
 
 void EventMgr::StopPollingLoop() {
-  if (stop_polling_) {
+  if (stop_polling_.get()) {
     stop_polling_->Notify();
     polling_stopped_->WaitForNotification();
     stop_polling_.reset(nullptr);
@@ -128,13 +121,15 @@ void EventMgr::FlushAccumulatedTensors() {
 // to poll frequently when the queue is non-empty, and infrequently
 // otherwise.
 void EventMgr::PollLoop() {
+  const int32 kPollingDelayUsecs = 10;
+  const int32 kPollingSuspendMsecs = 1;
   bool queue_empty = false;
   while (!stop_polling_->HasBeenNotified()) {
     if (queue_empty) {
       mutex_lock l(mu_);
-      WaitForMilliseconds(&l, &events_pending_, polling_inactive_delay_msecs_);
+      WaitForMilliseconds(&l, &events_pending_, kPollingSuspendMsecs);
     } else {
-      Env::Default()->SleepForMicroseconds(polling_active_delay_usecs_);
+      Env::Default()->SleepForMicroseconds(kPollingDelayUsecs);
     }
     ToFreeVector to_free;
     {

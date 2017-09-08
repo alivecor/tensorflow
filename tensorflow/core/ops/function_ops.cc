@@ -14,19 +14,14 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/shape_inference.h"
 
 namespace tensorflow {
 
-REGISTER_SYSTEM_OP("_Arg")
+REGISTER_OP("_Arg")
     .Output("output: T")
     .Attr("T: type")
     .Attr("index: int >= 0")
     .SetIsStateful()
-    .SetShapeFn([](shape_inference::InferenceContext* context) {
-      context->set_output(0, context->UnknownShape());
-      return Status::OK();
-    })
     .Doc(R"doc(
 A graph node which represents an argument to a function.
 
@@ -34,14 +29,11 @@ output: The argument.
 index: This argument is the index-th argument of the function.
 )doc");
 
-REGISTER_SYSTEM_OP("_Retval")
+REGISTER_OP("_Retval")
     .Input("input: T")
     .Attr("T: type")
     .Attr("index: int >= 0")
     .SetIsStateful()
-    .SetShapeFn([](shape_inference::InferenceContext* context) {
-      return Status::OK();
-    })
     .Doc(R"doc(
 A graph node which represents a return value of a function.
 

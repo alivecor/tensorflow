@@ -17,7 +17,6 @@ limitations under the License.
 
 #include "tensorflow/core/framework/op.h"
 
-#include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
 
 namespace tensorflow {
@@ -48,11 +47,10 @@ TEST(OpRegistrationTest, TestDuplicate) {
   Status s = registry->ProcessRegistrations();
   EXPECT_TRUE(s.ok());
 
-  TF_EXPECT_OK(
-      registry->SetWatcher([](const Status& s, const OpDef& op_def) -> Status {
-        EXPECT_TRUE(errors::IsAlreadyExists(s));
-        return Status::OK();
-      }));
+  registry->SetWatcher([](const Status& s, const OpDef& op_def) -> Status {
+    EXPECT_TRUE(errors::IsAlreadyExists(s));
+    return Status::OK();
+  });
   Register("Foo", registry.get());
   s = registry->ProcessRegistrations();
   EXPECT_TRUE(s.ok());

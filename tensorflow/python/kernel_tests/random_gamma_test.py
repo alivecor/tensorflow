@@ -12,40 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for tensorflow.ops.random_ops.random_gamma."""
 
+"""Tests for tensorflow.ops.random_ops.random_gamma."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import math
-
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
-from tensorflow.python.framework import random_seed
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import random_ops
-from tensorflow.python.platform import test
-from tensorflow.python.platform import tf_logging
+import tensorflow as tf
 
 
-class RandomGammaTest(test.TestCase):
+class RandomGammaTest(tf.test.TestCase):
   """This is a medium test due to the moments computation taking some time."""
 
   def setUp(self):
     np.random.seed(137)
-    random_seed.set_random_seed(137)
+    tf.set_random_seed(137)
 
   def _Sampler(self, num, alpha, beta, dtype, use_gpu, seed=None):
 
     def func():
-      with self.test_session(use_gpu=use_gpu, graph=ops.Graph()) as sess:
-        rng = random_ops.random_gamma(
-            [num], alpha, beta=beta, dtype=dtype, seed=seed)
+      with self.test_session(use_gpu=use_gpu, graph=tf.Graph()) as sess:
+        rng = tf.random_gamma([num], alpha, beta=beta, dtype=dtype, seed=seed)
         ret = np.empty([10, num])
         for i in xrange(10):
           ret[i, :] = sess.run(rng)
@@ -54,16 +44,16 @@ class RandomGammaTest(test.TestCase):
     return func
 
   def testMomentsFloat32(self):
-    self._testMoments(dtypes.float32)
+    self._testMoments(tf.float32)
 
   def testMomentsFloat64(self):
-    self._testMoments(dtypes.float64)
+    self._testMoments(tf.float64)
 
   def _testMoments(self, dt):
     try:
       from scipy import stats  # pylint: disable=g-import-not-at-top
     except ImportError as e:
-      tf_logging.warn("Cannot test moments: %s" % e)
+      tf.logging.warn("Cannot test moments: %s" % e)
       return
 
     # Check the given array of samples matches the given theoretical moment
@@ -83,7 +73,7 @@ class RandomGammaTest(test.TestCase):
 
     for stride in 0, 1, 4, 17:
       alphas = [0.2, 1.0, 3.0]
-      if dt == dtypes.float64:
+      if dt == tf.float64:
         alphas = [0.01] + alphas
       for alpha in alphas:
         for scale in 9, 17:
@@ -117,12 +107,13 @@ class RandomGammaTest(test.TestCase):
             # This is just
             #  (moments_i_squared - moments_i_mean**2) / moments_sample_count[i]
             normalized_moments_i_var = (
-                moments_i_mean / moments_sample_count[i] *
-                (moments_i_squared / moments_i_mean - moments_i_mean))
+                moments_i_mean / moments_sample_count[i] * (
+                    moments_i_squared/moments_i_mean - moments_i_mean))
             # Assume every operation has a small numerical error.
             # It takes i multiplications to calculate one i-th moment.
             error_per_moment = i * np.finfo(dt.as_numpy_dtype).eps
-            total_variance = (normalized_moments_i_var + error_per_moment)
+            total_variance = (
+                normalized_moments_i_var + error_per_moment)
             tiny = np.finfo(dt.as_numpy_dtype).tiny
             self.assertGreaterEqual(total_variance, 0)
             if total_variance < tiny:
@@ -144,16 +135,16 @@ class RandomGammaTest(test.TestCase):
     try:
       from scipy import stats  # pylint: disable=g-import-not-at-top
     except ImportError as e:
-      tf_logging.warn("Cannot test zero density proportions: %s" % e)
+      tf.logging.warn("Cannot test zero density proportions: %s" % e)
       return
     allowable_zeros = {
-        dtypes.float16: stats.gamma(alpha).cdf(np.finfo(np.float16).tiny),
-        dtypes.float32: stats.gamma(alpha).cdf(np.finfo(np.float32).tiny),
-        dtypes.float64: stats.gamma(alpha).cdf(np.finfo(np.float64).tiny)
+        tf.float16: stats.gamma(alpha).cdf(np.finfo(np.float16).tiny),
+        tf.float32: stats.gamma(alpha).cdf(np.finfo(np.float32).tiny),
+        tf.float64: stats.gamma(alpha).cdf(np.finfo(np.float64).tiny)
     }
     failures = []
     for use_gpu in [False, True]:
-      for dt in dtypes.float16, dtypes.float32, dtypes.float64:
+      for dt in tf.float16, tf.float32, tf.float64:
         sampler = self._Sampler(
             10000, alpha, 1.0, dt, use_gpu=use_gpu, seed=12345)
         x = sampler()
@@ -174,13 +165,13 @@ class RandomGammaTest(test.TestCase):
   # implementations which uses the same random number seed.
   def testDistinct(self):
     for use_gpu in [False, True]:
-      for dt in dtypes.float16, dtypes.float32, dtypes.float64:
+      for dt in tf.float16, tf.float32, tf.float64:
         sampler = self._Sampler(1000, 2.0, 1.0, dt, use_gpu=use_gpu)
         x = sampler()
         y = sampler()
         # Number of different samples.
         count = (x == y).sum()
-        count_limit = 20 if dt == dtypes.float16 else 10
+        count_limit = 20 if dt == tf.float16 else 10
         if count >= count_limit:
           print(use_gpu, dt)
           print("x = ", x)
@@ -191,19 +182,19 @@ class RandomGammaTest(test.TestCase):
   # Checks that the CPU and GPU implementation returns the same results,
   # given the same random seed
   def testCPUGPUMatch(self):
-    for dt in dtypes.float16, dtypes.float32, dtypes.float64:
+    for dt in tf.float16, tf.float32, tf.float64:
       results = {}
       for use_gpu in [False, True]:
         sampler = self._Sampler(1000, 0.0, 1.0, dt, use_gpu=use_gpu, seed=12345)
         results[use_gpu] = sampler()
-      if dt == dtypes.float16:
+      if dt == tf.float16:
         self.assertAllClose(results[False], results[True], rtol=1e-3, atol=1e-3)
       else:
         self.assertAllClose(results[False], results[True], rtol=1e-6, atol=1e-6)
 
   def testSeed(self):
     for use_gpu in [False, True]:
-      for dt in dtypes.float16, dtypes.float32, dtypes.float64:
+      for dt in tf.float16, tf.float32, tf.float64:
         sx = self._Sampler(1000, 0.0, 1.0, dt, use_gpu=use_gpu, seed=345)
         sy = self._Sampler(1000, 0.0, 1.0, dt, use_gpu=use_gpu, seed=345)
         self.assertAllEqual(sx(), sy())
@@ -214,53 +205,37 @@ class RandomGammaTest(test.TestCase):
     SetIsStateful() should prevent two identical random ops from getting
     merged.
     """
-    for dtype in dtypes.float16, dtypes.float32, dtypes.float64:
+    for dtype in tf.float16, tf.float32, tf.float64:
       for use_gpu in [False, True]:
         with self.test_session(use_gpu=use_gpu):
-          rnd1 = random_ops.random_gamma([24], 2.0, dtype=dtype)
-          rnd2 = random_ops.random_gamma([24], 2.0, dtype=dtype)
+          rnd1 = tf.random_gamma([24], 2.0, dtype=dtype)
+          rnd2 = tf.random_gamma([24], 2.0, dtype=dtype)
           diff = rnd2 - rnd1
           self.assertGreater(np.linalg.norm(diff.eval()), 0.1)
 
   def testShape(self):
     # Fully known shape.
-    rnd = random_ops.random_gamma([150], 2.0)
+    rnd = tf.random_gamma([150], 2.0)
     self.assertEqual([150], rnd.get_shape().as_list())
-    rnd = random_ops.random_gamma([150], 2.0, beta=[3.0, 4.0])
+    rnd = tf.random_gamma([150], 2.0, beta=[3.0, 4.0])
     self.assertEqual([150, 2], rnd.get_shape().as_list())
-    rnd = random_ops.random_gamma([150], array_ops.ones([1, 2, 3]))
+    rnd = tf.random_gamma([150], tf.ones([1, 2, 3]))
     self.assertEqual([150, 1, 2, 3], rnd.get_shape().as_list())
-    rnd = random_ops.random_gamma([20, 30], array_ops.ones([1, 2, 3]))
+    rnd = tf.random_gamma([20, 30], tf.ones([1, 2, 3]))
     self.assertEqual([20, 30, 1, 2, 3], rnd.get_shape().as_list())
-    rnd = random_ops.random_gamma(
-        [123], array_ops.placeholder(
-            dtypes.float32, shape=(2,)))
+    rnd = tf.random_gamma([123], tf.placeholder(tf.float32, shape=(2,)))
     self.assertEqual([123, 2], rnd.get_shape().as_list())
     # Partially known shape.
-    rnd = random_ops.random_gamma(
-        array_ops.placeholder(
-            dtypes.int32, shape=(1,)), array_ops.ones([7, 3]))
+    rnd = tf.random_gamma(tf.placeholder(tf.int32, shape=(1,)), tf.ones([7, 3]))
     self.assertEqual([None, 7, 3], rnd.get_shape().as_list())
-    rnd = random_ops.random_gamma(
-        array_ops.placeholder(
-            dtypes.int32, shape=(3,)), array_ops.ones([9, 6]))
+    rnd = tf.random_gamma(tf.placeholder(tf.int32, shape=(3,)), tf.ones([9, 6]))
     self.assertEqual([None, None, None, 9, 6], rnd.get_shape().as_list())
     # Unknown shape.
-    rnd = random_ops.random_gamma(
-        array_ops.placeholder(dtypes.int32),
-        array_ops.placeholder(dtypes.float32))
+    rnd = tf.random_gamma(tf.placeholder(tf.int32), tf.placeholder(tf.float32))
     self.assertIs(None, rnd.get_shape().ndims)
-    rnd = random_ops.random_gamma([50], array_ops.placeholder(dtypes.float32))
+    rnd = tf.random_gamma([50], tf.placeholder(tf.float32))
     self.assertIs(None, rnd.get_shape().ndims)
-
-  def testPositive(self):
-    n = int(10e3)
-    for dt in [dtypes.float16, dtypes.float32, dtypes.float64]:
-      with self.test_session():
-        x = random_ops.random_gamma(shape=[n], alpha=0.001, dtype=dt, seed=0)
-        self.assertEqual(0, math_ops.reduce_sum(math_ops.cast(
-            math_ops.less_equal(x, 0.), dtype=dtypes.int64)).eval())
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

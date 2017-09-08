@@ -79,14 +79,14 @@ void MemTermDestination(j_compress_ptr cinfo) {
 
 // -----------------------------------------------------------------------------
 void SetDest(j_compress_ptr cinfo, void *buffer, int bufsize) {
-  SetDest(cinfo, buffer, bufsize, nullptr);
+  SetDest(cinfo, buffer, bufsize, NULL);
 }
 
 // -----------------------------------------------------------------------------
 void SetDest(j_compress_ptr cinfo, void *buffer, int bufsize,
              string *destination) {
   MemDestMgr *dest;
-  if (cinfo->dest == nullptr) {
+  if (cinfo->dest == NULL) {
     cinfo->dest = reinterpret_cast<struct jpeg_destination_mgr *>(
         (*cinfo->mem->alloc_small)(reinterpret_cast<j_common_ptr>(cinfo),
                                    JPOOL_PERMANENT, sizeof(MemDestMgr)));
@@ -147,16 +147,8 @@ void MemTermSource(j_decompress_ptr cinfo) {}
 // -----------------------------------------------------------------------------
 void MemSkipInputData(j_decompress_ptr cinfo, long jump) {
   MemSourceMgr *src = reinterpret_cast<MemSourceMgr *>(cinfo->src);
-  if (jump < 0) {
-    return;
-  }
-  if (jump > src->pub.bytes_in_buffer) {
-    src->pub.bytes_in_buffer = 0;
-    (void)MemFillInputBuffer(cinfo);  // warn with a fake EOI or error
-  } else {
-    src->pub.bytes_in_buffer -= jump;
-    src->pub.next_input_byte += jump;
-  }
+  src->pub.bytes_in_buffer -= jump;
+  src->pub.next_input_byte += jump;
 }
 
 // -----------------------------------------------------------------------------
@@ -177,7 +169,7 @@ void SetSrc(j_decompress_ptr cinfo, const void *data,
   src->data = reinterpret_cast<const unsigned char *>(data);
   src->datasize = datasize;
   src->pub.bytes_in_buffer = 0;
-  src->pub.next_input_byte = nullptr;
+  src->pub.next_input_byte = NULL;
   src->try_recover_truncated_jpeg = try_recover_truncated_jpeg;
 }
 

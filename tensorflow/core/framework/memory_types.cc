@@ -15,10 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/memory_types.h"
 
-#include <utility>
-
 #include "tensorflow/core/framework/kernel_def.pb.h"
-#include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/types.h"
@@ -67,7 +64,7 @@ MemoryType MTypeFromDType(const DataType dtype) {
 }  // namespace
 
 Status MemoryTypesForNode(const OpRegistryInterface* op_registry,
-                          const DeviceType& device_type, const NodeDef& ndef,
+                          DeviceType device_type, const NodeDef& ndef,
                           MemoryTypeVector* inp_mtypes,
                           MemoryTypeVector* out_mtypes) {
   // Look up the Op registered for this op name.
@@ -117,22 +114,6 @@ Status MemoryTypesForNode(const OpRegistryInterface* op_registry,
     return errors::InvalidArgument(
         "HostMemory args '", str_util::Join(host_memory_args, "', '"),
         "' not found in OpDef: ", SummarizeOpDef(*op_def));
-  }
-
-  std::vector<int32> hostmem_attr;
-  if (GetNodeAttr(ndef, "_input_hostmem", &hostmem_attr).ok()) {
-    for (int32 i : hostmem_attr) {
-      if (0 <= i && i < inp_mtypes->size()) {
-        (*inp_mtypes)[i] = HOST_MEMORY;
-      }
-    }
-  }
-  if (GetNodeAttr(ndef, "_output_hostmem", &hostmem_attr).ok()) {
-    for (int32 i : hostmem_attr) {
-      if (0 <= i && i < out_mtypes->size()) {
-        (*out_mtypes)[i] = HOST_MEMORY;
-      }
-    }
   }
 
   return Status::OK();

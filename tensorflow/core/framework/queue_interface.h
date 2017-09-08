@@ -77,9 +77,6 @@ class QueueInterface : public ResourceBase {
   virtual void Close(OpKernelContext* ctx, bool cancel_pending_enqueues,
                      DoneCallback callback) = 0;
 
-  // Returns true if a given queue is closed and false if it is open.
-  virtual bool is_closed() const = 0;
-
   // Assuming *this represents a shared queue, verify that it matches
   // another instantiation indicated by node_def.
   virtual Status MatchesNodeDef(const NodeDef& node_def) = 0;
@@ -89,9 +86,7 @@ class QueueInterface : public ResourceBase {
 
   virtual const DataTypeVector& component_dtypes() const = 0;
 
-  string DebugString() override {
-    return strings::StrCat("A Queue of size: ", size());
-  }
+  string DebugString() override { return "A queue"; }
 
  protected:
   virtual ~QueueInterface() {}

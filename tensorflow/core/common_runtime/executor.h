@@ -39,7 +39,7 @@ class StepStatsCollector;
 //   Rendezvous* rendezvous = NewNaiveRendezvous();
 //   TF_CHECK_OK(rendezvous->Send("input", some_input_tensor));
 //   TF_CHECK_OK(executor->Run({ExecutorOpts, rendezvous, nullptr}));
-//   TF_CHECK_OK(rendezvous->Recv("output", &output_tensor));
+//   TF_CHECK_OK(rendezvous->Recv("input", &output_tensor));
 //   ... ...
 //
 // Multiple threads can call Executor::Run concurrently.
@@ -74,8 +74,8 @@ class Executor {
   //
   // RunAsync() uses "cancellation_manager", if not nullptr, to
   // register callbacks that should be called if the graph computation
-  // is canceled. Note that the callbacks merely unblock any
-  // long-running computation, and a canceled step will terminate by
+  // is cancelled. Note that the callbacks merely unblock any
+  // long-running computation, and a cancelled step will terminate by
   // returning/calling the DoneCallback as usual.
   //
   // RunAsync() dispatches closures to "runner". Typically, "runner"
@@ -88,10 +88,7 @@ class Executor {
     CancellationManager* cancellation_manager = nullptr;
     SessionState* session_state = nullptr;
     TensorStore* tensor_store = nullptr;
-    ScopedStepContainer* step_container = nullptr;
-
-    // If true, calls Sync() on the device.
-    bool sync_on_finish = false;
+    ResourceMgr* step_resource_manager = nullptr;
 
     typedef std::function<void()> Closure;
     typedef std::function<void(Closure)> Runner;
@@ -162,7 +159,7 @@ class ExecutorBarrier {
   //
   // 'done' is called after the last executor completes, and
   // ExecutorBarrier is deleted.
-  ExecutorBarrier(size_t num, Rendezvous* r, StatusCallback done)
+  ExecutorBarrier(int num, Rendezvous* r, StatusCallback done)
       : rendez_(r), done_cb_(done), pending_(num) {}
 
   ~ExecutorBarrier() {}

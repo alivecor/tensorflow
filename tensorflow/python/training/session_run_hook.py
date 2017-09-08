@@ -42,48 +42,34 @@ For more specific needs, you can create custom hooks:
       print('Starting the session.')
       self.your_tensor = ...
 
-    def after_create_session(self, session, coord):
-      # When this is called, the graph is finalized and
-      # ops can no longer be added to the graph.
-      print('Session created.')
+    def end(self, session):
+      print('Done with the session.')
 
     def before_run(self, run_context):
-      print('Before calling session.run().')
+      print('before calling session.run)
       return SessionRunArgs(self.your_tensor)
 
-    def after_run(self, run_context, run_values):
+    def after_run(self, run_context, run_values)
       print('Done running one step. The value of my tensor: %s',
             run_values.results)
       if you-need-to-stop-loop:
         run_context.request_stop()
 
-    def end(self, session):
-      print('Done with the session.')
-
 To understand how hooks interact with calls to `MonitoredSession.run()`,
 look at following code:
-  with MonitoredTrainingSession(hooks=your_hooks, ...) as sess:
-    while not sess.should_stop():
+  with SupervisedSession(hooks=your_hooks, ...) as sess
+    while not sess.should_stop()
       sess.run(your_fetches)
 
 Above user code leads to following execution:
-  call hooks.begin()
+  call hooks.begin
   sess = tf.Session()
-  call hooks.after_create_session()
   while not stop is requested:
     call hooks.before_run()
-    try:
-      results = sess.run(merged_fetches, feed_dict=merged_feeds)
-    except (errors.OutOfRangeError, StopIteration):
-      break
+    results = sess.run(merged_fetches)
     call hooks.after_run()
   call hooks.end()
   sess.close()
-
-Note that if sess.run() raises OutOfRangeError or StopIteration then
-hooks.after_run() will not be called but hooks.end() will still be called.
-If sess.run() raises any other exception then neither hooks.after_run() nor
-hooks.end() will be called.
 
 @@SessionRunHook
 @@SessionRunArgs
@@ -109,23 +95,6 @@ class SessionRunHook(object):
     After the `begin()` call the graph will be finalized and the other callbacks
     can not modify the graph anymore. Second call of `begin()` on the same
     graph, should not change the graph.
-    """
-    pass
-
-  def after_create_session(self, session, coord):  # pylint: disable=unused-argument
-    """Called when new TensorFlow session is created.
-
-    This is called to signal the hooks that a new session has been created. This
-    has two essential differences with the situation in which `begin` is called:
-
-    * When this is called, the graph is finalized and ops can no longer be added
-        to the graph.
-    * This method will also be called as a result of recovering a wrapped
-        session, not only at the beginning of the overall session.
-
-    Args:
-      session: A TensorFlow Session that has been created.
-      coord: A Coordinator object which keeps track of all threads.
     """
     pass
 
@@ -163,8 +132,6 @@ class SessionRunHook(object):
     The `run_context` argument is the same one send to `before_run` call.
     `run_context.request_stop()` can be called to stop the iteration.
 
-    If `session.run()` raises any exceptions then `after_run()` is not called.
-
     Args:
       run_context: A `SessionRunContext` object.
       run_values: A SessionRunValues object.
@@ -177,12 +144,6 @@ class SessionRunHook(object):
     The `session` argument can be used in case the hook wants to run final ops,
     such as saving a last checkpoint.
 
-    If `session.run()` raises exception other than OutOfRangeError or
-    StopIteration then `end()` is not called.
-    Note the difference between `end()` and `after_run()` behavior when
-    `session.run()` raises OutOfRangeError or StopIteration. In that case
-    `end()` is called but `after_run()` is not called.
-
     Args:
       session: A TensorFlow Session that will be soon closed.
     """
@@ -191,7 +152,7 @@ class SessionRunHook(object):
 
 class SessionRunArgs(
     collections.namedtuple("SessionRunArgs",
-                           ["fetches", "feed_dict", "options"])):
+                           ["fetches", "feed_dict"])):
   """Represents arguments to be added to a `Session.run()` call.
 
   Args:
@@ -205,12 +166,10 @@ class SessionRunArgs(
         fetches = {'step': global_step_tensor,
                    'ops': [train_op, check_nan_op]}
     feed_dict: Exactly like the `feed_dict` argument to `Session.Run()`
-    options: Exactly like the `options` argument to `Session.run()`, i.e., a
-      config_pb2.RunOptions proto.
   """
 
-  def __new__(cls, fetches, feed_dict=None, options=None):
-    return super(SessionRunArgs, cls).__new__(cls, fetches, feed_dict, options)
+  def __new__(cls, fetches, feed_dict=None):
+    return super(SessionRunArgs, cls).__new__(cls, fetches, feed_dict)
 
 
 class SessionRunContext(object):
@@ -264,9 +223,7 @@ class SessionRunContext(object):
     self._stop_requested = True
 
 
-class SessionRunValues(
-    collections.namedtuple("SessionRunValues",
-                           ["results", "options", "run_metadata"])):
+class SessionRunValues(collections.namedtuple("SessionRunValues", ["results"])):
   """Contains the results of `Session.run()`.
 
   In the future we may use this object to add more information about result of
@@ -282,6 +239,4 @@ class SessionRunValues(
         => results = [None, nparray(string), nparray(int)]
         fetches = {'step': global_step_tensor, 'summ': summary_op}
         => results = {'step': nparray(int), 'summ': nparray(string)}
-    options: `RunOptions` from the `Session.run()` call.
-    run_metadata: `RunMetadata` from the `Session.run()` call.
   """

@@ -13,23 +13,15 @@
 # limitations under the License.
 # ==============================================================================
 """Tests for draw_bounding_box_op."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import image_ops
-from tensorflow.python.ops import image_ops_impl
-from tensorflow.python.ops import math_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class DrawBoundingBoxOpTest(test.TestCase):
+class DrawBoundingBoxOpTest(tf.test.TestCase):
 
   def _fillBorder(self, image, color):
     """Fill the border of the image.
@@ -62,8 +54,9 @@ class DrawBoundingBoxOpTest(test.TestCase):
     """
     # THIS TABLE MUST MATCH draw_bounding_box_op.cc
     color_table = np.asarray([[1, 1, 0, 1], [0, 0, 1, 1], [1, 0, 0, 1],
-                              [0, 1, 0, 1], [0.5, 0, 0.5, 1], [0.5, 0.5, 0, 1],
-                              [0.5, 0, 0, 1], [0, 0, 0.5, 1], [0, 1, 1, 1],
+                              [0, 1, 0, 1], [0.5, 0, 0.5, 1],
+                              [0.5, 0.5, 0, 1], [0.5, 0, 0, 1],
+                              [0, 0, 0.5, 1], [0, 1, 1, 1],
                               [1, 0, 1, 1]])
     assert len(img.shape) == 3
     depth = img.shape[2]
@@ -80,12 +73,12 @@ class DrawBoundingBoxOpTest(test.TestCase):
       test_drawn_image = self._fillBorder(image, color)
       bboxes = np.asarray([0, 0, 1, 1])
       bboxes = np.vstack([bboxes for _ in range(num_boxes)])
-      bboxes = math_ops.to_float(bboxes)
-      bboxes = array_ops.expand_dims(bboxes, 0)
-      image = ops.convert_to_tensor(image)
-      image = image_ops_impl.convert_image_dtype(image, dtypes.float32)
-      image = array_ops.expand_dims(image, 0)
-      image = image_ops.draw_bounding_boxes(image, bboxes)
+      bboxes = tf.to_float(bboxes)
+      bboxes = tf.expand_dims(bboxes, 0)
+      image = tf.convert_to_tensor(image)
+      image = tf.image.convert_image_dtype(image, tf.float32)
+      image = tf.expand_dims(image, 0)
+      image = tf.image.draw_bounding_boxes(image, bboxes)
       with self.test_session(use_gpu=False) as sess:
         op_drawn_image = np.squeeze(sess.run(image), 0)
         self.assertAllEqual(test_drawn_image, op_drawn_image)
@@ -105,6 +98,5 @@ class DrawBoundingBoxOpTest(test.TestCase):
     image = np.zeros([4, 4, 1], "float32")
     self._testDrawBoundingBoxColorCycling(image)
 
-
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

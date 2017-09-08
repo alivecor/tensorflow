@@ -168,43 +168,6 @@ limitations under the License.
 
 namespace tensorflow {
 
-// Forward declaration.
-class OpKernelContext;
-
-template <typename Device, typename T>
-struct LaunchConv2DBackpropInputOp {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& out_backprop, const Tensor& filter,
-                  int row_stride, int col_stride, const Padding& padding,
-                  Tensor* in_backprop, TensorFormat data_format);
-};
-
-template <typename Device, typename T>
-struct LaunchConv2DBackpropFilterOp {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& out_backprop, const Tensor& input,
-                  int row_stride, int col_stride, const Padding& padding,
-                  Tensor* filter_backprop, TensorFormat data_format);
-};
-
-#ifdef GOOGLE_CUDA
-template <typename T>
-struct LaunchConv2DBackpropInputOp<Eigen::GpuDevice, T> {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& input, const Tensor& filter, int row_stride,
-                  int col_stride, const Padding& padding, Tensor* output,
-                  TensorFormat data_format);
-};
-
-template <typename T>
-struct LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T> {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& out_backprop, const Tensor& input,
-                  int row_stride, int col_stride, const Padding& padding,
-                  Tensor* filter_backprop, TensorFormat data_format);
-};
-#endif  // GOOGLE_CUDA
-
 // Information about a single spatial dimension for a convolution
 // backpropagation.
 struct ConvBackpropSpatialDimension {
@@ -215,14 +178,14 @@ struct ConvBackpropSpatialDimension {
   int64 expanded_output_size;
 
   // Number of padding elements to be added before/after this dimension of
-  // the input when computing Conv?DBackpropInput.
+  // the input when computing Conv2DBackpropInput.
   int64 pad_before, pad_after;
 };
 
-// Computed dimensions for a backwards convolution.
-struct ConvBackpropDimensions {
+// Computed dimensions for a Conv2D backpropagation.
+struct Conv2DBackpropDimensions {
   // Information about each spatial dimension.
-  gtl::InlinedVector<ConvBackpropSpatialDimension, 3> spatial_dims;
+  ConvBackpropSpatialDimension rows, cols;
 
   // Batch size.
   int64 batch_size;
@@ -231,16 +194,14 @@ struct ConvBackpropDimensions {
   int64 in_depth, out_depth;
 };
 
-// Common code between implementations of Conv?DBackpropInput and
-// Conv?DBackpropFilter. Verifies that the dimensions all match, and computes
-// sizes/padding for the spatial dimensions.
-Status ConvBackpropComputeDimensions(StringPiece label, int num_spatial_dims,
-                                     const TensorShape& input_shape,
-                                     const TensorShape& filter_shape,
-                                     const TensorShape& out_backprop_shape,
-                                     const std::vector<int32>& strides,
-                                     Padding padding, TensorFormat data_format,
-                                     ConvBackpropDimensions* dims);
+// Common code between implementations of Conv2DBackpropInput and
+// Conv2DBackpropFilter. Verifies that the dimensions all match, and computes
+// sizes/padding for rows and columns.
+Status Conv2DBackpropComputeDimensions(
+    StringPiece label, const TensorShape& input_shape,
+    const TensorShape& filter_shape, const TensorShape& out_backprop_shape,
+    const std::vector<int32>& strides, Padding padding,
+    TensorFormat data_format, Conv2DBackpropDimensions* dims);
 
 }  // namespace tensorflow
 

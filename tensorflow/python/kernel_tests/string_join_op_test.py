@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Tests for string_join_op."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.ops import string_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class StringJoinOpTest(test.TestCase):
+class StringJoinOpTest(tf.test.TestCase):
 
   def testStringJoin(self):
     input0 = ["a", "b"]
@@ -29,24 +29,24 @@ class StringJoinOpTest(test.TestCase):
     input2 = [["b"], ["c"]]
 
     with self.test_session():
-      output = string_ops.string_join([input0, input1])
+      output = tf.string_join([input0, input1])
       self.assertAllEqual(output.eval(), [b"aa", b"ba"])
 
-      output = string_ops.string_join([input0, input1], separator="--")
+      output = tf.string_join([input0, input1], separator="--")
       self.assertAllEqual(output.eval(), [b"a--a", b"b--a"])
 
-      output = string_ops.string_join([input0, input1, input0], separator="--")
+      output = tf.string_join([input0, input1, input0], separator="--")
       self.assertAllEqual(output.eval(), [b"a--a--a", b"b--a--b"])
 
-      output = string_ops.string_join([input1] * 4, separator="!")
+      output = tf.string_join([input1] * 4, separator="!")
       self.assertEqual(output.eval(), b"a!a!a!a")
 
-      output = string_ops.string_join([input2] * 2, separator="")
+      output = tf.string_join([input2] * 2, separator="")
       self.assertAllEqual(output.eval(), [[b"bb"], [b"cc"]])
 
       with self.assertRaises(ValueError):  # Inconsistent shapes
-        string_ops.string_join([input0, input2]).eval()
+        tf.string_join([input0, input2]).eval()
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

@@ -37,9 +37,9 @@ message SaverDef {
   enum CheckpointFormatVersion {
     // Internal legacy format.
     LEGACY = 0;
-    // Deprecated format: tf.Saver() which works with tensorflow::table::Table.
+    // Current format: tf.Saver() which works with tensorflow::table::Table.
     V1 = 1;
-    // Current format: more efficient.
+    // Experimental format under development.
     V2 = 2;
   }
   CheckpointFormatVersion version = 7;

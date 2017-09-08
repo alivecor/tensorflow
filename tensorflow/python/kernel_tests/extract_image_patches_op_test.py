@@ -19,13 +19,10 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import constant_op
-from tensorflow.python.ops import array_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class ExtractImagePatches(test.TestCase):
+class ExtractImagePatches(tf.test.TestCase):
   """Functional tests for ExtractImagePatches op."""
 
   def _VerifyValues(self, image, ksizes, strides, rates, padding, patches):
@@ -44,8 +41,8 @@ class ExtractImagePatches(test.TestCase):
     rates = [1] + rates + [1]
 
     with self.test_session(use_gpu=True):
-      out_tensor = array_ops.extract_image_patches(
-          constant_op.constant(image),
+      out_tensor = tf.extract_image_patches(
+          tf.constant(image),
           ksizes=ksizes,
           strides=strides,
           rates=rates,
@@ -60,13 +57,12 @@ class ExtractImagePatches(test.TestCase):
     # [2, 3, 4, 5]
     patches = np.reshape(range(120), [2, 3, 4, 5])
     for padding in ["VALID", "SAME"]:
-      self._VerifyValues(
-          image,
-          ksizes=[1, 1],
-          strides=[1, 1],
-          rates=[1, 1],
-          padding=padding,
-          patches=patches)
+      self._VerifyValues(image,
+                         ksizes=[1, 1],
+                         strides=[1, 1],
+                         rates=[1, 1],
+                         padding=padding,
+                         patches=patches)
 
   def testKsize1x1Stride2x3Rate1x1(self):
     """Test for 1x1 kernel and strides."""
@@ -75,13 +71,12 @@ class ExtractImagePatches(test.TestCase):
     # [2, 2, 2, 3]
     patches = image[:, ::2, ::3, :]
     for padding in ["VALID", "SAME"]:
-      self._VerifyValues(
-          image,
-          ksizes=[1, 1],
-          strides=[2, 3],
-          rates=[1, 1],
-          padding=padding,
-          patches=patches)
+      self._VerifyValues(image,
+                         ksizes=[1, 1],
+                         strides=[2, 3],
+                         rates=[1, 1],
+                         padding=padding,
+                         patches=patches)
 
   def testKsize2x2Stride1x1Rate1x1Valid(self):
     """Test for 1x1 kernel ."""
@@ -89,13 +84,12 @@ class ExtractImagePatches(test.TestCase):
     image = [[[[1], [2]], [[3], [4]]]]
     # [1, 1, 1, 4]
     patches = [[[[1, 2, 3, 4]]]]
-    self._VerifyValues(
-        image,
-        ksizes=[2, 2],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        patches=patches)
+    self._VerifyValues(image,
+                       ksizes=[2, 2],
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="VALID",
+                       patches=patches)
 
   def testKsize2x2Stride1x1Rate1x1Same(self):
     """Test for 1x1 kernel ."""
@@ -103,14 +97,13 @@ class ExtractImagePatches(test.TestCase):
     image = [[[[1], [2]], [[3], [4]]]]
     # [1, 2, 2, 4]
     patches = [[[[1, 2, 3, 4], [2, 0, 4, 0]], [[3, 4, 0, 0], [4, 0, 0, 0]]]]
-    self._VerifyValues(
-        image,
-        ksizes=[2, 2],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        patches=patches)
+    self._VerifyValues(image,
+                       ksizes=[2, 2],
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       patches=patches)
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

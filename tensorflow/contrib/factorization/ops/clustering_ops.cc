@@ -13,7 +13,6 @@
 // the License.
 // ==============================================================================
 
-#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 
 namespace tensorflow {
@@ -24,7 +23,6 @@ REGISTER_OP("KmeansPlusPlusInitialization")
     .Input("seed: int64")
     .Input("num_retries_per_sample: int64")
     .Output("samples: float32")
-    .SetShapeFn(shape_inference::UnknownShape)
     .Doc(R"(
 Selects num_to_sample rows of input using the KMeans++ criterion.
 
@@ -50,7 +48,6 @@ REGISTER_OP("NearestNeighbors")
     .Input("k: int64")
     .Output("nearest_center_indices: int64")
     .Output("nearest_center_distances: float32")
-    .SetShapeFn(shape_inference::UnknownShape)
     .Doc(R"(
 Selects the k nearest centers for each point.
 

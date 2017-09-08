@@ -15,7 +15,6 @@ py_binary(
     srcs_version = "PY2AND3",
     deps = [
         "//tensorflow:tensorflow_py",
-        "//third_party/py/numpy",
     ],
 )
 

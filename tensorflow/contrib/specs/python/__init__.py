@@ -24,4 +24,3 @@ from tensorflow.contrib.specs.python.specs import *
 from tensorflow.contrib.specs.python.specs_lib import *
 from tensorflow.contrib.specs.python.specs_ops import *
 from tensorflow.contrib.specs.python.summaries import *
-# pylint: enable=wildcard-import

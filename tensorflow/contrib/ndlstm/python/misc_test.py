@@ -13,20 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 """Miscellaneous tests."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.contrib.ndlstm.python import misc as misc_lib
-from tensorflow.python.framework import constant_op
+import tensorflow as tf
 from tensorflow.python.framework import test_util
-from tensorflow.python.ops import variables
-from tensorflow.python.platform import test
-
-misc = misc_lib
+misc = tf.contrib.ndlstm.misc
 
 
 def _rand(*size):
@@ -37,25 +31,25 @@ class LstmMiscTest(test_util.TensorFlowTestCase):
 
   def testPixelsAsVectorDims(self):
     with self.test_session():
-      inputs = constant_op.constant(_rand(2, 7, 11, 5))
+      inputs = tf.constant(_rand(2, 7, 11, 5))
       outputs = misc.pixels_as_vector(inputs)
-      variables.global_variables_initializer().run()
+      tf.initialize_all_variables().run()
       result = outputs.eval()
       self.assertEqual(tuple(result.shape), (2, 7 * 11 * 5))
 
   def testPoolAsVectorDims(self):
     with self.test_session():
-      inputs = constant_op.constant(_rand(2, 7, 11, 5))
+      inputs = tf.constant(_rand(2, 7, 11, 5))
       outputs = misc.pool_as_vector(inputs)
-      variables.global_variables_initializer().run()
+      tf.initialize_all_variables().run()
       result = outputs.eval()
       self.assertEqual(tuple(result.shape), (2, 5))
 
   def testOneHotPlanes(self):
     with self.test_session():
-      inputs = constant_op.constant([0, 1, 3])
+      inputs = tf.constant([0, 1, 3])
       outputs = misc.one_hot_planes(inputs, 4)
-      variables.global_variables_initializer().run()
+      tf.initialize_all_variables().run()
       result = outputs.eval()
       self.assertEqual(tuple(result.shape), (3, 1, 1, 4))
       target = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
@@ -64,9 +58,9 @@ class LstmMiscTest(test_util.TensorFlowTestCase):
   def testOneHotMask(self):
     with self.test_session():
       data = np.array([[0, 1, 2], [2, 0, 1]]).reshape(2, 3, 1)
-      inputs = constant_op.constant(data)
+      inputs = tf.constant(data)
       outputs = misc.one_hot_mask(inputs, 3)
-      variables.global_variables_initializer().run()
+      tf.initialize_all_variables().run()
       result = outputs.eval()
       self.assertEqual(tuple(result.shape), (2, 3, 3))
       target = np.array([[[1, 0, 0], [0, 1, 0]], [[0, 1, 0], [0, 0, 1]],
@@ -75,4 +69,4 @@ class LstmMiscTest(test_util.TensorFlowTestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

@@ -30,6 +30,8 @@ limitations under the License.
 #include "tensorflow/core/platform/test_benchmark.h"
 #include "tensorflow/core/platform/types.h"
 
+namespace gpu = ::perftools::gputools;
+
 namespace tensorflow {
 namespace {
 
@@ -324,7 +326,6 @@ static void BM_AllocationDelayed(int iters, int delay) {
   int size_index = 0;
 
   std::vector<void*> ptrs;
-  ptrs.reserve(delay);
   for (int i = 0; i < delay; i++) {
     ptrs.push_back(nullptr);
   }

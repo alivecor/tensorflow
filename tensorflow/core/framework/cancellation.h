@@ -18,11 +18,10 @@ limitations under the License.
 
 #include <atomic>
 #include <functional>
+#include <unordered_map>
 
 #include "tensorflow/core/lib/core/notification.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "tensorflow/core/lib/gtl/flatmap.h"
-#include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/thread_annotations.h"
 #include "tensorflow/core/platform/types.h"
@@ -36,7 +35,7 @@ namespace tensorflow {
 // CancellationManager::get_cancellation_token.
 typedef int64 CancellationToken;
 
-// A callback that is invoked when a step is canceled.
+// A callback that is invoked when a step is cancelled.
 //
 // NOTE(mrry): See caveats about CancelCallback implementations in the
 // comment for CancellationManager::RegisterCallback.
@@ -79,7 +78,7 @@ class CancellationManager {
   //     CancellationToken token = cm->get_cancellation_token();
   //     {
   //       mutex_lock(mu_);
-  //       already_cancelled = !cm->RegisterCallback(
+  //       already_cancelled = cm->RegisterCallback(
   //           [this, token]() { Cancel(token); });
   //       if (!already_cancelled) {
   //         // Issue asynchronous operation. Associate the pending operation
@@ -129,7 +128,8 @@ class CancellationManager {
   mutex mu_;
   Notification cancelled_notification_;
   CancellationToken next_cancellation_token_ GUARDED_BY(mu_);
-  gtl::FlatMap<CancellationToken, CancelCallback> callbacks_ GUARDED_BY(mu_);
+  std::unordered_map<CancellationToken, CancelCallback> callbacks_
+      GUARDED_BY(mu_);
 };
 
 }  // namespace tensorflow

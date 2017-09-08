@@ -17,7 +17,7 @@
 
 Run using bazel:
 
-bazel run --config opt \
+bazel run -c opt \
     <...>/tensorflow/examples/how_tos/reading_data:fully_connected_preloaded
 
 or, if installed via pip:
@@ -31,7 +31,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import sys
 import time
 
 import tensorflow as tf
@@ -82,8 +81,8 @@ def run_training():
     saver = tf.train.Saver()
 
     # Create the op for initializing variables.
-    init_op = tf.group(tf.global_variables_initializer(),
-                       tf.local_variables_initializer())
+    init_op = tf.group(tf.initialize_all_variables(),
+                       tf.initialize_local_variables())
     # Create a session for running Ops on the Graph.
     sess = tf.Session()
 
@@ -91,7 +90,7 @@ def run_training():
     sess.run(init_op)
 
     # Instantiate a SummaryWriter to output summaries and the Graph.
-    summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
+    summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
 
     # Start input enqueue threads.
     coord = tf.train.Coordinator()
@@ -185,5 +184,6 @@ if __name__ == '__main__':
       help='If true, uses fake data for unit testing.',
       action='store_true'
   )
-  FLAGS, unparsed = parser.parse_known_args()
-  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
+  FLAGS = parser.parse_args()
+
+  tf.app.run()

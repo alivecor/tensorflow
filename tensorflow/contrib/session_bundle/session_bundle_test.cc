@@ -40,9 +40,9 @@ namespace serving {
 namespace {
 
 // Constants for the export path and file-names.
-const char kExportPath[] = "session_bundle/testdata/half_plus_two/00000123";
+const char kExportPath[] = "session_bundle/example/half_plus_two/00000123";
 const char kExportCheckpointV2Path[] =
-    "session_bundle/testdata/half_plus_two_ckpt_v2/00000123";
+    "session_bundle/example/half_plus_two_ckpt_v2/00000123";
 const char kMetaGraphDefFilename[] = "export.meta";
 const char kVariablesFilename[] = "export-00000-of-00001";
 
@@ -171,8 +171,7 @@ void BasicTest(const string& export_path) {
 // SessionBundles. Concurrent with adding this test, we had a leak where the
 // TensorFlow Session was not being closed, which leaked memory.
 // TODO(b/31711147): Increase the SessionBundle ResourceLeakTest iterations and
-// move outside of the test suite; decrease test size back to small at the same
-// time.
+// move outside of the test suite.
 TEST(LoadSessionBundleFromPath, ResourceLeakTest) {
   const string export_path = test_util::TestSrcDirPath(kExportPath);
   for (int i = 0; i < 100; i++) {
@@ -271,12 +270,12 @@ class SessionBundleTest : public ::testing::Test {
   // MetaGraphDef.
   // Returns the path of the export.
   // ** Should only be called once per test **
-  string SetupExport(const MetaGraphDefTwiddler& twiddler) {
+  string SetupExport(MetaGraphDefTwiddler twiddler) {
     return SetupExport(twiddler, kVariablesFilename, kMetaGraphDefFilename);
   }
   // SetupExport that allows for the variables and meta_graph_def filenames
   // to be overridden.
-  string SetupExport(const MetaGraphDefTwiddler& twiddler,
+  string SetupExport(MetaGraphDefTwiddler twiddler,
                      const string& variables_filename,
                      const string& meta_graph_def_filename) {
     // Construct a unique path name based on the test name.

@@ -49,9 +49,8 @@ class MasterTest : public ::testing::Test {
     (*options.config.mutable_device_count())["CPU"] = 1;
     (*options.config.mutable_device_count())["GPU"] = 0;
     TF_CHECK_OK(test::TestCluster::MakeTestCluster(options, 2, &cluster_));
-    SharedGrpcChannelPtr channel_ptr;
-    TF_CHECK_OK(NewHostPortGrpcChannel(cluster_->targets()[0], &channel_ptr));
-    master_ = grpc::MasterService::NewStub(channel_ptr);
+    master_ = grpc::MasterService::NewStub(
+        NewHostPortGrpcChannel(cluster_->targets()[0]));
   }
 
   std::unique_ptr<test::TestCluster> cluster_;

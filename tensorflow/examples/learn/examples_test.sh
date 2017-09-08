@@ -32,7 +32,7 @@ TFLEARN_EXAMPLE_BASE_DIR=$DIR/tensorflow/examples/learn
 
 
 function test() {
-  echo "Test $1:"
+  echo "Test "$1":"
   $TFLEARN_EXAMPLE_BASE_DIR/$1 $2
   if [ $? -eq 0 ]
   then
@@ -46,14 +46,16 @@ function test() {
 
 test boston
 test iris
-test iris_custom_decay_dnn
 test iris_custom_model
+test iris_custom_decay_dnn
 test iris_run_config
-test random_forest_mnist
+test iris_val_based_early_stopping
+test iris_with_pipeline
 test resnet
 test text_classification --test_with_fake_data
 test text_classification_builtin_rnn_model --test_with_fake_data
+test text_classification_cnn --test_with_fake_data
 test text_classification_character_cnn --test_with_fake_data
 test text_classification_character_rnn --test_with_fake_data
-test text_classification_cnn --test_with_fake_data
+test random_forest_mnist
 test wide_n_deep_tutorial

@@ -12,28 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for summary image op."""
 
+"""Tests for summary image op."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
+import tensorflow as tf
 
-from tensorflow.core.framework import summary_pb2
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
 from tensorflow.python.ops import image_ops
-import tensorflow.python.ops.nn_grad  # pylint: disable=unused-import
-from tensorflow.python.platform import test
-from tensorflow.python.summary import summary
 
 
-class SummaryImageOpTest(test.TestCase):
+class SummaryImageOpTest(tf.test.TestCase):
 
   def _AsSummary(self, s):
-    summ = summary_pb2.Summary()
+    summ = tf.Summary()
     summ.ParseFromString(s)
     return summ
 
@@ -42,7 +37,7 @@ class SummaryImageOpTest(test.TestCase):
     # Only the first 3 images are returned.
     for v in image_summ.value:
       v.image.ClearField("encoded_image_string")
-    expected = "\n".join("""
+    expected = '\n'.join("""
         value {
           tag: "img/image/%d"
           image { height: %d width: %d colorspace: %d }
@@ -53,7 +48,7 @@ class SummaryImageOpTest(test.TestCase):
     np.random.seed(7)
     for depth in (1, 3, 4):
       for positive in False, True:
-        with self.test_session(graph=ops.Graph()) as sess:
+        with self.test_session(graph=tf.Graph()) as sess:
           shape = (4, 5, 7) + (depth,)
           bad_color = [255, 0, 0, 255][:depth]
           # Build a mostly random image with one nan
@@ -70,17 +65,17 @@ class SummaryImageOpTest(test.TestCase):
           const[0, 1, 2, depth // 2] = np.nan
 
           # Summarize
-          summ = summary.image("img", const)
+          summ = tf.summary.image("img", const)
           value = sess.run(summ)
           self.assertEqual([], summ.get_shape())
           image_summ = self._AsSummary(value)
 
           # Decode the first image and check consistency
-          image = image_ops.decode_png(image_summ.value[0]
-                                       .image.encoded_image_string).eval()
+          image = image_ops.decode_png(
+              image_summ.value[0].image.encoded_image_string).eval()
           self.assertAllEqual(image[1, 2], bad_color)
           image[1, 2] = adjusted[0, 1, 2]
-          self.assertAllClose(image, adjusted[0], rtol=2e-5, atol=2e-5)
+          self.assertAllClose(image, adjusted[0])
 
           # Check the rest of the proto
           self._CheckProto(image_summ, shape)
@@ -88,24 +83,24 @@ class SummaryImageOpTest(test.TestCase):
   def testImageSummaryUint8(self):
     np.random.seed(7)
     for depth in (1, 3, 4):
-      with self.test_session(graph=ops.Graph()) as sess:
+      with self.test_session(graph=tf.Graph()) as sess:
         shape = (4, 5, 7) + (depth,)
 
         # Build a random uint8 image
         images = np.random.randint(256, size=shape).astype(np.uint8)
-        tf_images = ops.convert_to_tensor(images)
-        self.assertEqual(tf_images.dtype, dtypes.uint8)
+        tf_images = tf.convert_to_tensor(images)
+        self.assertEqual(tf_images.dtype, tf.uint8)
 
         # Summarize
-        summ = summary.image("img", tf_images)
+        summ = tf.summary.image("img", tf_images)
         value = sess.run(summ)
         self.assertEqual([], summ.get_shape())
         image_summ = self._AsSummary(value)
 
         # Decode the first image and check consistency.
         # Since we're uint8, everything should be exact.
-        image = image_ops.decode_png(image_summ.value[0]
-                                     .image.encoded_image_string).eval()
+        image = image_ops.decode_png(
+            image_summ.value[0].image.encoded_image_string).eval()
         self.assertAllEqual(image, images[0])
 
         # Check the rest of the proto
@@ -113,4 +108,4 @@ class SummaryImageOpTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

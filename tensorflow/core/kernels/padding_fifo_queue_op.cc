@@ -40,10 +40,10 @@ namespace tensorflow {
 // backed by PaddingFIFOQueue) that persists across different graph
 // executions, and sessions. Running this op produces a single-element
 // tensor of handles to Queues in the corresponding device.
-class PaddingFIFOQueueOp : public TypedQueueOp {
+class PaddingFIFOQueueOp : public QueueOp {
  public:
   explicit PaddingFIFOQueueOp(OpKernelConstruction* context)
-      : TypedQueueOp(context) {
+      : QueueOp(context) {
     OP_REQUIRES_OK(context, context->GetAttr("shapes", &component_shapes_));
     for (const auto& shape : component_shapes_) {
       OP_REQUIRES(context, shape.dims() >= 0,
@@ -52,22 +52,28 @@ class PaddingFIFOQueueOp : public TypedQueueOp {
     }
   }
 
- private:
-  Status CreateResource(QueueInterface** ret) override
-      EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-    PaddingFIFOQueue* queue = new PaddingFIFOQueue(
-        capacity_, component_types_, component_shapes_, cinfo_.name());
-    return CreateTypedQueue(queue, ret);
+ protected:
+  CreatorCallback GetCreator() const override {
+    return [this](QueueInterface** ret) {
+      PaddingFIFOQueue* queue = new PaddingFIFOQueue(
+          capacity_, component_types_, component_shapes_, cinfo_.name());
+      Status s = queue->Initialize();
+      if (s.ok()) {
+        *ret = queue;
+      } else {
+        queue->Unref();
+      }
+      return s;
+    };
   }
 
+ private:
   std::vector<PartialTensorShape> component_shapes_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(PaddingFIFOQueueOp);
 };
 
 REGISTER_KERNEL_BUILDER(Name("PaddingFIFOQueue").Device(DEVICE_CPU),
-                        PaddingFIFOQueueOp);
-REGISTER_KERNEL_BUILDER(Name("PaddingFIFOQueueV2").Device(DEVICE_CPU),
                         PaddingFIFOQueueOp);
 
 }  // namespace tensorflow

@@ -55,7 +55,6 @@ REGISTER_OP("UniformCandidateSampler")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .SetShapeFn(CandidateSamplerShapeFn)
-    .SetIsStateful()
     .Doc(R"doc(
 Generates labels for candidate sampling with a uniform distribution.
 
@@ -81,7 +80,7 @@ sampled_expected_count: A vector of length num_sampled, for each sampled
   to occur in a batch of sampled candidates.  If unique=true, then this is a
   probability.
 num_true: Number of true labels per context.
-num_sampled: Number of candidates to randomly sample.
+num_sampled: Number of candidates to randomly sample per batch.
 unique: If unique is true, we sample with rejection, so that all sampled
   candidates in a batch are unique. This requires some approximation to
   estimate the post-rejection sampling probabilities.
@@ -104,7 +103,6 @@ REGISTER_OP("LogUniformCandidateSampler")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .SetShapeFn(CandidateSamplerShapeFn)
-    .SetIsStateful()
     .Doc(R"doc(
 Generates labels for candidate sampling with a log-uniform distribution.
 
@@ -131,7 +129,7 @@ sampled_expected_count: A vector of length num_sampled, for each sampled
   to occur in a batch of sampled candidates.  If unique=true, then this is a
   probability.
 num_true: Number of true labels per context.
-num_sampled: Number of candidates to randomly sample.
+num_sampled: Number of candidates to randomly sample per batch.
 unique: If unique is true, we sample with rejection, so that all sampled
   candidates in a batch are unique. This requires some approximation to
   estimate the post-rejection sampling probabilities.
@@ -154,7 +152,6 @@ REGISTER_OP("LearnedUnigramCandidateSampler")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .SetShapeFn(CandidateSamplerShapeFn)
-    .SetIsStateful()
     .Doc(R"doc(
 Generates labels for candidate sampling with a learned unigram distribution.
 
@@ -180,7 +177,7 @@ sampled_expected_count: A vector of length num_sampled, for each sampled
   to occur in a batch of sampled candidates.  If unique=true, then this is a
   probability.
 num_true: Number of true labels per context.
-num_sampled: Number of candidates to randomly sample.
+num_sampled: Number of candidates to randomly sample per batch.
 unique: If unique is true, we sample with rejection, so that all sampled
   candidates in a batch are unique. This requires some approximation to
   estimate the post-rejection sampling probabilities.
@@ -203,7 +200,6 @@ REGISTER_OP("ThreadUnsafeUnigramCandidateSampler")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .SetShapeFn(CandidateSamplerShapeFn)
-    .SetIsStateful()
     .Doc(R"doc(
 Generates labels for candidate sampling with a learned unigram distribution.
 
@@ -229,7 +225,7 @@ sampled_expected_count: A vector of length num_sampled, for each sampled
   to occur in a batch of sampled candidates.  If unique=true, then this is a
   probability.
 num_true: Number of true labels per context.
-num_sampled: Number of candidates to randomly sample.
+num_sampled: Number of candidates to randomly sample per batch.
 unique: If unique is true, we sample with rejection, so that all sampled
   candidates in a batch are unique. This requires some approximation to
   estimate the post-rejection sampling probabilities.
@@ -258,7 +254,6 @@ REGISTER_OP("FixedUnigramCandidateSampler")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .SetShapeFn(CandidateSamplerShapeFn)
-    .SetIsStateful()
     .Doc(R"doc(
 Generates labels for candidate sampling with a learned unigram distribution.
 
@@ -289,7 +284,7 @@ sampled_expected_count: A vector of length num_sampled, for each sampled
   to occur in a batch of sampled candidates.  If unique=true, then this is a
   probability.
 num_true: Number of true labels per context.
-num_sampled: Number of candidates to randomly sample.
+num_sampled: Number of candidates to randomly sample per batch.
 unique: If unique is true, we sample with rejection, so that all sampled
   candidates in a batch are unique. This requires some approximation to
   estimate the post-rejection sampling probabilities.
@@ -334,7 +329,6 @@ REGISTER_OP("AllCandidateSampler")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .SetShapeFn(CandidateSamplerShapeFn)
-    .SetIsStateful()
     .Doc(R"doc(
 Generates labels for candidate sampling with a learned unigram distribution.
 
@@ -360,7 +354,7 @@ sampled_expected_count: A vector of length num_sampled, for each sampled
   to occur in a batch of sampled candidates.  If unique=true, then this is a
   probability.
 num_true: Number of true labels per context.
-num_sampled: Number of candidates to produce.
+num_sampled: Number of candidates to produce per batch.
 unique: If unique is true, we sample with rejection, so that all sampled
   candidates in a batch are unique. This requires some approximation to
   estimate the post-rejection sampling probabilities.

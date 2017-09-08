@@ -24,11 +24,9 @@ namespace tensorflow {
 
 typedef Eigen::GpuDevice GPUDevice;
 
-#define DEFINE_GPU_SPEC(T)                              \
-  template struct functor::ArgMax<GPUDevice, T, int64>; \
-  template struct functor::ArgMin<GPUDevice, T, int64>; \
-  template struct functor::ArgMax<GPUDevice, T, int32>; \
-  template struct functor::ArgMin<GPUDevice, T, int32>;
+#define DEFINE_GPU_SPEC(T)                       \
+  template struct functor::ArgMax<GPUDevice, T>; \
+  template struct functor::ArgMin<GPUDevice, T>;
 
 TF_CALL_GPU_NUMBER_TYPES(DEFINE_GPU_SPEC);
 

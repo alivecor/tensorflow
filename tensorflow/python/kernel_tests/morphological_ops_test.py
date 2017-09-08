@@ -13,21 +13,15 @@
 # limitations under the License.
 # ==============================================================================
 """Functional tests for morphological filtering operations."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import constant_op
-from tensorflow.python.ops import gradient_checker
-from tensorflow.python.ops import nn_ops
-import tensorflow.python.ops.nn_grad  # pylint: disable=unused-import
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class DilationTest(test.TestCase):
+class DilationTest(tf.test.TestCase):
 
   def _VerifyValues(self, image, kernel, strides, rates, padding, out, use_gpu):
     """Verifies the output values of the dilation function.
@@ -45,9 +39,9 @@ class DilationTest(test.TestCase):
     rates = [1] + rates + [1]
 
     with self.test_session(use_gpu=use_gpu):
-      out_tensor = nn_ops.dilation2d(
-          constant_op.constant(image),
-          constant_op.constant(kernel),
+      out_tensor = tf.nn.dilation2d(
+          tf.constant(image),
+          tf.constant(kernel),
           strides=strides,
           rates=rates,
           padding=padding,
@@ -61,14 +55,13 @@ class DilationTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.0]]]
     # [1, 1, 1, 1]
     out = [[[[.5]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="VALID",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testDilationSamePadding(self, use_gpu):
     # [1, 2, 2, 1]
@@ -77,14 +70,13 @@ class DilationTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.0]]]
     # [1, 2, 2, 1]
     out = [[[[.5], [.6]], [[.7], [.8]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testDilationSamePaddingDepth(self, use_gpu):
     # [1, 2, 2, 3]
@@ -93,14 +85,13 @@ class DilationTest(test.TestCase):
     kernel = [[[.4, .5, .3], [.3, .4, .2]], [[.1, .2, .0], [.0, .1, -.1]]]
     # [1, 2, 2, 3]
     out = [[[[.5, .7, .3], [.6, .8, .4]], [[.7, .9, .5], [.8, 1., .6]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testDilationSamePaddingBatch(self, use_gpu):
     # [2, 2, 2, 1]
@@ -109,14 +100,13 @@ class DilationTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.0]]]
     # [2, 2, 2, 1]
     out = [[[[.5], [.6]], [[.7], [.8]]], [[[.6], [.7]], [[.8], [.9]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testDilationValidPaddingNonSquareWindow(self, use_gpu):
     # [1, 2, 2, 1]
@@ -125,14 +115,13 @@ class DilationTest(test.TestCase):
     kernel = [[[.4], [.3]]]
     # [1, 2, 1, 1]
     out = [[[[.5]], [[.7]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="VALID",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testDilationSamePaddingRate(self, use_gpu):
     # [1, 3, 3, 1]
@@ -145,14 +134,13 @@ class DilationTest(test.TestCase):
     #               [[.1], [.0], [.2]]]
     # [1, 3, 3, 1]
     out = [[[[.7], [.8], [.6]], [[1.0], [1.1], [.9]], [[.8], [.9], [.9]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[2, 2],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[2, 2],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testDilationValidPaddingUnevenStride(self, use_gpu):
     # [1, 3, 3, 1]
@@ -162,14 +150,13 @@ class DilationTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.2]]]
     # [1, 2, 2, 1]
     out = [[[[.8], [1.0]], [[1.2], [1.4]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 2],
-        rates=[1, 1],
-        padding="VALID",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 2],
+                       rates=[1, 1],
+                       padding="VALID",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def testDilation(self):
     for use_gpu in True, False:
@@ -205,91 +192,81 @@ class DilationTest(test.TestCase):
     rates = [1] + rates + [1]
 
     with self.test_session(use_gpu=use_gpu):
-      image_tensor = constant_op.constant(
-          image, shape=image_shape, name="input")
-      kernel_tensor = constant_op.constant(
-          kernel, shape=kernel_shape, name="filter")
-      out_tensor = nn_ops.dilation2d(
-          image_tensor,
-          kernel_tensor,
-          strides=strides,
-          rates=rates,
-          padding=padding,
-          name="dilation2d")
+      image_tensor = tf.constant(image, shape=image_shape, name="input")
+      kernel_tensor = tf.constant(kernel, shape=kernel_shape, name="filter")
+      out_tensor = tf.nn.dilation2d(image_tensor,
+                                    kernel_tensor,
+                                    strides=strides,
+                                    rates=rates,
+                                    padding=padding,
+                                    name="dilation2d")
       out_shape = out_tensor.eval().shape
 
       # Small delta is necessary for argmax to remain the same.
-      err = gradient_checker.compute_gradient_error(
-          [image_tensor, kernel_tensor], [image_shape, kernel_shape],
-          out_tensor,
-          out_shape, [image_init, kernel_init],
-          delta=1e-3)
+      err = tf.test.compute_gradient_error([image_tensor, kernel_tensor],
+                                           [image_shape, kernel_shape],
+                                           out_tensor,
+                                           out_shape, [image_init, kernel_init],
+                                           delta=1e-3)
 
     print("Dilation gradient error = %f" % err)
     self.assertLess(err, 1e-4)
 
   def _testDilationGradValidPadding_1x1x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[1, 1, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[1, 1, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="VALID",
+                                   use_gpu=use_gpu)
 
   def _testDilationGradSamePadding_1x1x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[1, 1, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[1, 1, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testDilationGradSamePadding_1x1x2(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 2],
-        kernel_shape=[1, 1, 2],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 2],
+                                   kernel_shape=[1, 1, 2],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testDilationGradValidPadding_2x2x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[2, 2, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[2, 2, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="VALID",
+                                   use_gpu=use_gpu)
 
   def _testDilationGradSamePadding_2x2x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[2, 2, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[2, 2, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testDilationGradSamePaddingBatch_2x2x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[4, 3, 3, 1],
-        kernel_shape=[2, 2, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[4, 3, 3, 1],
+                                   kernel_shape=[2, 2, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testDilationGradSamePadding_2x2x4(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 4],
-        kernel_shape=[2, 2, 4],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 4],
+                                   kernel_shape=[2, 2, 4],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def testDilationGrad(self):
     for use_gpu in True, False:
@@ -302,7 +279,7 @@ class DilationTest(test.TestCase):
       self._testDilationGradSamePadding_2x2x4(use_gpu)
 
 
-class ErosionTest(test.TestCase):
+class ErosionTest(tf.test.TestCase):
 
   def _VerifyValues(self, image, kernel, strides, rates, padding, out, use_gpu):
     """Verifies the output values of the erosion function.
@@ -320,9 +297,9 @@ class ErosionTest(test.TestCase):
     rates = [1] + rates + [1]
 
     with self.test_session(use_gpu=use_gpu):
-      out_tensor = nn_ops.erosion2d(
-          constant_op.constant(image),
-          constant_op.constant(kernel),
+      out_tensor = tf.nn.erosion2d(
+          tf.constant(image),
+          tf.constant(kernel),
           strides=strides,
           rates=rates,
           padding=padding,
@@ -336,14 +313,13 @@ class ErosionTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.0]]]
     # [1, 1, 1, 1]
     out = [[[[.0]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="VALID",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testErosionSamePadding(self, use_gpu):
     # [1, 2, 2, 1]
@@ -352,14 +328,13 @@ class ErosionTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.0]]]
     # [1, 2, 2, 1]
     out = [[[[.0], [.1]], [[.3], [.4]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testErosionSamePaddingDepth(self, use_gpu):
     # [1, 2, 2, 3]
@@ -368,14 +343,13 @@ class ErosionTest(test.TestCase):
     kernel = [[[.4, .5, .3], [.3, .4, .2]], [[.1, .2, .0], [.0, .1, -.1]]]
     # [1, 2, 2, 3]
     out = [[[[.0, .0, .0], [.1, .1, .1]], [[.3, .3, .3], [.4, .4, .4]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testErosionSamePaddingBatch(self, use_gpu):
     # [2, 2, 2, 1]
@@ -384,14 +358,13 @@ class ErosionTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.0]]]
     # [2, 2, 2, 1]
     out = [[[[.0], [.1]], [[.3], [.4]]], [[[.1], [.2]], [[.4], [.5]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testErosionValidPaddingNonSquareWindow(self, use_gpu):
     # [1, 2, 2, 1]
@@ -400,14 +373,13 @@ class ErosionTest(test.TestCase):
     kernel = [[[.4], [.3]]]
     # [1, 2, 1, 1]
     out = [[[[-.2]], [[.0]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[1, 1],
+                       padding="VALID",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testErosionSamePaddingRate(self, use_gpu):
     # [1, 3, 3, 1]
@@ -420,14 +392,13 @@ class ErosionTest(test.TestCase):
     #               [[.1], [.0], [.2]]]
     # [1, 3, 3, 1]
     out = [[[[.1], [.1], [.2]], [[0.1], [-.1], [.0]], [[.4], [.2], [.3]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 1],
-        rates=[2, 2],
-        padding="SAME",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 1],
+                       rates=[2, 2],
+                       padding="SAME",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def _testErosionValidPaddingUnevenStride(self, use_gpu):
     # [1, 3, 3, 1]
@@ -437,14 +408,13 @@ class ErosionTest(test.TestCase):
     kernel = [[[.4], [.3]], [[.1], [.2]]]
     # [1, 2, 2, 1]
     out = [[[[-.1], [.1]], [[.3], [.5]]]]
-    self._VerifyValues(
-        image,
-        kernel,
-        strides=[1, 2],
-        rates=[1, 1],
-        padding="VALID",
-        out=out,
-        use_gpu=use_gpu)
+    self._VerifyValues(image,
+                       kernel,
+                       strides=[1, 2],
+                       rates=[1, 1],
+                       padding="VALID",
+                       out=out,
+                       use_gpu=use_gpu)
 
   def testErosion(self):
     for use_gpu in True, False:
@@ -480,91 +450,81 @@ class ErosionTest(test.TestCase):
     rates = [1] + rates + [1]
 
     with self.test_session(use_gpu=use_gpu):
-      image_tensor = constant_op.constant(
-          image, shape=image_shape, name="input")
-      kernel_tensor = constant_op.constant(
-          kernel, shape=kernel_shape, name="filter")
-      out_tensor = nn_ops.erosion2d(
-          image_tensor,
-          kernel_tensor,
-          strides=strides,
-          rates=rates,
-          padding=padding,
-          name="erosion2d")
+      image_tensor = tf.constant(image, shape=image_shape, name="input")
+      kernel_tensor = tf.constant(kernel, shape=kernel_shape, name="filter")
+      out_tensor = tf.nn.erosion2d(image_tensor,
+                                   kernel_tensor,
+                                   strides=strides,
+                                   rates=rates,
+                                   padding=padding,
+                                   name="erosion2d")
       out_shape = out_tensor.eval().shape
 
       # Small delta is necessary for argmax to remain the same.
-      err = gradient_checker.compute_gradient_error(
-          [image_tensor, kernel_tensor], [image_shape, kernel_shape],
-          out_tensor,
-          out_shape, [image_init, kernel_init],
-          delta=1e-3)
+      err = tf.test.compute_gradient_error([image_tensor, kernel_tensor],
+                                           [image_shape, kernel_shape],
+                                           out_tensor,
+                                           out_shape, [image_init, kernel_init],
+                                           delta=1e-3)
 
     print("Erosion gradient error = %f" % err)
     self.assertLess(err, 1e-4)
 
   def _testErosionGradValidPadding_1x1x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[1, 1, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[1, 1, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="VALID",
+                                   use_gpu=use_gpu)
 
   def _testErosionGradSamePadding_1x1x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[1, 1, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[1, 1, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testErosionGradSamePadding_1x1x2(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 2],
-        kernel_shape=[1, 1, 2],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 2],
+                                   kernel_shape=[1, 1, 2],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testErosionGradValidPadding_2x2x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[2, 2, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="VALID",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[2, 2, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="VALID",
+                                   use_gpu=use_gpu)
 
   def _testErosionGradSamePadding_2x2x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 1],
-        kernel_shape=[2, 2, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 1],
+                                   kernel_shape=[2, 2, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testErosionGradSamePaddingBatch_2x2x1(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[4, 3, 3, 1],
-        kernel_shape=[2, 2, 1],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[4, 3, 3, 1],
+                                   kernel_shape=[2, 2, 1],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def _testErosionGradSamePadding_2x2x4(self, use_gpu):
-    self._ConstructAndTestGradient(
-        image_shape=[1, 3, 3, 4],
-        kernel_shape=[2, 2, 4],
-        strides=[1, 1],
-        rates=[1, 1],
-        padding="SAME",
-        use_gpu=use_gpu)
+    self._ConstructAndTestGradient(image_shape=[1, 3, 3, 4],
+                                   kernel_shape=[2, 2, 4],
+                                   strides=[1, 1],
+                                   rates=[1, 1],
+                                   padding="SAME",
+                                   use_gpu=use_gpu)
 
   def testErosionGrad(self):
     for use_gpu in True, False:
@@ -578,4 +538,4 @@ class ErosionTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

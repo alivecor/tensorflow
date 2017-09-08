@@ -12,36 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for tensorflow.kernels.unique_op."""
 
+"""Tests for tensorflow.kernels.unique_op."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import array_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class UniqueTest(test.TestCase):
+class UniqueTest(tf.test.TestCase):
 
   def testInt32(self):
     x = np.random.randint(2, high=10, size=7000)
     with self.test_session() as sess:
-      y, idx = array_ops.unique(x)
-      tf_y, tf_idx = sess.run([y, idx])
-
-    self.assertEqual(len(x), len(tf_idx))
-    self.assertEqual(len(tf_y), len(np.unique(x)))
-    for i in range(len(x)):
-      self.assertEqual(x[i], tf_y[tf_idx[i]])
-
-  def testInt32OutIdxInt64(self):
-    x = np.random.randint(2, high=10, size=7000)
-    with self.test_session() as sess:
-      y, idx = array_ops.unique(x, out_idx=dtypes.int64)
+      y, idx = tf.unique(x)
       tf_y, tf_idx = sess.run([y, idx])
 
     self.assertEqual(len(x), len(tf_idx))
@@ -53,7 +39,7 @@ class UniqueTest(test.TestCase):
     indx = np.random.randint(65, high=122, size=7000)
     x = [chr(i) for i in indx]
     with self.test_session() as sess:
-      y, idx = array_ops.unique(x)
+      y, idx = tf.unique(x)
       tf_y, tf_idx = sess.run([y, idx])
 
     self.assertEqual(len(x), len(tf_idx))
@@ -61,25 +47,13 @@ class UniqueTest(test.TestCase):
     for i in range(len(x)):
       self.assertEqual(x[i], tf_y[tf_idx[i]].decode('ascii'))
 
-class UniqueWithCountsTest(test.TestCase):
+
+class UniqueWithCountsTest(tf.test.TestCase):
 
   def testInt32(self):
     x = np.random.randint(2, high=10, size=7000)
     with self.test_session() as sess:
-      y, idx, count = array_ops.unique_with_counts(x)
-      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
-
-    self.assertEqual(len(x), len(tf_idx))
-    self.assertEqual(len(tf_y), len(np.unique(x)))
-    for i in range(len(x)):
-      self.assertEqual(x[i], tf_y[tf_idx[i]])
-    for value, count in zip(tf_y, tf_count):
-      self.assertEqual(count, np.sum(x == value))
-
-  def testInt32OutIdxInt64(self):
-    x = np.random.randint(2, high=10, size=7000)
-    with self.test_session() as sess:
-      y, idx, count = array_ops.unique_with_counts(x, out_idx=dtypes.int64)
+      y, idx, count = tf.unique_with_counts(x)
       tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
@@ -94,7 +68,7 @@ class UniqueWithCountsTest(test.TestCase):
     x = [chr(i) for i in indx]
 
     with self.test_session() as sess:
-      y, idx, count = array_ops.unique_with_counts(x)
+      y, idx, count = tf.unique_with_counts(x)
       tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
@@ -107,4 +81,4 @@ class UniqueWithCountsTest(test.TestCase):
 
 
 if __name__ == '__main__':
-  test.main()
+  tf.test.main()

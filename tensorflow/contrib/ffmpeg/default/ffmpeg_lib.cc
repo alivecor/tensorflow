@@ -69,9 +69,7 @@ bool IsBinaryInstalled(const string& binary_name) {
   for (const string& dir : str_util::Split(path, ':')) {
     const string binary_path = io::JoinPath(dir, binary_name);
     char absolute_path[PATH_MAX + 1];
-    if (::realpath(binary_path.c_str(), absolute_path) == nullptr) {
-      continue;
-    }
+    ::realpath(binary_path.c_str(), absolute_path);
     struct stat statinfo;
     int result = ::stat(absolute_path, &statinfo);
     if (result < 0) {
@@ -141,7 +139,7 @@ template <typename UInt>
 string LittleEndianData(UInt data) {
   static_assert(std::is_unsigned<UInt>::value, "UInt must be unsigned");
   string str;
-  for (size_t i = 0; i < sizeof(UInt); ++i) {
+  for (int i = 0; i < sizeof(UInt); ++i) {
     const unsigned char bits = static_cast<unsigned char>(data & 0xFFU);
     char ch;
     ::memcpy(&ch, &bits, sizeof(bits));

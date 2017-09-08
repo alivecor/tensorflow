@@ -20,10 +20,10 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.framework import registry
-from tensorflow.python.platform import test
+from tensorflow.python.platform import googletest
 
 
-class RegistryTest(test.TestCase):
+class RegistryTest(googletest.TestCase):
 
   class Foo(object):
     pass
@@ -54,4 +54,4 @@ def bar():
 
 
 if __name__ == '__main__':
-  test.main()
+  googletest.main()

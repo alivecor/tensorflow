@@ -18,7 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.util import tf_inspect
+import inspect
 
 
 def assert_estimator_contract(tester, estimator_class):
@@ -31,7 +31,7 @@ def assert_estimator_contract(tester, estimator_class):
     tester: A tf.test.TestCase.
     estimator_class: 'type' object of pre-canned estimator.
   """
-  attributes = tf_inspect.getmembers(estimator_class)
+  attributes = inspect.getmembers(estimator_class)
   attribute_names = [a[0] for a in attributes]
 
   tester.assertTrue('config' in attribute_names)
@@ -42,11 +42,3 @@ def assert_estimator_contract(tester, estimator_class):
   tester.assertTrue('get_variable_value' in attribute_names)
   tester.assertTrue('model_dir' in attribute_names)
   tester.assertTrue('predict' in attribute_names)
-
-
-def assert_in_range(min_value, max_value, key, metrics):
-  actual_value = metrics[key]
-  if actual_value < min_value:
-    raise ValueError('%s: %s < %s.' % (key, actual_value, min_value))
-  if actual_value > max_value:
-    raise ValueError('%s: %s > %s.' % (key, actual_value, max_value))

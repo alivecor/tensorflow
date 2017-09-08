@@ -31,7 +31,6 @@ TEST(TensorIdTest, ParseTensorName) {
   EXPECT_EQ(ParseHelper("W1:1"), "W1:1");
   EXPECT_EQ(ParseHelper("W1:17"), "W1:17");
   EXPECT_EQ(ParseHelper("xyz1_17"), "xyz1_17:0");
-  EXPECT_EQ(ParseHelper("^foo"), "^foo");
 }
 
 uint32 Skewed(random::SimplePhilox* rnd, int max_log) {
@@ -69,9 +68,6 @@ void BM_ParseTensorName(int iters, int arg) {
       case 4:
         name = "weights:17";
         break;
-      case 5:
-        name = "^weights";
-        break;
       default:
         LOG(FATAL) << "Unexpected arg";
         break;
@@ -88,7 +84,7 @@ void BM_ParseTensorName(int iters, int arg) {
   }
   VLOG(2) << sum;  // Prevent compiler from eliminating loop body
 }
-BENCHMARK(BM_ParseTensorName)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Arg(4)->Arg(5);
+BENCHMARK(BM_ParseTensorName)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Arg(4);
 
 }  // namespace
 }  // namespace tensorflow

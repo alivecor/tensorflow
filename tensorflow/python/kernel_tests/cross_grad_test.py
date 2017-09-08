@@ -18,28 +18,22 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import gradient_checker
-from tensorflow.python.ops import math_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class CrossOpTest(test.TestCase):
+class CrossOpTest(tf.test.TestCase):
 
   def testGradientRandomValues(self):
     with self.test_session():
       us = [2, 3]
-      u = array_ops.reshape(
-          [0.854, -0.616, 0.767, 0.725, -0.927, 0.159], shape=us)
-      v = array_ops.reshape(
-          [-0.522, 0.755, 0.407, -0.652, 0.241, 0.247], shape=us)
-      s = math_ops.cross(u, v)
-      jacob_u, jacob_v = gradient_checker.compute_gradient([u, v], [us, us], s,
-                                                           us)
+      u = tf.reshape([0.854, -0.616, 0.767, 0.725, -0.927, 0.159], shape=us)
+      v = tf.reshape([-0.522, 0.755, 0.407, -0.652, 0.241, 0.247], shape=us)
+      s = tf.cross(u, v)
+      jacob_u, jacob_v = tf.test.compute_gradient([u, v], [us, us], s, us)
 
     self.assertAllClose(jacob_u[0], jacob_u[1], rtol=1e-3, atol=1e-3)
     self.assertAllClose(jacob_v[0], jacob_v[1], rtol=1e-3, atol=1e-3)
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

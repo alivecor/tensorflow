@@ -25,13 +25,14 @@ namespace tensorflow {
 
 namespace functor {
 
-template <typename Device, typename T, typename Tout>
+template <typename Device, typename T>
 struct ArgMax {
-#define DECLARE_COMPUTE_SPEC(Dims)                                             \
-  EIGEN_ALWAYS_INLINE static void Reduce##Dims(                                \
-      const Device& d, typename TTypes<T, Dims>::ConstTensor input,            \
-      const int32 dimension, typename TTypes<Tout, Dims - 1>::Tensor output) { \
-    output.device(d) = input.argmax(dimension).template cast<Tout>();          \
+#define DECLARE_COMPUTE_SPEC(Dims)                                     \
+  EIGEN_ALWAYS_INLINE static void Reduce##Dims(                        \
+      const Device& d, typename TTypes<T, Dims>::ConstTensor input,    \
+      const int32 dimension,                                           \
+      typename TTypes<int64, Dims - 1>::Tensor output) {               \
+    output.device(d) = input.argmax(dimension).template cast<int64>(); \
   }
 
   DECLARE_COMPUTE_SPEC(1);
@@ -43,13 +44,14 @@ struct ArgMax {
 #undef DECLARE_COMPUTE_SPEC
 };
 
-template <typename Device, typename T, typename Tout>
+template <typename Device, typename T>
 struct ArgMin {
-#define DECLARE_COMPUTE_SPEC(Dims)                                             \
-  EIGEN_ALWAYS_INLINE static void Reduce##Dims(                                \
-      const Device& d, typename TTypes<T, Dims>::ConstTensor input,            \
-      const int32 dimension, typename TTypes<Tout, Dims - 1>::Tensor output) { \
-    output.device(d) = input.argmin(dimension).template cast<Tout>();          \
+#define DECLARE_COMPUTE_SPEC(Dims)                                     \
+  EIGEN_ALWAYS_INLINE static void Reduce##Dims(                        \
+      const Device& d, typename TTypes<T, Dims>::ConstTensor input,    \
+      const int32 dimension,                                           \
+      typename TTypes<int64, Dims - 1>::Tensor output) {               \
+    output.device(d) = input.argmin(dimension).template cast<int64>(); \
   }
 
   DECLARE_COMPUTE_SPEC(1);

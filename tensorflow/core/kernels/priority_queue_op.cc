@@ -38,10 +38,9 @@ namespace tensorflow {
 // backed by PriorityQueue) that persists across different graph
 // executions, and sessions. Running this op produces a single-element
 // tensor of handles to Queues in the corresponding device.
-class PriorityQueueOp : public TypedQueueOp {
+class PriorityQueueOp : public QueueOp {
  public:
-  explicit PriorityQueueOp(OpKernelConstruction* context)
-      : TypedQueueOp(context) {
+  explicit PriorityQueueOp(OpKernelConstruction* context) : QueueOp(context) {
     OP_REQUIRES_OK(context, context->GetAttr("shapes", &component_shapes_));
     component_types_.insert(component_types_.begin(), DT_INT64);
     if (!component_shapes_.empty()) {
@@ -49,12 +48,19 @@ class PriorityQueueOp : public TypedQueueOp {
     }
   }
 
- private:
-  Status CreateResource(QueueInterface** ret) override
-      EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-    PriorityQueue* queue = new PriorityQueue(capacity_, component_types_,
-                                             component_shapes_, cinfo_.name());
-    return CreateTypedQueue(queue, ret);
+ protected:
+  CreatorCallback GetCreator() const override {
+    return [this](QueueInterface** ret) {
+      PriorityQueue* queue = new PriorityQueue(
+          capacity_, component_types_, component_shapes_, cinfo_.name());
+      Status s = queue->Initialize();
+      if (s.ok()) {
+        *ret = queue;
+      } else {
+        queue->Unref();
+      }
+      return s;
+    };
   }
 
   std::vector<TensorShape> component_shapes_;
@@ -63,8 +69,6 @@ class PriorityQueueOp : public TypedQueueOp {
 };
 
 REGISTER_KERNEL_BUILDER(Name("PriorityQueue").Device(DEVICE_CPU),
-                        PriorityQueueOp);
-REGISTER_KERNEL_BUILDER(Name("PriorityQueueV2").Device(DEVICE_CPU),
                         PriorityQueueOp);
 
 }  // namespace tensorflow

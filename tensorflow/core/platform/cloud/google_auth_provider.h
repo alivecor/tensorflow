@@ -30,8 +30,7 @@ class GoogleAuthProvider : public AuthProvider {
   GoogleAuthProvider();
   explicit GoogleAuthProvider(
       std::unique_ptr<OAuthClient> oauth_client,
-      std::unique_ptr<HttpRequest::Factory> http_request_factory, Env* env,
-      int64 initial_retry_delay_usec);
+      std::unique_ptr<HttpRequest::Factory> http_request_factory, Env* env);
   virtual ~GoogleAuthProvider() {}
 
   /// \brief Returns the short-term authentication bearer token.
@@ -44,13 +43,10 @@ class GoogleAuthProvider : public AuthProvider {
   ///
   /// Tries the file from $GOOGLE_APPLICATION_CREDENTIALS and the
   /// standard gcloud tool's location.
-  Status GetTokenFromFiles() EXCLUSIVE_LOCKS_REQUIRED(mu_);
+  Status GetTokenFromFiles();
 
   /// Gets the bearer token from Google Compute Engine environment.
-  Status GetTokenFromGce() EXCLUSIVE_LOCKS_REQUIRED(mu_);
-
-  /// Gets the bearer token from the systen env variable, for testing purposes.
-  Status GetTokenForTesting() EXCLUSIVE_LOCKS_REQUIRED(mu_);
+  Status GetTokenFromGce();
 
   std::unique_ptr<OAuthClient> oauth_client_;
   std::unique_ptr<HttpRequest::Factory> http_request_factory_;
@@ -58,8 +54,6 @@ class GoogleAuthProvider : public AuthProvider {
   mutex mu_;
   string current_token_ GUARDED_BY(mu_);
   uint64 expiration_timestamp_sec_ GUARDED_BY(mu_) = 0;
-  // The initial delay for exponential backoffs when retrying failed calls.
-  const int64 initial_retry_delay_usec_;
   TF_DISALLOW_COPY_AND_ASSIGN(GoogleAuthProvider);
 };
 

@@ -47,9 +47,8 @@ void ValidateInputs(bool is_save_op, OpKernelContext* context,
       context, prefix.NumElements() == 1,
       errors::InvalidArgument("Input prefix should have a single element, got ",
                               prefix.NumElements(), " instead."));
-  OP_REQUIRES(context,
-              TensorShapeUtils::IsVector(tensor_names.shape()) &&
-                  TensorShapeUtils::IsVector(shape_and_slices.shape()),
+  OP_REQUIRES(context, TensorShapeUtils::IsVector(tensor_names.shape()) &&
+                           TensorShapeUtils::IsVector(shape_and_slices.shape()),
               errors::InvalidArgument(
                   "Input tensor_names and shape_and_slices "
                   "should be an 1-D tensors, got ",
@@ -106,7 +105,6 @@ class SaveV2 : public OpKernel {
     const auto& shape_and_slices_flat = shape_and_slices.flat<string>();
 
     BundleWriter writer(Env::Default(), prefix_string);
-    OP_REQUIRES_OK(context, writer.status());
     VLOG(1) << "BundleWriter, prefix_string: " << prefix_string;
 
     for (int i = 0; i < num_tensors; ++i) {
@@ -128,10 +126,9 @@ class SaveV2 : public OpKernel {
                                             shape_spec, ", tensor: ",
                                             tensor.shape().DebugString()));
 
-        OP_REQUIRES_OK(context,
-                       writer.AddSlice(tensor_name, shape, slice, tensor));
+        writer.AddSlice(tensor_name, shape, slice, tensor);
       } else {
-        OP_REQUIRES_OK(context, writer.Add(tensor_name, tensor));
+        writer.Add(tensor_name, tensor);
       }
     }
     OP_REQUIRES_OK(context, writer.Finish());
@@ -189,8 +186,7 @@ class MergeV2Checkpoints : public OpKernel {
  public:
   explicit MergeV2Checkpoints(OpKernelConstruction* context)
       : OpKernel(context) {
-    OP_REQUIRES_OK(context,
-                   context->GetAttr("delete_old_dirs", &delete_old_dirs_));
+    context->GetAttr("delete_old_dirs", &delete_old_dirs_);
   }
 
   void Compute(OpKernelContext* context) override {

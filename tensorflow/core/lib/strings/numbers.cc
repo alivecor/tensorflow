@@ -80,12 +80,16 @@ T locale_independent_strtonum(const char* str, const char** endptr) {
   // Set to result to what strto{f,d} functions would have returned. If the
   // number was outside the range, the stringstream sets the fail flag, but
   // returns the +/-max() value, whereas strto{f,d} functions return +/-INF.
+  bool real_fail = false;
   if (s.fail()) {
+    real_fail = true;
     if (result == std::numeric_limits<T>::max()) {
       result = std::numeric_limits<T>::infinity();
+      real_fail = false;
       s.clear(s.rdstate() & ~std::ios::failbit);
     } else if (result == -std::numeric_limits<T>::max()) {
       result = -std::numeric_limits<T>::infinity();
+      real_fail = false;
       s.clear(s.rdstate() & ~std::ios::failbit);
     }
   }
@@ -93,9 +97,10 @@ T locale_independent_strtonum(const char* str, const char** endptr) {
   if (endptr) {
     *endptr =
         str +
-        (s.fail() ? static_cast<std::iostream::pos_type>(0)
-                  : (s.eof() ? static_cast<std::iostream::pos_type>(strlen(str))
-                             : s.tellg()));
+        (real_fail
+             ? static_cast<std::iostream::pos_type>(0)
+             : (s.eof() ? static_cast<std::iostream::pos_type>(strlen(str))
+                        : s.tellg()));
   }
   return result;
 }
@@ -166,7 +171,7 @@ char* DoubleToBuffer(double value, char* buffer) {
     DCHECK(snprintf_result > 0 && snprintf_result < kFastToBufferSize);
 
     full_precision_needed =
-        locale_independent_strtonum<double>(buffer, nullptr) != value;
+        locale_independent_strtonum<double>(buffer, NULL) != value;
   }
 
   if (full_precision_needed) {
@@ -234,7 +239,7 @@ bool safe_strtou64(StringPiece str, uint64* value) {
   SkipSpaces(&str);
   if (!isdigit(SafeFirstChar(str))) return false;
 
-  uint64 result = 0;
+  int64 result = 0;
   do {
     int digit = SafeFirstChar(str) - '0';
     if ((kuint64max - digit) / 10 < result) {

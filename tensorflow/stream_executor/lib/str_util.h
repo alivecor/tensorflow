@@ -36,6 +36,7 @@ inline string StripSuffixString(port::StringPiece str, port::StringPiece suffix)
 }
 
 using tensorflow::str_util::Lowercase;
+using tensorflow::str_util::Uppercase;
 
 }  // namespace port
 }  // namespace gputools

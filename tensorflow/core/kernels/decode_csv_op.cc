@@ -33,7 +33,7 @@ class DecodeCSVOp : public OpKernel {
     OP_REQUIRES(ctx, out_type_.size() < std::numeric_limits<int>::max(),
                 errors::InvalidArgument("Out type too large"));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("field_delim", &delim));
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("use_quote_delim", &use_quote_delim_));
+
     OP_REQUIRES(ctx, delim.size() == 1,
                 errors::InvalidArgument("field_delim should be only 1 char"));
 
@@ -62,7 +62,7 @@ class DecodeCSVOp : public OpKernel {
 
     for (int i = 0; i < static_cast<int>(out_type_.size()); ++i) {
       Tensor* out = nullptr;
-      OP_REQUIRES_OK(ctx, output.allocate(i, records->shape(), &out));
+      output.allocate(i, records->shape(), &out);
     }
 
     for (int64 i = 0; i < records_size; ++i) {
@@ -91,9 +91,9 @@ class DecodeCSVOp : public OpKernel {
             } else {
               int32 value;
               OP_REQUIRES(ctx, strings::safe_strto32(fields[f], &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid int32: ", fields[f]));
+                          errors::InvalidArgument("Field ", f, " in record ", i,
+                                                  " is not a valid int32: ",
+                                                  fields[f]));
               output[f]->flat<int32>()(i) = value;
             }
             break;
@@ -111,9 +111,9 @@ class DecodeCSVOp : public OpKernel {
             } else {
               int64 value;
               OP_REQUIRES(ctx, strings::safe_strto64(fields[f], &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid int64: ", fields[f]));
+                          errors::InvalidArgument("Field ", f, " in record ", i,
+                                                  " is not a valid int64: ",
+                                                  fields[f]));
               output[f]->flat<int64>()(i) = value;
             }
             break;
@@ -130,9 +130,9 @@ class DecodeCSVOp : public OpKernel {
             } else {
               float value;
               OP_REQUIRES(ctx, strings::safe_strtof(fields[f].c_str(), &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid float: ", fields[f]));
+                          errors::InvalidArgument("Field ", f, " in record ", i,
+                                                  " is not a valid float: ",
+                                                  fields[f]));
               output[f]->flat<float>()(i) = value;
             }
             break;
@@ -164,7 +164,6 @@ class DecodeCSVOp : public OpKernel {
  private:
   std::vector<DataType> out_type_;
   char delim_;
-  bool use_quote_delim_;
 
   void ExtractFields(OpKernelContext* ctx, StringPiece input,
                      std::vector<string>* result) {
@@ -177,7 +176,7 @@ class DecodeCSVOp : public OpKernel {
         }
 
         bool quoted = false;
-        if (use_quote_delim_ && input[current_idx] == '"') {
+        if (input[current_idx] == '"') {
           quoted = true;
           current_idx++;
         }
@@ -187,10 +186,9 @@ class DecodeCSVOp : public OpKernel {
         if (!quoted) {
           while (static_cast<size_t>(current_idx) < input.size() &&
                  input[current_idx] != delim_) {
-            OP_REQUIRES(ctx,
-                        (!use_quote_delim_ || input[current_idx] != '"') &&
-                            input[current_idx] != '\n' &&
-                            input[current_idx] != '\r',
+            OP_REQUIRES(ctx, input[current_idx] != '"' &&
+                                 input[current_idx] != '\n' &&
+                                 input[current_idx] != '\r',
                         errors::InvalidArgument(
                             "Unquoted fields cannot have quotes/CRLFs inside"));
             field += input[current_idx];
@@ -199,7 +197,7 @@ class DecodeCSVOp : public OpKernel {
 
           // Go to next field or the end
           current_idx++;
-        } else if (use_quote_delim_) {
+        } else {
           // Quoted field needs to be ended with '"' and delim or end
           while (
               (static_cast<size_t>(current_idx) < input.size() - 1) &&
@@ -218,11 +216,10 @@ class DecodeCSVOp : public OpKernel {
           }
 
           OP_REQUIRES(
-              ctx,
-              (static_cast<size_t>(current_idx) < input.size() &&
-               input[current_idx] == '"' &&
-               (static_cast<size_t>(current_idx) == input.size() - 1 ||
-                input[current_idx + 1] == delim_)),
+              ctx, (static_cast<size_t>(current_idx) < input.size() &&
+                    input[current_idx] == '"' &&
+                    (static_cast<size_t>(current_idx) == input.size() - 1 ||
+                     input[current_idx + 1] == delim_)),
               errors::InvalidArgument("Quoted field has to end with quote "
                                       "followed by delim or end"));
 

@@ -31,17 +31,12 @@ class GPUDevice : public BaseGPUDevice {
             Allocator* cpu_allocator)
       : BaseGPUDevice(options, name, memory_limit, locality, gpu_id,
                       physical_device_desc, gpu_allocator, cpu_allocator,
-                      false /* sync every op */, 1 /* max_streams */) {
-    if (options.config.has_gpu_options()) {
-      force_gpu_compatible_ =
-          options.config.gpu_options().force_gpu_compatible();
-    }
-  }
+                      false /* sync every op */, 1 /* max_streams */) {}
 
   Allocator* GetAllocator(AllocatorAttributes attr) override {
     if (attr.on_host()) {
-      if (attr.gpu_compatible() || force_gpu_compatible_) {
-        ProcessState* ps = ProcessState::singleton();
+      ProcessState* ps = ProcessState::singleton();
+      if (attr.gpu_compatible()) {
         return ps->GetCUDAHostAllocator(0);
       } else {
         return cpu_allocator_;
@@ -50,9 +45,6 @@ class GPUDevice : public BaseGPUDevice {
       return gpu_allocator_;
     }
   }
-
- private:
-  bool force_gpu_compatible_ = false;
 };
 
 class GPUDeviceFactory : public BaseGPUDeviceFactory {
@@ -68,7 +60,7 @@ class GPUDeviceFactory : public BaseGPUDeviceFactory {
   }
 };
 
-REGISTER_LOCAL_DEVICE_FACTORY("GPU", GPUDeviceFactory, 210);
+REGISTER_LOCAL_DEVICE_FACTORY("GPU", GPUDeviceFactory);
 
 //------------------------------------------------------------------------------
 // A CPUDevice that optimizes for interaction with GPUs in the
@@ -79,26 +71,18 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
   GPUCompatibleCPUDevice(const SessionOptions& options, const string& name,
                          Bytes memory_limit, const DeviceLocality& locality,
                          Allocator* allocator)
-      : ThreadPoolDevice(options, name, memory_limit, locality, allocator) {
-    if (options.config.has_gpu_options()) {
-      force_gpu_compatible_ =
-          options.config.gpu_options().force_gpu_compatible();
-    }
-  }
+      : ThreadPoolDevice(options, name, memory_limit, locality, allocator) {}
   ~GPUCompatibleCPUDevice() override {}
 
   Allocator* GetAllocator(AllocatorAttributes attr) override {
     ProcessState* ps = ProcessState::singleton();
-    if (attr.gpu_compatible() || force_gpu_compatible_) {
+    if (attr.gpu_compatible()) {
       return ps->GetCUDAHostAllocator(0);
     } else {
       // Call the parent's implementation.
       return ThreadPoolDevice::GetAllocator(attr);
     }
   }
-
- private:
-  bool force_gpu_compatible_ = false;
 };
 
 // The associated factory.
@@ -120,7 +104,7 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
     return Status::OK();
   }
 };
-REGISTER_LOCAL_DEVICE_FACTORY("CPU", GPUCompatibleCPUDeviceFactory, 70);
+REGISTER_LOCAL_DEVICE_FACTORY("CPU", GPUCompatibleCPUDeviceFactory, 50);
 
 }  // namespace tensorflow
 

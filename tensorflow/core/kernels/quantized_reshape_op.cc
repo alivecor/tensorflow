@@ -50,8 +50,8 @@ class QuantizedReshapeOp : public ReshapeOp {
                               .TypeConstraint<type>("T"), \
                           QuantizedReshapeOp)
 
-REGISTER_CPU_KERNEL(::tensorflow::quint8);
-REGISTER_CPU_KERNEL(::tensorflow::qint32);
+TF_CALL_quint8(REGISTER_CPU_KERNEL);
+TF_CALL_qint32(REGISTER_CPU_KERNEL);
 
 #undef REGISTER_CPU_KERNEL
 

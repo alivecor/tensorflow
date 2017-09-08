@@ -18,7 +18,6 @@ limitations under the License.
 #include <queue>
 #include <vector>
 
-#include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.h"
@@ -273,13 +272,7 @@ void PriorityQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
       // an optimized case where the queue 'knows' what attributes to
       // use, and plumbs them through here.
       Tensor element;
-      Status status = ctx->allocate_temp(component_dtypes_[i],
-                                         ManyOutShape(i, 0), &element);
-      if (!status.ok()) {
-        ctx->SetStatus(status);
-        callback(Tuple());
-        return;
-      }
+      ctx->allocate_temp(component_dtypes_[i], ManyOutShape(i, 0), &element);
       tuple.emplace_back(element);
     }
     callback(tuple);
@@ -339,16 +332,15 @@ void PriorityQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
             for (; s > 0; --s) {
               if (attempt->tuple.empty()) {
                 // Only allocate tuple when we have something to dequeue
-                // so we don't use excessive memory when there are many
+                // so we don't use exceessive memory when there are many
                 // blocked dequeue attempts waiting.
                 attempt->tuple.reserve(num_components());
                 for (int i = 0; i < num_components(); ++i) {
                   const TensorShape shape =
                       ManyOutShape(i, attempt->elements_requested);
                   Tensor element;
-                  attempt->context->SetStatus(attempt->context->allocate_temp(
-                      component_dtypes_[i], shape, &element));
-                  if (!attempt->context->status().ok()) return kComplete;
+                  attempt->context->allocate_temp(component_dtypes_[i], shape,
+                                                  &element);
                   attempt->tuple.emplace_back(element);
                 }
               }
@@ -385,11 +377,7 @@ void PriorityQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
 }
 
 Status PriorityQueue::MatchesNodeDef(const NodeDef& node_def) {
-  if (!MatchesNodeDefOp(node_def, "PriorityQueue").ok() &&
-      !MatchesNodeDefOp(node_def, "PriorityQueueV2").ok()) {
-    return errors::InvalidArgument("Expected PriorityQueue, found ",
-                                   node_def.op());
-  }
+  TF_RETURN_IF_ERROR(MatchesNodeDefOp(node_def, "PriorityQueue"));
   TF_RETURN_IF_ERROR(MatchesNodeDefCapacity(node_def, capacity_));
   TF_RETURN_IF_ERROR(MatchesPriorityNodeDefTypes(node_def));
   TF_RETURN_IF_ERROR(MatchesPriorityNodeDefShapes(node_def));

@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference_testutil.h"
 #include "tensorflow/core/platform/test.h"
@@ -20,9 +21,9 @@ limitations under the License.
 namespace tensorflow {
 
 // Used for testing the grad+indices handling for SparseApplyXYZ tests.
-static void TestGradAndIndicesErrorHandling(const ShapeInferenceTestOp& op,
+static void TestGradAndIndicesErrorHandling(ShapeInferenceTestOp op,
                                             string shape_spec_middle,
-                                            const string& shape_spec_end = "") {
+                                            string shape_spec_end = "") {
   auto shape_spec = [&shape_spec_middle, shape_spec_end](
       const char* var_spec, const char* grad_indices_spec) {
     return strings::StrCat(var_spec, ";", shape_spec_middle, ";",
@@ -31,15 +32,15 @@ static void TestGradAndIndicesErrorHandling(const ShapeInferenceTestOp& op,
 
   // mismatch between grad[1] and var[1].
   INFER_ERROR("Dimension 1 in both shapes must be equal", op,
-              shape_spec("[?,1]", "[?,2];[?]"));
+              shape_spec("[?,1]", "[?,2];[?]").c_str());
   // grad[0] and indices[0] must match.
   INFER_ERROR("Dimensions must be equal, but are 1 and 2", op,
-              shape_spec("?", "[2,?];[1]"));
+              shape_spec("?", "[2,?];[1]").c_str());
   // grad is wrong rank.
-  INFER_ERROR("must be equal rank", op, shape_spec("[1]", "[?,2];[?]"));
+  INFER_ERROR("must be equal rank", op, shape_spec("[1]", "[?,2];[?]").c_str());
   // indices is wrong rank.
   INFER_ERROR("Shape must be rank 1 but is rank 2", op,
-              shape_spec("[?]", "[?];[1,2]"));
+              shape_spec("[?]", "[?];[1,2]").c_str());
 }
 
 TEST(TrainingOpsTest, ApplyGradientDescent_ShapeFn) {

@@ -7,9 +7,7 @@ licenses(["notice"])  # Apache 2.0
 
 exports_files(["LICENSE"])
 
-load("//tensorflow:tensorflow.bzl", "py_test")
-
-py_binary(
+py_library(
     name = "grpc_tensorflow_server",
     srcs = [
         "grpc_tensorflow_server.py",
@@ -17,9 +15,7 @@ py_binary(
     srcs_version = "PY2AND3",
     visibility = ["//visibility:public"],
     deps = [
-        "//tensorflow/core:protos_all_py",
-        "//tensorflow/python:platform",
-        "//tensorflow/python:training",
+        "//tensorflow:tensorflow_py",
     ],
 )
 
@@ -33,8 +29,7 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":grpc_tensorflow_server",
-        "//tensorflow/core:protos_all_py",
-        "//tensorflow/python:client_testlib",
+        "//tensorflow:tensorflow_py",
     ],
 )
 

@@ -74,7 +74,7 @@ static StringPiece CompressibleString(random::SimplePhilox* rnd,
   dst->resize(len);
   return StringPiece(*dst);
 }
-}  // namespace test
+}
 
 static void Increment(string* key) { key->push_back('\0'); }
 
@@ -90,15 +90,15 @@ struct STLLessThan {
 
 class StringSink : public WritableFile {
  public:
-  ~StringSink() override {}
+  ~StringSink() {}
 
   const string& contents() const { return contents_; }
 
-  Status Close() override { return Status::OK(); }
-  Status Flush() override { return Status::OK(); }
-  Status Sync() override { return Status::OK(); }
+  virtual Status Close() { return Status::OK(); }
+  virtual Status Flush() { return Status::OK(); }
+  virtual Status Sync() { return Status::OK(); }
 
-  Status Append(const StringPiece& data) override {
+  virtual Status Append(const StringPiece& data) {
     contents_.append(data.data(), data.size());
     return Status::OK();
   }
@@ -109,15 +109,15 @@ class StringSink : public WritableFile {
 
 class StringSource : public RandomAccessFile {
  public:
-  explicit StringSource(const StringPiece& contents)
+  StringSource(const StringPiece& contents)
       : contents_(contents.data(), contents.size()), bytes_read_(0) {}
 
-  ~StringSource() override {}
+  virtual ~StringSource() {}
 
   uint64 Size() const { return contents_.size(); }
 
-  Status Read(uint64 offset, size_t n, StringPiece* result,
-              char* scratch) const override {
+  virtual Status Read(uint64 offset, size_t n, StringPiece* result,
+                      char* scratch) const {
     if (offset > contents_.size()) {
       return errors::InvalidArgument("invalid Read offset");
     }
@@ -177,11 +177,11 @@ class Constructor {
 
 class BlockConstructor : public Constructor {
  public:
-  BlockConstructor() : block_(nullptr) {}
-  ~BlockConstructor() override { delete block_; }
-  Status FinishImpl(const Options& options, const KVMap& data) override {
+  BlockConstructor() : block_(NULL) {}
+  ~BlockConstructor() { delete block_; }
+  virtual Status FinishImpl(const Options& options, const KVMap& data) {
     delete block_;
-    block_ = nullptr;
+    block_ = NULL;
     BlockBuilder builder(&options);
 
     for (KVMap::const_iterator it = data.begin(); it != data.end(); ++it) {
@@ -196,7 +196,7 @@ class BlockConstructor : public Constructor {
     block_ = new Block(contents);
     return Status::OK();
   }
-  Iterator* NewIterator() const override { return block_->NewIterator(); }
+  virtual Iterator* NewIterator() const { return block_->NewIterator(); }
 
  private:
   string data_;
@@ -205,9 +205,9 @@ class BlockConstructor : public Constructor {
 
 class TableConstructor : public Constructor {
  public:
-  TableConstructor() : source_(nullptr), table_(nullptr) {}
-  ~TableConstructor() override { Reset(); }
-  Status FinishImpl(const Options& options, const KVMap& data) override {
+  TableConstructor() : source_(NULL), table_(NULL) {}
+  ~TableConstructor() { Reset(); }
+  virtual Status FinishImpl(const Options& options, const KVMap& data) {
     Reset();
     StringSink sink;
     TableBuilder builder(options, &sink);
@@ -227,7 +227,7 @@ class TableConstructor : public Constructor {
     return Table::Open(table_options, source_, sink.contents().size(), &table_);
   }
 
-  Iterator* NewIterator() const override { return table_->NewIterator(); }
+  virtual Iterator* NewIterator() const { return table_->NewIterator(); }
 
   uint64 ApproximateOffsetOf(const StringPiece& key) const {
     return table_->ApproximateOffsetOf(key);
@@ -239,8 +239,8 @@ class TableConstructor : public Constructor {
   void Reset() {
     delete table_;
     delete source_;
-    table_ = nullptr;
-    source_ = nullptr;
+    table_ = NULL;
+    source_ = NULL;
   }
 
   StringSource* source_;
@@ -262,11 +262,11 @@ static const int kNumTestArgs = sizeof(kTestArgList) / sizeof(kTestArgList[0]);
 
 class Harness : public ::testing::Test {
  public:
-  Harness() : constructor_(nullptr) {}
+  Harness() : constructor_(NULL) {}
 
   void Init(const TestArgs& args) {
     delete constructor_;
-    constructor_ = nullptr;
+    constructor_ = NULL;
     options_ = Options();
 
     options_.block_restart_interval = args.restart_interval;
@@ -283,7 +283,7 @@ class Harness : public ::testing::Test {
     }
   }
 
-  ~Harness() override { delete constructor_; }
+  ~Harness() { delete constructor_; }
 
   void Add(const string& key, const string& value) {
     constructor_->Add(key, value);
@@ -396,7 +396,7 @@ class Harness : public ::testing::Test {
           break;
         case 1: {
           // Attempt to return something smaller than an existing key
-          if (!result.empty() && result[result.size() - 1] > '\0') {
+          if (result.size() > 0 && result[result.size() - 1] > '\0') {
             result[result.size() - 1]--;
           }
           break;
@@ -526,9 +526,8 @@ static bool Between(uint64 val, uint64 low, uint64 high) {
   bool result = (val >= low) && (val <= high);
   if (!result) {
     fprintf(stderr, "Value %llu is not in range [%llu, %llu]\n",
-            static_cast<unsigned long long>(val),
-            static_cast<unsigned long long>(low),
-            static_cast<unsigned long long>(high));
+            (unsigned long long)(val), (unsigned long long)(low),
+            (unsigned long long)(high));
   }
   return result;
 }

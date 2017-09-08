@@ -12,31 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Tests for summary ops."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.core.framework import summary_pb2
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import logging_ops
-from tensorflow.python.platform import test
-from tensorflow.python.summary import summary
+import tensorflow as tf
 
-
-class SummaryOpsTest(test.TestCase):
+class SummaryOpsTest(tf.test.TestCase):
 
   def _AsSummary(self, s):
-    summ = summary_pb2.Summary()
+    summ = tf.Summary()
     summ.ParseFromString(s)
     return summ
 
   def testScalarSummary(self):
     with self.test_session() as sess:
-      const = constant_op.constant([10.0, 20.0])
-      summ = logging_ops.scalar_summary(["c1", "c2"], const, name="mysumm")
+      const = tf.constant([10.0, 20.0])
+      summ = tf.scalar_summary(["c1", "c2"], const, name="mysumm")
       value = sess.run(summ)
     self.assertEqual([], summ.get_shape())
     self.assertProtoEquals("""
@@ -46,8 +40,8 @@ class SummaryOpsTest(test.TestCase):
 
   def testScalarSummaryDefaultName(self):
     with self.test_session() as sess:
-      const = constant_op.constant([10.0, 20.0])
-      summ = logging_ops.scalar_summary(["c1", "c2"], const)
+      const = tf.constant([10.0, 20.0])
+      summ = tf.scalar_summary(["c1", "c2"], const)
       value = sess.run(summ)
     self.assertEqual([], summ.get_shape())
     self.assertProtoEquals("""
@@ -57,10 +51,10 @@ class SummaryOpsTest(test.TestCase):
 
   def testMergeSummary(self):
     with self.test_session() as sess:
-      const = constant_op.constant(10.0)
-      summ1 = summary.histogram("h", const)
-      summ2 = logging_ops.scalar_summary("c", const)
-      merge = summary.merge([summ1, summ2])
+      const = tf.constant(10.0)
+      summ1 = tf.summary.histogram("h", const)
+      summ2 = tf.scalar_summary("c", const)
+      merge = tf.summary.merge([summ1, summ2])
       value = sess.run(merge)
     self.assertEqual([], merge.get_shape())
     self.assertProtoEquals("""
@@ -84,29 +78,29 @@ class SummaryOpsTest(test.TestCase):
     """, self._AsSummary(value))
 
   def testMergeAllSummaries(self):
-    with ops.Graph().as_default():
-      const = constant_op.constant(10.0)
-      summ1 = summary.histogram("h", const)
-      summ2 = summary.scalar("o", const, collections=["foo_key"])
-      summ3 = summary.scalar("c", const)
-      merge = summary.merge_all()
+    with tf.Graph().as_default():
+      const = tf.constant(10.0)
+      summ1 = tf.summary.histogram("h", const)
+      summ2 = tf.summary.scalar("o", const, collections=["foo_key"])
+      summ3 = tf.summary.scalar("c", const)
+      merge = tf.summary.merge_all()
       self.assertEqual("MergeSummary", merge.op.type)
       self.assertEqual(2, len(merge.op.inputs))
       self.assertEqual(summ1, merge.op.inputs[0])
       self.assertEqual(summ3, merge.op.inputs[1])
-      merge = summary.merge_all("foo_key")
+      merge = tf.merge_all_summaries("foo_key")
       self.assertEqual("MergeSummary", merge.op.type)
       self.assertEqual(1, len(merge.op.inputs))
       self.assertEqual(summ2, merge.op.inputs[0])
-      self.assertTrue(summary.merge_all("bar_key") is None)
+      self.assertTrue(tf.merge_all_summaries("bar_key") is None)
 
   def testHistogramSummaryTypes(self):
-    with ops.Graph().as_default():
-      for dtype in (dtypes.int8, dtypes.uint8, dtypes.int16, dtypes.int32,
-                    dtypes.float32, dtypes.float64):
-        const = constant_op.constant(10, dtype=dtype)
-        summary.histogram("h", const)
+    with tf.Graph().as_default():
+      for dtype in (tf.int8, tf.uint8, tf.int16, tf.int32,
+                    tf.float32, tf.float64):
+        const = tf.constant(10, dtype=dtype)
+        tf.summary.histogram("h", const)
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

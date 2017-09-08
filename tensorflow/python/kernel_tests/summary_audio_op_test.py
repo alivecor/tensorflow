@@ -13,24 +13,19 @@
 # limitations under the License.
 # ==============================================================================
 """Tests for summary sound op."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-
-from tensorflow.core.framework import summary_pb2
-from tensorflow.python.framework import ops
-from tensorflow.python.platform import test
-from tensorflow.python.summary import summary
+import tensorflow as tf
 
 
-class SummaryAudioOpTest(test.TestCase):
+class SummaryAudioOpTest(tf.test.TestCase):
 
   def _AsSummary(self, s):
-    summ = summary_pb2.Summary()
+    summ = tf.Summary()
     summ.ParseFromString(s)
     return summ
 
@@ -50,7 +45,7 @@ class SummaryAudioOpTest(test.TestCase):
   def testAudioSummary(self):
     np.random.seed(7)
     for channels in (1, 2, 5, 8):
-      with self.test_session(graph=ops.Graph()) as sess:
+      with self.test_session(graph=tf.Graph()) as sess:
         num_frames = 7
         shape = (4, num_frames, channels)
         # Generate random audio in the range [-1.0, 1.0).
@@ -58,7 +53,7 @@ class SummaryAudioOpTest(test.TestCase):
 
         # Summarize
         sample_rate = 8000
-        summ = summary.audio(
+        summ = tf.summary.audio(
             "snd", const, max_outputs=3, sample_rate=sample_rate)
         value = sess.run(summ)
         self.assertEqual([], summ.get_shape())
@@ -69,4 +64,4 @@ class SummaryAudioOpTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

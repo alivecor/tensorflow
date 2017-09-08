@@ -36,8 +36,7 @@ Status InitializableLookupTable::Initialize(InitTableIterator& iter) {
   if (!iter.Valid()) {
     return iter.status();
   }
-  TF_RETURN_IF_ERROR(
-      CheckKeyAndValueTensorsForInsert(iter.keys(), iter.values()));
+  TF_RETURN_IF_ERROR(CheckKeyAndValueTensors(iter.keys(), iter.values()));
 
   mutex_lock l(mu_);
   if (is_initialized()) {

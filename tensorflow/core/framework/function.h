@@ -16,16 +16,16 @@ limitations under the License.
 #ifndef TENSORFLOW_FRAMEWORK_FUNCTION_H_
 #define TENSORFLOW_FRAMEWORK_FUNCTION_H_
 
+#include <unordered_map>
+
 #include <vector>
-#include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/attr_value_util.h"
 #include "tensorflow/core/framework/function.pb.h"
+#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/selective_registration.h"
 #include "tensorflow/core/framework/types.h"
-#include "tensorflow/core/lib/gtl/flatmap.h"
-#include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/protobuf.h"
@@ -33,13 +33,8 @@ limitations under the License.
 namespace tensorflow {
 
 class CancellationManager;
-class GraphDef;
 class OpKernel;
 class ResourceMgr;
-class Rendezvous;
-class ScopedStepContainer;
-class StepStatsCollector;
-class Node;
 
 // FunctionDefHelper::Create is a convenient helper to construct a
 // FunctionDef proto.
@@ -112,6 +107,7 @@ class FunctionDefHelper {
     std::vector<std::pair<string, AttrValueWrapper>> attr;
     std::vector<string> dep;
 
+    FunctionDef::Node ToProto() const;
     NodeDef ToNodeDef() const;
   };
 
@@ -194,6 +190,11 @@ inline FunctionDefHelper::AttrValueWrapper::AttrValueWrapper(StringPiece val) {
 // InstantiateFunction calls "get_function" to find signatures of other
 // functions and primitive ops.
 
+// Placeholders in "fdef" is substituted based on "attr_values" here.
+typedef ::tensorflow::protobuf::Map<string, AttrValue> InstantiateAttrValueMap;
+typedef gtl::ArraySlice<std::pair<string, FunctionDefHelper::AttrValueWrapper>>
+    InstantiateAttrValueSlice;
+
 // GetFunctionSignature(func name, opdef) returns OK if the func name is found
 // and opdef is filled with a pointer to the corresponding signature
 // (a OpDef proto). Otherwise, returns an error.
@@ -203,9 +204,14 @@ typedef std::function<Status(const string&, const OpDef**)>
 struct InstantiationResult {
   DataTypeVector arg_types;
   DataTypeVector ret_types;
-  std::vector<NodeDef> nodes;
+  GraphDef gdef;
 };
-Status InstantiateFunction(const FunctionDef& fdef, AttrSlice attr_values,
+Status InstantiateFunction(const FunctionDef& fdef,
+                           const InstantiateAttrValueMap& attr_values,
+                           GetFunctionSignature get_function,
+                           InstantiationResult* result);
+Status InstantiateFunction(const FunctionDef& fdef,
+                           InstantiateAttrValueSlice attr_values,
                            GetFunctionSignature get_function,
                            InstantiationResult* result);
 
@@ -219,15 +225,10 @@ Status InstantiateFunction(const FunctionDef& fdef, AttrSlice attr_values,
 // etc.)
 string DebugString(const FunctionDef& func_def);
 string DebugString(const GraphDef& instantiated_func_def);
-string DebugString(gtl::ArraySlice<NodeDef> instantiated_func_nodes);
 
 // Returns a debug string for a top level graph (the main program and
 // its supporting functions defined in its library).
 string DebugStringWhole(const GraphDef& gdef);
-
-// Returns true if f1 == f2. Compares all fields, including descriptions. Order
-// of NodeDefs doesn't matter.
-bool FunctionDefsEqual(const FunctionDef& f1, const FunctionDef& f2);
 
 // Returns a canonicalized string for the instantiation of the
 // function of the given "name" and attributes "attrs".
@@ -236,7 +237,9 @@ bool FunctionDefsEqual(const FunctionDef& f1, const FunctionDef& f2);
 // space. But it may be change as the implementation
 // evolves. Therefore, it should not be persisted or compared across
 // address spaces.
-string Canonicalize(const string& funcname, AttrSlice attrs);
+string Canonicalize(const string& funcname,
+                    const InstantiateAttrValueMap& attrs);
+string Canonicalize(const string& funcname, InstantiateAttrValueSlice attrs);
 
 // Represents a function call frame. I.e., the data structure used to
 // pass arguments to a function and retrieve its results.
@@ -252,7 +255,6 @@ class FunctionCallFrame {
   // Caller methods.
   Status SetArgs(gtl::ArraySlice<Tensor> args);
   Status GetRetvals(std::vector<Tensor>* rets) const;
-  Status ConsumeRetvals(std::vector<Tensor>* rets);
 
   // Callee methods.
   Status GetArg(int index, Tensor* val) const;
@@ -288,29 +290,10 @@ class FunctionLibraryDefinition : public OpRegistryInterface {
   const FunctionDef* Find(const string& func) const;
 
   // Adds function definition 'fdef' to this function library.
-  // Returns status 'ok' on success, or error otherwise. This is a no-op if
-  // 'fdef' already exists in this function library.
+  // Returns status 'ok' on success, or error otherwise.
   // If 'fdef' is successfully added to the library, it will be accessible
   // from 'LookUp' and included in the proto returned by 'ToProto'.
-  // This operation is atomic.
   Status AddFunctionDef(const FunctionDef& fdef);
-
-  // Adds gradient definition 'grad' to this function library.
-  // This is a no-op if 'grad' already exists in this function library.
-  // If 'grad' is successfully added, it will be accessible via 'FindGradient'
-  // and included in the proto returned by 'ToProto'.
-  // This operation is atomic.
-  Status AddGradientDef(const GradientDef& grad);
-
-  // Adds the functions and gradients in 'other' to this function library.
-  // Duplicate functions and gradients are ignored.
-  // This operation is atomic.
-  Status AddLibrary(const FunctionLibraryDefinition& other);
-
-  // Adds the functions and gradients in 'lib_def' to this function library.
-  // Duplicate functions and gradients are ignored.
-  // This operation is atomic.
-  Status AddLibrary(const FunctionDefLibrary& lib_def);
 
   // If the gradient function for 'func' is specified explicitly in
   // the library, returns the gradient function name.  Otherwise,
@@ -325,63 +308,23 @@ class FunctionLibraryDefinition : public OpRegistryInterface {
   Status LookUp(const string& op_type_name,
                 const OpRegistrationData** op_reg_data) const override;
 
-  static constexpr const char* const kGradientOp = "SymbolicGradient";
-  static constexpr const char* const kFuncAttr = "f";
-
-  // Given a node def 'ndef', inspects attributes of the callee
-  // function to derive the attribute 'value' for 'attr'. Returns OK
-  // iff the attribute is given by the function's definition.
-  // TODO(irving): Remove; keep only the const Node& version.
-  template <typename T>
-  Status GetAttr(const NodeDef& ndef, const string& attr, T* value) const;
-
-  // Given a node, inspects attributes of the callee function to derive the
-  // attribute 'value' for 'attr'. Returns OK iff the attribute is given by the
-  // function's definition.
-  template <typename T>
-  Status GetAttr(const Node& node, const string& attr, T* value) const;
-
   // Returns a proto representation of the state of this function library.
   FunctionDefLibrary ToProto() const;
-
-  const OpRegistryInterface* default_registry() const {
-    return default_registry_;
-  }
 
  private:
   // TODO(cwhipkey): support shape functions in FunctionDefLibrary.
   struct FunctionDefAndOpRegistration {
-    FunctionDefAndOpRegistration(const FunctionDef& fdef_in);
+    FunctionDefAndOpRegistration(const FunctionDef& fdef_in)
+        : fdef(fdef_in), op_registration_data(fdef.signature()) {}
 
     FunctionDef fdef;
     OpRegistrationData op_registration_data;
   };
 
-  // Same as AddFunctionDef/AddGradientDef except these methods set
-  // `added` to true if the `fdef`/`grad` were actually added to this.
-  Status AddFunctionDefHelper(const FunctionDef& fdef, bool* added);
-  Status AddGradientDefHelper(const GradientDef& grad, bool* added);
-
   const OpRegistryInterface* const default_registry_;
-  gtl::FlatMap<string, std::unique_ptr<FunctionDefAndOpRegistration>>
+  std::unordered_map<string, std::unique_ptr<FunctionDefAndOpRegistration>>
       function_defs_;
-  gtl::FlatMap<string, string> func_grad_;
-
-  // Helper function for GetAttr. Returns the FunctionDef* to get the
-  // attr from.
-  const FunctionDef* GetAttrImpl(const NodeDef& ndef) const;
-
-  // Remove function `func` from the library. `func` must be in the library.
-  void RemoveFunction(const string& func);
-
-  // Remove gradient of function `func` from the library. `func` must have
-  // a gradient.
-  void RemoveGradient(const string& func);
-
-  // Remove all functions in `funcs` and all gradients of
-  // functions in `funcs_with_grads` from this library.
-  void Remove(const std::vector<string>& funcs,
-              const std::vector<string>& funcs_with_grads);
+  std::unordered_map<string, string> func_grad_;
 };
 
 // Forward declare. Defined in common_runtime/function.h
@@ -399,8 +342,11 @@ class FunctionLibraryRuntime {
   // Returns OK and fills in "handle" if the instantiation succeeds.
   // Otherwise returns an error and "handle" is undefined.
   typedef uint64 Handle;
-  virtual Status Instantiate(const string& function_name, AttrSlice attrs,
+  virtual Status Instantiate(const string& function_name,
+                             const InstantiateAttrValueMap& attrs,
                              Handle* handle) = 0;
+  Status Instantiate(const string& function_name,
+                     InstantiateAttrValueSlice attrs, Handle* handle);
 
   // Returns the function body for the instantiated function given its
   // handle 'h'. Returns nullptr if "h" is not found.
@@ -418,12 +364,12 @@ class FunctionLibraryRuntime {
   //
   // Does not take ownership of "rets".
   struct Options {
+    CancellationManager* cancellation_manager = nullptr;
     // The id of the step that is calling this function.
     int64 step_id = 0;
-    Rendezvous* rendezvous = nullptr;
-    CancellationManager* cancellation_manager = nullptr;
-    ScopedStepContainer* step_container = nullptr;
-    StepStatsCollector* stats_collector = nullptr;
+
+    // Per-step resource manager. Does not take ownership.
+    ResourceMgr* step_resource_manager = nullptr;
 
     std::function<void(std::function<void()>)>* runner = nullptr;
   };
@@ -454,18 +400,7 @@ class FunctionLibraryRuntime {
   // Returns a debug string showing the definition of the function of
   // 'handle'.
   virtual string DebugString(Handle handle) = 0;
-
-  // Returns the graph version number.
-  virtual int graph_def_version() = 0;
-
-  typedef uint64 LocalHandle;
 };
-
-const FunctionLibraryRuntime::Handle kInvalidHandle = -1;
-const FunctionLibraryRuntime::LocalHandle kInvalidLocalHandle = -1;
-typedef std::function<Status(FunctionLibraryRuntime*, const NodeDef&,
-                             std::unique_ptr<OpKernel>*)>
-    CustomKernelCreator;
 
 // To register a gradient function for a builtin op, one should use
 //   REGISTER_OP_GRADIENT(<op_name>, <c++ grad factory>);
@@ -534,16 +469,6 @@ bool RegisterOp(const string& op, Creator func);
 // nullptr if REGISTER_OP_NO_GRADIENT is used.
 Status GetOpGradientCreator(const string& op, Creator* creator);
 };
-
-// Declare explicit instantiations of GetAttr
-#define GET_ATTR(T)                                          \
-  extern template Status FunctionLibraryDefinition::GetAttr( \
-      const Node&, const string&, T*) const;                 \
-  extern template Status FunctionLibraryDefinition::GetAttr( \
-      const NodeDef&, const string&, T*) const;
-GET_ATTR(string)
-GET_ATTR(bool)
-#undef GET_ATTR
 
 }  // end namespace tensorflow
 

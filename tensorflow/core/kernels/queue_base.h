@@ -69,7 +69,7 @@ class QueueBase : public QueueInterface {
 
   int32 capacity() const { return capacity_; }
 
-  bool is_closed() const override {
+  bool closed() {
     mutex_lock lock(mu_);
     return closed_;
   }
@@ -143,7 +143,7 @@ class QueueBase : public QueueInterface {
   const DataTypeVector component_dtypes_;
   const std::vector<TensorShape> component_shapes_;
   const string name_;
-  mutable mutex mu_;
+  mutex mu_;
   bool closed_ GUARDED_BY(mu_);
 
   struct Attempt;

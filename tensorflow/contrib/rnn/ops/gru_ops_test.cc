@@ -27,10 +27,8 @@ class GruOpsTest : public ::testing::Test {
     TF_Status* status = TF_NewStatus();
     auto* lib = TF_LoadLibrary(
         "tensorflow/contrib/rnn/python/ops/_gru_ops.so", status);
-    TF_Code code = TF_GetCode(status);
-    string status_msg(TF_Message(status));
+    CHECK_EQ(TF_OK, TF_GetCode(status));
     TF_DeleteStatus(status);
-    ASSERT_EQ(TF_OK, code) << status_msg;
     TF_DeleteLibraryHandle(lib);
   }
 };

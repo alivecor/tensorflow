@@ -12,58 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for SessionManager."""
 
+"""Tests for SessionManager."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import os
 
-from tensorflow.python.client import session as session_lib
-from tensorflow.python.framework import dtypes
+import tensorflow as tf
+
 from tensorflow.python.framework import errors
-from tensorflow.python.framework import errors_impl
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import variables
 from tensorflow.python.platform import gfile
-from tensorflow.python.platform import test
-from tensorflow.python.training import saver as saver_lib
-from tensorflow.python.training import server_lib
-from tensorflow.python.training import session_manager
 
 
-class SessionManagerTest(test.TestCase):
+class SessionManagerTest(tf.test.TestCase):
 
   def testPrepareSessionSucceeds(self):
-    with ops.Graph().as_default():
-      v = variables.Variable([1.0, 2.0, 3.0], name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      sess = sm.prepare_session(
-          "", init_op=variables.global_variables_initializer())
+    with tf.Graph().as_default():
+      v = tf.Variable([1.0, 2.0, 3.0], name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      sess = sm.prepare_session("", init_op=tf.initialize_all_variables())
       self.assertAllClose([1.0, 2.0, 3.0], sess.run(v))
 
   def testPrepareSessionSucceedsWithInitFeedDict(self):
-    with ops.Graph().as_default():
-      p = array_ops.placeholder(dtypes.float32, shape=(3,))
-      v = variables.Variable(p, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      sess = sm.prepare_session(
-          "",
-          init_op=variables.global_variables_initializer(),
-          init_feed_dict={p: [1.0, 2.0, 3.0]})
+    with tf.Graph().as_default():
+      p = tf.placeholder(tf.float32, shape=(3,))
+      v = tf.Variable(p, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      sess = sm.prepare_session("",
+                                init_op=tf.initialize_all_variables(),
+                                init_feed_dict={p: [1.0, 2.0, 3.0]})
       self.assertAllClose([1.0, 2.0, 3.0], sess.run(v))
 
   def testPrepareSessionSucceedsWithInitFn(self):
-    with ops.Graph().as_default():
-      v = variables.Variable([125], name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      sess = sm.prepare_session(
-          "", init_fn=lambda sess: sess.run(v.initializer))
+    with tf.Graph().as_default():
+      v = tf.Variable([125], name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      sess = sm.prepare_session("",
+                                init_fn=lambda sess: sess.run(v.initializer))
       self.assertAllClose([125], sess.run(v))
 
   def testPrepareSessionFails(self):
@@ -73,82 +60,45 @@ class SessionManagerTest(test.TestCase):
       gfile.DeleteRecursively(checkpoint_dir)
       gfile.DeleteRecursively(checkpoint_dir2)
     except errors.OpError:
-      pass  # Ignore
+      pass                      # Ignore
     gfile.MakeDirs(checkpoint_dir)
 
-    with ops.Graph().as_default():
-      v = variables.Variable([1.0, 2.0, 3.0], name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      saver = saver_lib.Saver({"v": v})
-      sess = sm.prepare_session(
-          "",
-          init_op=variables.global_variables_initializer(),
-          saver=saver,
-          checkpoint_dir=checkpoint_dir)
+    with tf.Graph().as_default():
+      v = tf.Variable([1.0, 2.0, 3.0], name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      saver = tf.train.Saver({"v": v})
+      sess = sm.prepare_session("", init_op=tf.initialize_all_variables(),
+                                saver=saver, checkpoint_dir=checkpoint_dir)
       self.assertAllClose([1.0, 2.0, 3.0], sess.run(v))
       checkpoint_filename = os.path.join(checkpoint_dir,
                                          "prepare_session_checkpoint")
       saver.save(sess, checkpoint_filename)
     # Create a new Graph and SessionManager and recover.
-    with ops.Graph().as_default():
+    with tf.Graph().as_default():
       # Renames the checkpoint directory.
       os.rename(checkpoint_dir, checkpoint_dir2)
       gfile.MakeDirs(checkpoint_dir)
-      v = variables.Variable([6.0, 7.0, 8.0], name="v")
+      v = tf.Variable([6.0, 7.0, 8.0], name="v")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-      session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      saver = saver_lib.Saver({"v": v})
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+      tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      saver = tf.train.Saver({"v": v})
       # This should fail as there's no checkpoint within 2 seconds.
       with self.assertRaisesRegexp(
           RuntimeError, "no init_op or init_fn or local_init_op was given"):
-        sess = sm.prepare_session(
-            "",
-            init_op=None,
-            saver=saver,
-            checkpoint_dir=checkpoint_dir,
-            wait_for_checkpoint=True,
-            max_wait_secs=2)
+        sess = sm.prepare_session("", init_op=None, saver=saver,
+                                  checkpoint_dir=checkpoint_dir,
+                                  wait_for_checkpoint=True, max_wait_secs=2)
       # Rename the checkpoint directory back.
       gfile.DeleteRecursively(checkpoint_dir)
       os.rename(checkpoint_dir2, checkpoint_dir)
       # This should succeed as there's checkpoint.
-      sess = sm.prepare_session(
-          "",
-          init_op=None,
-          saver=saver,
-          checkpoint_dir=checkpoint_dir,
-          wait_for_checkpoint=True,
-          max_wait_secs=2)
+      sess = sm.prepare_session("", init_op=None, saver=saver,
+                                checkpoint_dir=checkpoint_dir,
+                                wait_for_checkpoint=True, max_wait_secs=2)
       self.assertEqual(
-          True,
-          variables.is_variable_initialized(
+          True, tf.is_variable_initialized(
               sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
-
-  def _test_recovered_variable(self,
-                               checkpoint_dir=None,
-                               checkpoint_filename_with_path=None):
-    # Create a new Graph and SessionManager and recover from a checkpoint.
-    with ops.Graph().as_default():
-      v = variables.Variable(2, name="v")
-      with session_lib.Session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      saver = saver_lib.Saver({"v": v})
-      sess, initialized = sm2.recover_session(
-          "",
-          saver=saver,
-          checkpoint_dir=checkpoint_dir,
-          checkpoint_filename_with_path=checkpoint_filename_with_path)
-      self.assertTrue(initialized)
-      self.assertEqual(
-          True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
-      self.assertEquals(1, sess.run(v))
 
   def testRecoverSession(self):
     # Create a checkpoint.
@@ -156,38 +106,41 @@ class SessionManagerTest(test.TestCase):
     try:
       gfile.DeleteRecursively(checkpoint_dir)
     except errors.OpError:
-      pass  # Ignore
+      pass                      # Ignore
     gfile.MakeDirs(checkpoint_dir)
 
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      saver = saver_lib.Saver({"v": v})
-      sess, initialized = sm.recover_session(
-          "", saver=saver, checkpoint_dir=checkpoint_dir)
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      saver = tf.train.Saver({"v": v})
+      sess, initialized = sm.recover_session("", saver=saver,
+                                             checkpoint_dir=checkpoint_dir)
       self.assertFalse(initialized)
       sess.run(v.initializer)
       self.assertEquals(1, sess.run(v))
-      saver.save(sess,
-                 os.path.join(checkpoint_dir, "recover_session_checkpoint"))
-    self._test_recovered_variable(checkpoint_dir=checkpoint_dir)
-    self._test_recovered_variable(
-        checkpoint_filename_with_path=saver_lib.latest_checkpoint(
-            checkpoint_dir))
-    # Cannot set both checkpoint_dir and checkpoint_filename_with_path.
-    with self.assertRaises(ValueError):
-      self._test_recovered_variable(
-          checkpoint_dir=checkpoint_dir,
-          checkpoint_filename_with_path=saver_lib.latest_checkpoint(
-              checkpoint_dir))
+      saver.save(sess, os.path.join(checkpoint_dir,
+                                    "recover_session_checkpoint"))
+    # Create a new Graph and SessionManager and recover.
+    with tf.Graph().as_default():
+      v = tf.Variable(2, name="v")
+      with self.test_session():
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables())
+      saver = tf.train.Saver({"v": v})
+      sess, initialized = sm2.recover_session("", saver=saver,
+                                              checkpoint_dir=checkpoint_dir)
+      self.assertTrue(initialized)
+      self.assertEqual(
+          True, tf.is_variable_initialized(
+              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
+      self.assertEquals(1, sess.run(v))
 
   def testWaitForSessionReturnsNoneAfterTimeout(self):
-    with ops.Graph().as_default():
-      variables.Variable(1, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
-          recovery_wait_secs=1)
+    with tf.Graph().as_default():
+      tf.Variable(1, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables(),
+                                   recovery_wait_secs=1)
 
       # Set max_wait_secs to allow us to try a few times.
       with self.assertRaises(errors.DeadlineExceededError):
@@ -199,9 +152,9 @@ class SessionManagerTest(test.TestCase):
     with self.assertRaisesRegexp(ValueError,
                                  "If you pass a ready_for_local_init_op "
                                  "you must also pass a local_init_op "):
-      session_manager.SessionManager(
-          ready_for_local_init_op=variables.report_uninitialized_variables(
-              variables.global_variables()),
+      tf.train.SessionManager(
+          ready_for_local_init_op=tf.report_uninitialized_variables(
+              tf.all_variables()),
           local_init_op=None)
 
   def testRecoverSessionWithReadyForLocalInitOp(self):
@@ -214,46 +167,45 @@ class SessionManagerTest(test.TestCase):
       pass  # Ignore
     gfile.MakeDirs(checkpoint_dir)
 
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      saver = saver_lib.Saver({"v": v})
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      saver = tf.train.Saver({"v": v})
       sess, initialized = sm.recover_session(
           "", saver=saver, checkpoint_dir=checkpoint_dir)
       self.assertFalse(initialized)
       sess.run(v.initializer)
       self.assertEquals(1, sess.run(v))
-      saver.save(sess,
-                 os.path.join(checkpoint_dir, "recover_session_checkpoint"))
+      saver.save(sess, os.path.join(checkpoint_dir,
+                                    "recover_session_checkpoint"))
     # Create a new Graph and SessionManager and recover.
-    with ops.Graph().as_default():
-      v = variables.Variable(2, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(2, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
-          ready_for_local_init_op=variables.report_uninitialized_variables(
-              variables.global_variables()),
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
+          ready_for_local_init_op=tf.report_uninitialized_variables(
+              tf.all_variables()),
           local_init_op=w.initializer)
-      saver = saver_lib.Saver({"v": v})
+      saver = tf.train.Saver({"v": v})
       sess, initialized = sm2.recover_session(
           "", saver=saver, checkpoint_dir=checkpoint_dir)
       self.assertTrue(initialized)
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("v:0")).eval(
+              session=sess))
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("w:0")).eval(
+              session=sess))
       self.assertEquals(1, sess.run(v))
       self.assertEquals(1, sess.run(w))
 
@@ -272,45 +224,44 @@ class SessionManagerTest(test.TestCase):
       pass  # Ignore
     gfile.MakeDirs(checkpoint_dir)
 
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      saver = saver_lib.Saver({"v": v})
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.report_uninitialized_variables())
+      saver = tf.train.Saver({"v": v})
       sess, initialized = sm.recover_session(
           "", saver=saver, checkpoint_dir=checkpoint_dir)
       self.assertFalse(initialized)
       sess.run(v.initializer)
       self.assertEquals(1, sess.run(v))
-      saver.save(sess,
-                 os.path.join(checkpoint_dir, "recover_session_checkpoint"))
+      saver.save(sess, os.path.join(checkpoint_dir,
+                                    "recover_session_checkpoint"))
     # Create a new Graph and SessionManager and recover.
-    with ops.Graph().as_default():
-      v = variables.Variable(2, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(2, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
-          ready_for_local_init_op=variables.report_uninitialized_variables(),
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
+          ready_for_local_init_op=tf.report_uninitialized_variables(),
           local_init_op=w.initializer)
-      saver = saver_lib.Saver({"v": v})
+      saver = tf.train.Saver({"v": v})
       sess, initialized = sm2.recover_session(
           "", saver=saver, checkpoint_dir=checkpoint_dir)
       self.assertFalse(initialized)
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("v:0")).eval(
+              session=sess))
       self.assertEqual(
           False,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("w:0")).eval(
+              session=sess))
       self.assertEquals(1, sess.run(v))
 
   def testRecoverSessionNoChkptStillRunsLocalInitOp(self):
@@ -318,16 +269,16 @@ class SessionManagerTest(test.TestCase):
     # In particular, we continue to ensure that recover_session will execute
     # local_init_op exactly once, regardless of whether the session was
     # successfully recovered.
-    with ops.Graph().as_default():
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      w = tf.Variable(
           1,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
           ready_for_local_init_op=None,
           local_init_op=w.initializer)
       # Try to recover session from None
@@ -337,8 +288,8 @@ class SessionManagerTest(test.TestCase):
       self.assertFalse(initialized)
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("w:0")).eval(
+              session=sess))
       self.assertEquals(1, sess.run(w))
 
   def testRecoverSessionFailsStillRunsLocalInitOp(self):
@@ -353,21 +304,21 @@ class SessionManagerTest(test.TestCase):
     gfile.MakeDirs(checkpoint_dir)
 
     # Create a new Graph and SessionManager and recover.
-    with ops.Graph().as_default():
-      v = variables.Variable(2, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(2, name="v")
+      w = tf.Variable(
           1,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
           ready_for_local_init_op=None,
           local_init_op=w.initializer)
-      saver = saver_lib.Saver({"v": v})
+      saver = tf.train.Saver({"v": v})
       sess, initialized = sm2.recover_session(
           "",
           saver=saver,
@@ -376,235 +327,142 @@ class SessionManagerTest(test.TestCase):
       self.assertFalse(initialized)
       self.assertEqual(
           False,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("v:0")).eval(
+              session=sess))
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("w:0")).eval(
+              session=sess))
       self.assertEquals(1, sess.run(w))
 
   def testWaitForSessionLocalInit(self):
-    server = server_lib.Server.create_local_server()
-    with ops.Graph().as_default() as graph:
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    server = tf.train.Server.create_local_server()
+    with tf.Graph().as_default() as graph:
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
-      sm = session_manager.SessionManager(
+      sm = tf.train.SessionManager(
           graph=graph,
-          ready_op=variables.report_uninitialized_variables(),
-          ready_for_local_init_op=variables.report_uninitialized_variables(
-              variables.global_variables()),
+          ready_op=tf.report_uninitialized_variables(),
+          ready_for_local_init_op=tf.report_uninitialized_variables(
+              tf.all_variables()),
           local_init_op=w.initializer)
 
       # Initialize v but not w
-      s = session_lib.Session(server.target, graph=graph)
+      s = tf.Session(server.target, graph=graph)
       s.run(v.initializer)
 
       sess = sm.wait_for_session(server.target, max_wait_secs=3)
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("v:0")).eval(
+              session=sess))
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("w:0")).eval(
+              session=sess))
       self.assertEquals(1, sess.run(v))
       self.assertEquals(1, sess.run(w))
 
   def testWaitForSessionWithReadyForLocalInitOpFailsToReadyLocal(self):
-    with ops.Graph().as_default() as graph:
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default() as graph:
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
-      sm = session_manager.SessionManager(
+      sm = tf.train.SessionManager(
           graph=graph,
-          ready_op=variables.report_uninitialized_variables(),
-          ready_for_local_init_op=variables.report_uninitialized_variables(),
+          ready_op=tf.report_uninitialized_variables(),
+          ready_for_local_init_op=tf.report_uninitialized_variables(),
           local_init_op=w.initializer)
 
-      with self.assertRaises(errors_impl.DeadlineExceededError):
+      with self.assertRaises(tf.errors.DeadlineExceededError):
         # Time-out because w fails to be initialized,
         # because of overly restrictive ready_for_local_init_op
         sm.wait_for_session("", max_wait_secs=3)
 
   def testWaitForSessionInsufficientReadyForLocalInitCheck(self):
-    with ops.Graph().as_default() as graph:
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default() as graph:
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
-      sm = session_manager.SessionManager(
+      sm = tf.train.SessionManager(
           graph=graph,
-          ready_op=variables.report_uninitialized_variables(),
+          ready_op=tf.report_uninitialized_variables(),
           ready_for_local_init_op=None,
           local_init_op=w.initializer)
-    with self.assertRaisesRegexp(errors_impl.DeadlineExceededError,
-                                 "Session was not ready after waiting.*"):
+    with self.assertRaisesRegexp(tf.errors.FailedPreconditionError,
+                                 "Attempting to use uninitialized value v"):
       sm.wait_for_session("", max_wait_secs=3)
 
   def testPrepareSessionWithReadyForLocalInitOp(self):
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
-      x = variables.Variable(
-          3 * v,
-          trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
-          name="x")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-        self.assertEqual(False, variables.is_variable_initialized(x).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
-          ready_for_local_init_op=variables.report_uninitialized_variables(
-              variables.global_variables()),
-          local_init_op=[w.initializer, x.initializer])
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
+          ready_for_local_init_op=tf.report_uninitialized_variables(
+              tf.all_variables()),
+          local_init_op=w.initializer)
       sess = sm2.prepare_session("", init_op=v.initializer)
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("v:0")).eval(
+              session=sess))
       self.assertEqual(
           True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
-      self.assertEqual(
-          True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("x:0")).eval(session=sess))
+          tf.is_variable_initialized(sess.graph.get_tensor_by_name("w:0")).eval(
+              session=sess))
       self.assertEquals(1, sess.run(v))
       self.assertEquals(1, sess.run(w))
-      self.assertEquals(3, sess.run(x))
-
-  def testPrepareSessionWithPartialInitOp(self):
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
-          v,
-          trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
-          name="w")
-      x = variables.Variable(
-          3 * v,
-          trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
-          name="x")
-      v_res = variables.Variable(1, name="v_res")
-      w_res = variables.Variable(
-          v_res,
-          trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
-          name="w_res")
-      x_res = variables.Variable(
-          3 * v_res,
-          trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
-          name="x_res")
-
-      with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-        self.assertEqual(False, variables.is_variable_initialized(x).eval())
-        self.assertEqual(False, variables.is_variable_initialized(v_res).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w_res).eval())
-        self.assertEqual(False, variables.is_variable_initialized(x_res).eval())
-      sm2 = session_manager.SessionManager(local_init_op=[
-          w.initializer, x.initializer, w_res.initializer, x_res.initializer
-      ])
-      sess = sm2.prepare_session("", init_op=None)
-      self.assertEqual(
-          False,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
-      self.assertEqual(
-          True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w:0")).eval(session=sess))
-      self.assertEqual(
-          True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("x:0")).eval(session=sess))
-      self.assertEquals(1, sess.run(w))
-      self.assertEquals(3, sess.run(x))
-      self.assertEqual(
-          False,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("v_res:0")).eval(session=sess))
-      self.assertEqual(
-          True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("w_res:0")).eval(session=sess))
-      self.assertEqual(
-          True,
-          variables.is_variable_initialized(
-              sess.graph.get_tensor_by_name("x_res:0")).eval(session=sess))
-      self.assertEquals(1, sess.run(w_res))
-      self.assertEquals(3, sess.run(x_res))
 
   def testPrepareSessionDidNotInitLocalVariable(self):
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
-      with self.assertRaisesRegexp(
-          RuntimeError, "Init operations did not make model ready.*"):
-        sm2.prepare_session("", init_op=v.initializer)
-
-  def testPrepareSessionDidNotInitLocalVariableList(self):
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
-          v,
-          trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
-          name="w")
-      with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables())
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables())
       with self.assertRaisesRegexp(RuntimeError,
                                    "Init operations did not make model ready"):
-        sm2.prepare_session("", init_op=[v.initializer])
+        sm2.prepare_session("", init_op=v.initializer)
 
   def testPrepareSessionWithReadyNotReadyForLocal(self):
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
-          ready_for_local_init_op=variables.report_uninitialized_variables(
-              variables.global_variables()),
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
+          ready_for_local_init_op=tf.report_uninitialized_variables(
+              tf.all_variables()),
           local_init_op=w.initializer)
       with self.assertRaisesRegexp(
           RuntimeError,
@@ -612,55 +470,50 @@ class SessionManagerTest(test.TestCase):
         sm2.prepare_session("", init_op=None)
 
   def testPrepareSessionWithInsufficientReadyForLocalInitCheck(self):
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      w = variables.Variable(
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      w = tf.Variable(
           v,
           trainable=False,
-          collections=[ops.GraphKeys.LOCAL_VARIABLES],
+          collections=[tf.GraphKeys.LOCAL_VARIABLES],
           name="w")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-        self.assertEqual(False, variables.is_variable_initialized(w).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.report_uninitialized_variables(),
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+        self.assertEqual(False, tf.is_variable_initialized(w).eval())
+      sm2 = tf.train.SessionManager(
+          ready_op=tf.report_uninitialized_variables(),
           ready_for_local_init_op=None,
           local_init_op=w.initializer)
-    with self.assertRaisesRegexp(RuntimeError,
-                                 "Init operations did not make model ready.*"):
+    with self.assertRaisesRegexp(tf.errors.FailedPreconditionError,
+                                 "Attempting to use uninitialized value v"):
       sm2.prepare_session("", init_op=None)
 
 
-class ObsoleteSessionManagerTest(test.TestCase):
+class ObsoleteSessionManagerTest(tf.test.TestCase):
 
   def testPrepareSessionSucceeds(self):
-    with ops.Graph().as_default():
-      v = variables.Variable([1.0, 2.0, 3.0], name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      sess = sm.prepare_session(
-          "", init_op=variables.global_variables_initializer())
+    with tf.Graph().as_default():
+      v = tf.Variable([1.0, 2.0, 3.0], name="v")
+      sm = tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      sess = sm.prepare_session("", init_op=tf.initialize_all_variables())
       self.assertAllClose([1.0, 2.0, 3.0], sess.run(v))
 
   def testPrepareSessionSucceedsWithInitFeedDict(self):
-    with ops.Graph().as_default():
-      p = array_ops.placeholder(dtypes.float32, shape=(3,))
-      v = variables.Variable(p, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      sess = sm.prepare_session(
-          "",
-          init_op=variables.global_variables_initializer(),
-          init_feed_dict={p: [1.0, 2.0, 3.0]})
+    with tf.Graph().as_default():
+      p = tf.placeholder(tf.float32, shape=(3,))
+      v = tf.Variable(p, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      sess = sm.prepare_session("",
+                                init_op=tf.initialize_all_variables(),
+                                init_feed_dict={p: [1.0, 2.0, 3.0]})
       self.assertAllClose([1.0, 2.0, 3.0], sess.run(v))
 
   def testPrepareSessionSucceedsWithInitFn(self):
-    with ops.Graph().as_default():
-      v = variables.Variable([125], name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      sess = sm.prepare_session(
-          "", init_fn=lambda sess: sess.run(v.initializer))
+    with tf.Graph().as_default():
+      v = tf.Variable([125], name="v")
+      sm = tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      sess = sm.prepare_session("",
+                                init_fn=lambda sess: sess.run(v.initializer))
       self.assertAllClose([125], sess.run(v))
 
   def testPrepareSessionFails(self):
@@ -670,58 +523,44 @@ class ObsoleteSessionManagerTest(test.TestCase):
       gfile.DeleteRecursively(checkpoint_dir)
       gfile.DeleteRecursively(checkpoint_dir2)
     except errors.OpError:
-      pass  # Ignore
+      pass                      # Ignore
     gfile.MakeDirs(checkpoint_dir)
 
-    with ops.Graph().as_default():
-      v = variables.Variable([1.0, 2.0, 3.0], name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      saver = saver_lib.Saver({"v": v})
-      sess = sm.prepare_session(
-          "",
-          init_op=variables.global_variables_initializer(),
-          saver=saver,
-          checkpoint_dir=checkpoint_dir)
+    with tf.Graph().as_default():
+      v = tf.Variable([1.0, 2.0, 3.0], name="v")
+      sm = tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      saver = tf.train.Saver({"v": v})
+      sess = sm.prepare_session("", init_op=tf.initialize_all_variables(),
+                                saver=saver, checkpoint_dir=checkpoint_dir)
       self.assertAllClose([1.0, 2.0, 3.0], sess.run(v))
       checkpoint_filename = os.path.join(checkpoint_dir,
                                          "prepare_session_checkpoint")
       saver.save(sess, checkpoint_filename)
     # Create a new Graph and SessionManager and recover.
-    with ops.Graph().as_default():
+    with tf.Graph().as_default():
       # Renames the checkpoint directory.
       os.rename(checkpoint_dir, checkpoint_dir2)
       gfile.MakeDirs(checkpoint_dir)
-      v = variables.Variable([6.0, 7.0, 8.0], name="v")
+      v = tf.Variable([6.0, 7.0, 8.0], name="v")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-      session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      saver = saver_lib.Saver({"v": v})
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+      tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      saver = tf.train.Saver({"v": v})
       # This should fail as there's no checkpoint within 2 seconds.
       with self.assertRaisesRegexp(
           RuntimeError, "no init_op or init_fn or local_init_op was given"):
-        sess = sm.prepare_session(
-            "",
-            init_op=None,
-            saver=saver,
-            checkpoint_dir=checkpoint_dir,
-            wait_for_checkpoint=True,
-            max_wait_secs=2)
+        sess = sm.prepare_session("", init_op=None, saver=saver,
+                                  checkpoint_dir=checkpoint_dir,
+                                  wait_for_checkpoint=True, max_wait_secs=2)
       # Rename the checkpoint directory back.
       gfile.DeleteRecursively(checkpoint_dir)
       os.rename(checkpoint_dir2, checkpoint_dir)
       # This should succeed as there's checkpoint.
-      sess = sm.prepare_session(
-          "",
-          init_op=None,
-          saver=saver,
-          checkpoint_dir=checkpoint_dir,
-          wait_for_checkpoint=True,
-          max_wait_secs=2)
+      sess = sm.prepare_session("", init_op=None, saver=saver,
+                                checkpoint_dir=checkpoint_dir,
+                                wait_for_checkpoint=True, max_wait_secs=2)
       self.assertEqual(
-          True,
-          variables.is_variable_initialized(
+          True, tf.is_variable_initialized(
               sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
 
   def testRecoverSession(self):
@@ -730,44 +569,40 @@ class ObsoleteSessionManagerTest(test.TestCase):
     try:
       gfile.DeleteRecursively(checkpoint_dir)
     except errors.OpError:
-      pass  # Ignore
+      pass                      # Ignore
     gfile.MakeDirs(checkpoint_dir)
 
-    with ops.Graph().as_default():
-      v = variables.Variable(1, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      saver = saver_lib.Saver({"v": v})
-      sess, initialized = sm.recover_session(
-          "", saver=saver, checkpoint_dir=checkpoint_dir)
+    with tf.Graph().as_default():
+      v = tf.Variable(1, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      saver = tf.train.Saver({"v": v})
+      sess, initialized = sm.recover_session("", saver=saver,
+                                             checkpoint_dir=checkpoint_dir)
       self.assertFalse(initialized)
       sess.run(v.initializer)
       self.assertEquals(1, sess.run(v))
-      saver.save(sess,
-                 os.path.join(checkpoint_dir, "recover_session_checkpoint"))
+      saver.save(sess, os.path.join(checkpoint_dir,
+                                    "recover_session_checkpoint"))
     # Create a new Graph and SessionManager and recover.
-    with ops.Graph().as_default():
-      v = variables.Variable(2, name="v")
+    with tf.Graph().as_default():
+      v = tf.Variable(2, name="v")
       with self.test_session():
-        self.assertEqual(False, variables.is_variable_initialized(v).eval())
-      sm2 = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized())
-      saver = saver_lib.Saver({"v": v})
-      sess, initialized = sm2.recover_session(
-          "", saver=saver, checkpoint_dir=checkpoint_dir)
+        self.assertEqual(False, tf.is_variable_initialized(v).eval())
+      sm2 = tf.train.SessionManager(ready_op=tf.assert_variables_initialized())
+      saver = tf.train.Saver({"v": v})
+      sess, initialized = sm2.recover_session("", saver=saver,
+                                              checkpoint_dir=checkpoint_dir)
       self.assertTrue(initialized)
       self.assertEqual(
-          True,
-          variables.is_variable_initialized(
+          True, tf.is_variable_initialized(
               sess.graph.get_tensor_by_name("v:0")).eval(session=sess))
       self.assertEquals(1, sess.run(v))
 
   def testWaitForSessionReturnsNoneAfterTimeout(self):
-    with ops.Graph().as_default():
-      variables.Variable(1, name="v")
-      sm = session_manager.SessionManager(
-          ready_op=variables.assert_variables_initialized(),
-          recovery_wait_secs=1)
+    with tf.Graph().as_default():
+      tf.Variable(1, name="v")
+      sm = tf.train.SessionManager(ready_op=tf.assert_variables_initialized(),
+                                   recovery_wait_secs=1)
 
       # Set max_wait_secs to allow us to try a few times.
       with self.assertRaises(errors.DeadlineExceededError):
@@ -775,4 +610,4 @@ class ObsoleteSessionManagerTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

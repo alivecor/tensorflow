@@ -32,20 +32,12 @@ limitations under the License.
 %}
 
 %{
-inline void FileExists(const string& filename, TF_Status* out_status) {
-  tensorflow::Status status = tensorflow::Env::Default()->FileExists(filename);
-  if (!status.ok()) {
-    Set_TF_Status_from_Status(out_status, status);
-  }
+inline bool FileExists(const string& filename) {
+  return tensorflow::Env::Default()->FileExists(filename);
 }
 
-inline void FileExists(const tensorflow::StringPiece& filename,
-    TF_Status* out_status) {
-  tensorflow::Status status =
-      tensorflow::Env::Default()->FileExists(filename.ToString());
-  if (!status.ok()) {
-    Set_TF_Status_from_Status(out_status, status);
-  }
+inline bool FileExists(const tensorflow::StringPiece& filename) {
+  return tensorflow::Env::Default()->FileExists(filename.ToString());
 }
 
 inline void DeleteFile(const string& filename, TF_Status* out_status) {
@@ -72,16 +64,6 @@ void WriteStringToFile(const string& filename, const string& file_content,
   if (!status.ok()) {
     Set_TF_Status_from_Status(out_status, status);
   }
-}
-
-std::vector<string> GetChildren(const string& dir, TF_Status* out_status) {
-  std::vector<string> results;
-  tensorflow::Status status = tensorflow::Env::Default()->GetChildren(
-      dir, &results);
-  if (!status.ok()) {
-    Set_TF_Status_from_Status(out_status, status);
-  }
-  return results;
 }
 
 std::vector<string> GetMatchingFiles(const string& filename,
@@ -113,7 +95,7 @@ void RecursivelyCreateDir(const string& dirname, TF_Status* out_status) {
 void CopyFile(const string& oldpath, const string& newpath, bool overwrite,
               TF_Status* out_status) {
   // If overwrite is false and the newpath file exists then it's an error.
-  if (!overwrite && tensorflow::Env::Default()->FileExists(newpath).ok()) {
+  if (!overwrite && FileExists(newpath)) {
     TF_SetStatus(out_status, TF_ALREADY_EXISTS, "file already exists");
     return;
   }
@@ -133,7 +115,7 @@ void CopyFile(const string& oldpath, const string& newpath, bool overwrite,
 void RenameFile(const string& src, const string& target, bool overwrite,
                 TF_Status* out_status) {
   // If overwrite is false and the target file exists then its an error.
-  if (!overwrite && tensorflow::Env::Default()->FileExists(target).ok()) {
+  if (!overwrite && FileExists(target)) {
     TF_SetStatus(out_status, TF_ALREADY_EXISTS, "file already exists");
     return;
   }
@@ -231,7 +213,7 @@ string ReadFromStream(tensorflow::io::BufferedInputStream* stream,
                       TF_Status* out_status) {
   string result;
   tensorflow::Status status = stream->ReadNBytes(bytes, &result);
-  if (!status.ok() && status.code() != tensorflow::error::OUT_OF_RANGE) {
+  if (!status.ok()) {
     Set_TF_Status_from_Status(out_status, status);
     result.clear();
   }
@@ -246,12 +228,11 @@ string ReadFromStream(tensorflow::io::BufferedInputStream* stream,
 %newobject CreateWritableFile;
 
 // Wrap the above functions.
-inline void FileExists(const string& filename, TF_Status* out_status);
+inline bool FileExists(const string& filename);
 inline void DeleteFile(const string& filename, TF_Status* out_status);
 string ReadFileToString(const string& filename, TF_Status* out_status);
 void WriteStringToFile(const string& filename, const string& file_content,
                        TF_Status* out_status);
-std::vector<string> GetChildren(const string& dir, TF_Status* out_status);
 std::vector<string> GetMatchingFiles(const string& filename,
                                      TF_Status* out_status);
 void CreateDir(const string& dirname, TF_Status* out_status);

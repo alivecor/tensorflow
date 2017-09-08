@@ -15,10 +15,7 @@
 
 """Framework utilities.
 
-See the @{$python/contrib.framework} guide.
-
 @@assert_same_float_dtype
-@@assert_scalar
 @@assert_scalar_int
 @@convert_to_tensor_or_sparse_tensor
 @@get_graph_from_inputs
@@ -27,22 +24,21 @@ See the @{$python/contrib.framework} guide.
 @@is_strictly_increasing
 @@is_tensor
 @@reduce_sum_n
-@@remove_squeezable_dimensions
 @@with_shape
 @@with_same_shape
 
+## Deprecation
 @@deprecated
 @@deprecated_args
 @@deprecated_arg_values
 
+## Arg_Scope
 @@arg_scope
 @@add_arg_scope
 @@has_arg_scope
 @@arg_scoped_arguments
 
-@@prepend_name_scope
-@@strip_name_scope
-
+## Variables
 @@add_model_variable
 @@assert_global_step
 @@assert_or_get_global_step
@@ -51,17 +47,13 @@ See the @{$python/contrib.framework} guide.
 @@assign_from_values
 @@assign_from_values_fn
 @@create_global_step
-@@filter_variables
 @@get_global_step
 @@get_or_create_global_step
 @@get_local_variables
 @@get_model_variables
-@@get_name_scope
-@@get_trainable_variables
 @@get_unique_variable
 @@get_variables_by_name
 @@get_variables_by_suffix
-@@get_variable_full_name
 @@get_variables_to_restore
 @@get_variables
 @@local_variable
@@ -69,31 +61,17 @@ See the @{$python/contrib.framework} guide.
 @@variable
 @@VariableDeviceChooser
 @@zero_initializer
-
-@@load_checkpoint
-@@list_variables
-@@load_variable
-@@init_from_checkpoint
-@@load_and_remap_matrix_initializer
-@@load_embedding_initializer
-@@load_linear_multiclass_bias_initializer
-@@load_variable_slot_initializer
 """
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import sys
+
 # pylint: disable=unused-import,wildcard-import
 from tensorflow.contrib.framework.python.framework import *
 from tensorflow.contrib.framework.python.ops import *
-# pylint: enable=unused-import,wildcard-import
+from tensorflow.python.util.all_util import make_all
 
-from tensorflow.python.framework.ops import prepend_name_scope
-from tensorflow.python.framework.ops import strip_name_scope
-
-from tensorflow.python.util.all_util import remove_undocumented
-
-_allowed_symbols = ['nest']
-
-remove_undocumented(__name__, allowed_exception_list=_allowed_symbols)
+__all__ = make_all(__name__)

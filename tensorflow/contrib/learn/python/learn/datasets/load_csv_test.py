@@ -17,11 +17,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow as tf
+
 from tensorflow.contrib.learn.python.learn import datasets
-from tensorflow.python.platform import test
 
 
-class LoadCsvTest(test.TestCase):
+class LoadCsvTest(tf.test.TestCase):
   """Test load csv functions."""
 
   def testIris(self):
@@ -34,6 +35,5 @@ class LoadCsvTest(test.TestCase):
     self.assertTupleEqual(boston.data.shape, (506, 13))
     self.assertTupleEqual(boston.target.shape, (506,))
 
-
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

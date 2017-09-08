@@ -31,13 +31,11 @@ void PrintPythonOps(const OpList& ops, const std::vector<string>& hidden_ops,
                     bool require_shapes);
 string GetPythonOps(const OpList& ops, const std::vector<string>& hidden_ops,
                     bool require_shapes);
-string GetPythonOp(const OpDef& op_def, const string& function_name);
 
 // Get the python wrappers for a list of ops in a OpList.
-// `op_list_buf` should be a pointer to a buffer containing
-// the binary encoded OpList proto, and `op_list_len` should be the
-// length of that buffer.
-string GetPythonWrappers(const char* op_list_buf, size_t op_list_len);
+// buf should be a pointer to a buffer containing the binary encoded OpList
+// proto, and len should be the length of that buffer.
+string GetPythonWrappers(const char* op_wrapper_buf, size_t op_wrapper_len);
 
 }  // namespace tensorflow
 

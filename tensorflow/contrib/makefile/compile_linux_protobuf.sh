@@ -15,7 +15,6 @@
 # ==============================================================================
 # Builds protobuf 3 for Linux inside the local build tree.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GENDIR="$(pwd)/tensorflow/contrib/makefile/gen/protobuf"
 HOST_GENDIR="$(pwd)/tensorflow/contrib/makefile/gen/protobuf-host"
 mkdir -p "${GENDIR}"
@@ -26,8 +25,6 @@ if [[ ! -f "tensorflow/contrib/makefile/downloads/protobuf/autogen.sh" ]]; then
     echo "tensorflow/contrib/makefile/download_dependencies.sh" 1>&2
     exit 1
 fi
-source "${SCRIPT_DIR}"/build_helper.subr
-JOB_COUNT="${JOB_COUNT:-$(get_job_count)}"
 
 cd tensorflow/contrib/makefile/downloads/protobuf
 
@@ -38,7 +35,7 @@ then
   exit 1
 fi
 
-./configure --prefix="${GENDIR}" --with-pic
+./configure --prefix="${GENDIR}"
 if [ $? -ne 0 ]
 then
   echo "./configure command failed."
@@ -47,7 +44,7 @@ fi
 
 make clean
 
-make -j"${JOB_COUNT}"
+make -j 8
 if [ $? -ne 0 ]
 then
   echo "make command failed."

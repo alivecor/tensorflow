@@ -26,12 +26,13 @@ import functools
 
 from tensorflow.contrib.bayesflow.python.ops import stochastic_tensor as st
 from tensorflow.contrib.bayesflow.python.ops import variational_inference as vi
+from tensorflow.contrib.distributions.python.ops import normal
 
 
 def get_stochastic_variable(getter,
                             name,
                             shape=None,
-                            dist_cls=None,
+                            dist_cls=normal.NormalWithSoftplusSigma,
                             dist_kwargs=None,
                             param_initializers=None,
                             prior=None,
@@ -125,7 +126,7 @@ def get_stochastic_variable(getter,
 
   dist_kwargs = dist_kwargs or {}
   dist_kwargs.update(params)
-  sample = st.StochasticTensor(dist_cls(**dist_kwargs))
+  sample = st.StochasticTensor(dist_cls, **dist_kwargs)
 
   if prior is not None:
     if callable(prior):

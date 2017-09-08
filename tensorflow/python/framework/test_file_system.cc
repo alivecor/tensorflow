@@ -18,20 +18,14 @@ limitations under the License.
 namespace tensorflow {
 
 class TestRandomAccessFile : public RandomAccessFile {
-  // The file contents is 10 bytes of all A's
+  // The filecontents is all A's
   Status Read(uint64 offset, size_t n, StringPiece* result,
               char* scratch) const override {
-    Status s;
     for (int i = 0; i < n; ++i) {
-      if (offset + i >= 10) {
-        n = i;
-        s = errors::OutOfRange("EOF");
-        break;
-      }
       scratch[i] = 'A';
     }
     *result = StringPiece(scratch, n);
-    return s;
+    return Status::OK();
   }
 };
 

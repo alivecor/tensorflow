@@ -22,10 +22,5 @@ c.MultiKernelManager.default_kernel_name = 'python2'
 
 # sets a password if PASSWORD is set in the environment
 if 'PASSWORD' in os.environ:
-  password = os.environ['PASSWORD']
-  if password:
-    c.NotebookApp.password = passwd(password)
-  else:
-    c.NotebookApp.password = ''
-    c.NotebookApp.token = ''
+  c.NotebookApp.password = passwd(os.environ['PASSWORD'])
   del os.environ['PASSWORD']

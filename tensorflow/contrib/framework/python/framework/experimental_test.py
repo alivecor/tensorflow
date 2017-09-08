@@ -19,16 +19,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow as tf
 from tensorflow.contrib.framework.python.framework import experimental
-from tensorflow.python.platform import test
 from tensorflow.python.platform import tf_logging as logging
 
 
-class ExperimentalTest(test.TestCase):
+class ExperimentalTest(tf.test.TestCase):
 
-  @test.mock.patch.object(logging, "warning", autospec=True)
+  @tf.test.mock.patch.object(logging, "warning", autospec=True)
   def test_warning(self, mock_warning):
-
     @experimental
     def _fn(arg0, arg1):
       """fn doc.
@@ -44,18 +43,20 @@ class ExperimentalTest(test.TestCase):
 
     # Assert function docs are properly updated.
     self.assertEqual("_fn", _fn.__name__)
-    self.assertEqual("fn doc. (experimental)"
-                     "\n"
-                     "\nTHIS FUNCTION IS EXPERIMENTAL. It may change or "
-                     "be removed at any time, and without warning."
-                     "\n"
-                     "\n"
-                     "\nArgs:"
-                     "\n  arg0: Arg 0."
-                     "\n  arg1: Arg 1."
-                     "\n"
-                     "\nReturns:"
-                     "\n  Sum of args.", _fn.__doc__)
+    self.assertEqual(
+        "fn doc. (experimental)"
+        "\n"
+        "\nTHIS FUNCTION IS EXPERIMENTAL. It may change or "
+        "be removed at any time, and without warning."
+        "\n"
+        "\n"
+        "\n      Args:"
+        "\n        arg0: Arg 0."
+        "\n        arg1: Arg 1."
+        "\n"
+        "\n      Returns:"
+        "\n        Sum of args."
+        "\n      ", _fn.__doc__)
 
     # Assert calling new fn issues log warning.
     self.assertEqual(3, _fn(1, 2))
@@ -65,4 +66,4 @@ class ExperimentalTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

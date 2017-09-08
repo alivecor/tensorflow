@@ -78,7 +78,7 @@ class PosixWritableFile : public WritableFile {
       : filename_(fname), file_(f) {}
 
   ~PosixWritableFile() override {
-    if (file_ != nullptr) {
+    if (file_ != NULL) {
       // Ignoring any potential errors
       fclose(file_);
     }
@@ -97,7 +97,7 @@ class PosixWritableFile : public WritableFile {
     if (fclose(file_) != 0) {
       result = IOError(filename_, errno);
     }
-    file_ = nullptr;
+    file_ = NULL;
     return result;
   }
 
@@ -121,9 +121,7 @@ class PosixReadOnlyMemoryRegion : public ReadOnlyMemoryRegion {
  public:
   PosixReadOnlyMemoryRegion(const void* address, uint64 length)
       : address_(address), length_(length) {}
-  ~PosixReadOnlyMemoryRegion() override {
-    munmap(const_cast<void*>(address_), length_);
-  }
+  ~PosixReadOnlyMemoryRegion() { munmap(const_cast<void*>(address_), length_); }
   const void* data() override { return address_; }
   uint64 length() override { return length_; }
 
@@ -150,7 +148,7 @@ Status PosixFileSystem::NewWritableFile(const string& fname,
   string translated_fname = TranslateName(fname);
   Status s;
   FILE* f = fopen(translated_fname.c_str(), "w");
-  if (f == nullptr) {
+  if (f == NULL) {
     s = IOError(fname, errno);
   } else {
     result->reset(new PosixWritableFile(translated_fname, f));
@@ -163,7 +161,7 @@ Status PosixFileSystem::NewAppendableFile(
   string translated_fname = TranslateName(fname);
   Status s;
   FILE* f = fopen(translated_fname.c_str(), "a");
-  if (f == nullptr) {
+  if (f == NULL) {
     s = IOError(fname, errno);
   } else {
     result->reset(new PosixWritableFile(translated_fname, f));
@@ -193,11 +191,8 @@ Status PosixFileSystem::NewReadOnlyMemoryRegionFromFile(
   return s;
 }
 
-Status PosixFileSystem::FileExists(const string& fname) {
-  if (access(TranslateName(fname).c_str(), F_OK) == 0) {
-    return Status::OK();
-  }
-  return errors::NotFound(fname, " not found");
+bool PosixFileSystem::FileExists(const string& fname) {
+  return access(TranslateName(fname).c_str(), F_OK) == 0;
 }
 
 Status PosixFileSystem::GetChildren(const string& dir,
@@ -205,11 +200,11 @@ Status PosixFileSystem::GetChildren(const string& dir,
   string translated_dir = TranslateName(dir);
   result->clear();
   DIR* d = opendir(translated_dir.c_str());
-  if (d == nullptr) {
+  if (d == NULL) {
     return IOError(dir, errno);
   }
   struct dirent* entry;
-  while ((entry = readdir(d)) != nullptr) {
+  while ((entry = readdir(d)) != NULL) {
     StringPiece basename = entry->d_name;
     if ((basename != ".") && (basename != "..")) {
       result->push_back(entry->d_name);

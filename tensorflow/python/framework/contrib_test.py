@@ -18,28 +18,27 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.platform import test
-from tensorflow.python.util import tf_inspect
+import inspect
+from tensorflow.python.platform import googletest
 
 
-class ContribTest(test.TestCase):
+class ContribTest(googletest.TestCase):
 
   def testContrib(self):
     # pylint: disable=g-import-not-at-top
     import tensorflow as tf
     _ = tf.contrib.layers  # `tf.contrib` is loaded lazily on first use.
-    assert tf_inspect.ismodule(tf.contrib)
+    assert inspect.ismodule(tf.contrib)
 
   def testLayers(self):
     # pylint: disable=g-import-not-at-top
     import tensorflow as tf
-    assert tf_inspect.ismodule(tf.contrib.layers)
+    assert inspect.ismodule(tf.contrib.layers)
 
   def testLinearOptimizer(self):
     # pylint: disable=g-import-not-at-top
     import tensorflow as tf
-    assert tf_inspect.ismodule(tf.contrib.linear_optimizer)
-
+    assert inspect.ismodule(tf.contrib.linear_optimizer)
 
 if __name__ == '__main__':
-  test.main()
+  googletest.main()

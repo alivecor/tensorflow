@@ -1,6 +1,6 @@
 licenses(["notice"])  # BSD
 
-exports_files(["COPYING"])
+exports_files(["LICENSE"])
 
 cc_library(
     name = "pcre",

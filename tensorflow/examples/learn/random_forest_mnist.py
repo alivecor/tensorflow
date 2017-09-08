@@ -1,4 +1,4 @@
-   # Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,39 +18,24 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import sys
 import tempfile
 
+import tensorflow as tf
+
 # pylint: disable=g-backslash-continuation
-from tensorflow.contrib.learn.python.learn\
-        import metric_spec
 from tensorflow.contrib.learn.python.learn.estimators\
-        import estimator
-from tensorflow.contrib.tensor_forest.client\
-        import eval_metrics
-from tensorflow.contrib.tensor_forest.client\
         import random_forest
-from tensorflow.contrib.tensor_forest.python\
-        import tensor_forest
 from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.python.platform import app
 
 FLAGS = None
 
 
 def build_estimator(model_dir):
   """Build an estimator."""
-  params = tensor_forest.ForestHParams(
+  params = tf.contrib.tensor_forest.python.tensor_forest.ForestHParams(
       num_classes=10, num_features=784,
       num_trees=FLAGS.num_trees, max_nodes=FLAGS.max_nodes)
-  graph_builder_class = tensor_forest.RandomForestGraphs
-  if FLAGS.use_training_loss:
-    graph_builder_class = tensor_forest.TrainingLossForest
-  # Use the SKCompat wrapper, which gives us a convenient way to split
-  # in-memory data like MNIST into batches.
-  return estimator.SKCompat(random_forest.TensorForestEstimator(
-      params, graph_builder_class=graph_builder_class,
-      model_dir=model_dir))
+  return random_forest.TensorForestEstimator(params, model_dir=model_dir)
 
 
 def train_and_eval():
@@ -58,22 +43,22 @@ def train_and_eval():
   model_dir = tempfile.mkdtemp() if not FLAGS.model_dir else FLAGS.model_dir
   print('model directory = %s' % model_dir)
 
-  est = build_estimator(model_dir)
+  estimator = build_estimator(model_dir)
+
+  # TensorForest's LossMonitor allows training to terminate early if the
+  # forest is no longer growing.
+  early_stopping_rounds = 100
+  check_every_n_steps = 100
+  monitor = random_forest.TensorForestLossMonitor(early_stopping_rounds,
+                                                  check_every_n_steps)
 
   mnist = input_data.read_data_sets(FLAGS.data_dir, one_hot=False)
 
-  est.fit(x=mnist.train.images, y=mnist.train.labels,
-          batch_size=FLAGS.batch_size)
+  estimator.fit(x=mnist.train.images, y=mnist.train.labels,
+                batch_size=FLAGS.batch_size, monitors=[monitor])
 
-  metric_name = 'accuracy'
-  metric = {metric_name:
-            metric_spec.MetricSpec(
-                eval_metrics.get_metric(metric_name),
-                prediction_key=eval_metrics.get_prediction_key(metric_name))}
-
-  results = est.score(x=mnist.test.images, y=mnist.test.labels,
-                      batch_size=FLAGS.batch_size,
-                      metrics=metric)
+  results = estimator.evaluate(x=mnist.test.images, y=mnist.test.labels,
+                               batch_size=FLAGS.batch_size)
   for key in sorted(results):
     print('%s: %s' % (key, results[key]))
 
@@ -120,11 +105,6 @@ if __name__ == '__main__':
       default=1000,
       help='Max total nodes in a single tree.'
   )
-  parser.add_argument(
-      '--use_training_loss',
-      type=bool,
-      default=False,
-      help='If true, use training loss as termination criteria.'
-  )
-  FLAGS, unparsed = parser.parse_known_args()
-  app.run(main=main, argv=[sys.argv[0]] + unparsed)
+  FLAGS = parser.parse_args()
+
+  tf.app.run()

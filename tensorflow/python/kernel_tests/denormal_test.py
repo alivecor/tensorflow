@@ -12,21 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for denormal handling."""
 
+"""Tests for denormal handling."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import platform
+import tensorflow as tf
 
-from tensorflow.python.framework import constant_op
-from tensorflow.python.ops import array_ops
-from tensorflow.python.platform import test
+from tensorflow.python.platform import control_imports
 
 
-class DenormalTest(test.TestCase):
+class DenormalTest(tf.test.TestCase):
 
   def testPythonHasDenormals(self):
     """Non-tf numpy code should treat denormals correctly."""
@@ -35,17 +33,16 @@ class DenormalTest(test.TestCase):
       self.assertEqual(tiny, tiny / 16 * 16)
 
   def _flushDenormalsTest(self, use_gpu, dtypes):
-    if platform.machine() == "ppc64le" or platform.machine() == "s390x":
-      # Disabled denormal_test on power/s390x platform
-      # Check relevant discussion - https://github.com/tensorflow/tensorflow/issues/11902
+    if control_imports.USE_OSS:
+      # TODO(irving): Fix denormal flushing for open source.
       return
     with self.test_session(use_gpu=use_gpu):
-      array_ops.identity(7).eval()
+      tf.identity(7).eval()
       for dtype in dtypes:
         tiny = np.finfo(dtype).tiny
         # Small shape to test main thread, large shape to test thread pool
-        for shape in (), (1 << 20,):
-          flush = 0.1 * constant_op.constant(tiny, shape=shape)
+        for shape in (), (1<<20,):
+          flush = 0.1 * tf.constant(tiny, shape=shape)
           self.assertAllEqual(flush.eval(), np.zeros(shape))
           # Make sure the flags don't leak out
           self.testPythonHasDenormals()
@@ -60,4 +57,4 @@ class DenormalTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

@@ -15,8 +15,6 @@ limitations under the License.
 
 #include "tensorflow/core/debug/debug_gateway.h"
 
-#include <utility>
-
 #include "tensorflow/core/common_runtime/device_factory.h"
 #include "tensorflow/core/common_runtime/session_factory.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -58,11 +56,11 @@ DebugGateway::~DebugGateway() {
 }
 
 void DebugGateway::SetNodeCompletionCallback(NodeCompletionCallback callback) {
-  comp_cb_ = std::move(callback);
+  comp_cb_ = callback;
 }
 
 void DebugGateway::SetNodeValueCallback(NodeValueCallback callback) {
-  val_cb_ = std::move(callback);
+  val_cb_ = callback;
 }
 
 void DebugGateway::CopyTensor(const string& node_name, const int output_slot,
@@ -86,7 +84,7 @@ void DebugGateway::CopyTensor(const string& node_name, const int output_slot,
     // Determine if the tensor is on device (GPU) or host (CPU).
     // The second part of the check is necessary because even an OpKernel on
     // may have output tensors allocated on CPU.
-    if ((device->name().find("GPU:") != string::npos || device->name().find("SYCL:") != string::npos) &&
+    if (device->name().find("gpu:") != string::npos &&
         !ctx->output_alloc_attr(output_slot).on_host()) {
       // GPU tensors: Copy it to host (CPU).
       DeviceContext* device_ctxt = ctx->op_device_context();

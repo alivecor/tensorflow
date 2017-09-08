@@ -45,7 +45,6 @@ limitations under the License.
 %unignore tensorflow::io::PyRecordWriter;
 %unignore tensorflow::io::PyRecordWriter::~PyRecordWriter;
 %unignore tensorflow::io::PyRecordWriter::WriteRecord;
-%unignore tensorflow::io::PyRecordWriter::Flush;
 %unignore tensorflow::io::PyRecordWriter::Close;
 %unignore tensorflow::io::PyRecordWriter::New;
 

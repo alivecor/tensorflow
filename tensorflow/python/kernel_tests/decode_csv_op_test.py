@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Tests for DecodeCSV op from parsing_ops."""
 
 from __future__ import absolute_import
@@ -19,16 +20,14 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.ops import parsing_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class DecodeCSVOpTest(test.TestCase):
+class DecodeCSVOpTest(tf.test.TestCase):
 
   def _test(self, args, expected_out=None, expected_err_re=None):
     with self.test_session() as sess:
-      decode = parsing_ops.decode_csv(**args)
+      decode = tf.decode_csv(**args)
 
       if expected_err_re is None:
         out = sess.run(decode)
@@ -44,23 +43,9 @@ class DecodeCSVOpTest(test.TestCase):
           sess.run(decode)
 
   def testSimple(self):
-    args = {
-        "records": ["1", "2", '"3"'],
-        "record_defaults": [[1]],
-    }
+    args = {"records": ["1", "2", '"3"'], "record_defaults": [[1]],}
 
     expected_out = [[1, 2, 3]]
-
-    self._test(args, expected_out)
-
-  def testSimpleNoQuoteDelimiter(self):
-    args = {
-        "records": ["1", "2", '"3"'],
-        "record_defaults": [[""]],
-        "use_quote_delim": False,
-    }
-
-    expected_out = [[b"1", b"2", b'"3"']]
 
     self._test(args, expected_out)
 
@@ -77,19 +62,11 @@ class DecodeCSVOpTest(test.TestCase):
 
     self._test(args, expected_out)
 
-  def test2DNoQuoteDelimiter(self):
-    args = {"records": [["1", "2"], ['""', '"']],
-            "record_defaults": [[""]],
-            "use_quote_delim": False}
-    expected_out = [[[b"1", b"2"], [b'""', b'"']]]
-
-    self._test(args, expected_out)
-
   def testInt64(self):
     args = {
         "records": ["1", "2", '"2147483648"'],
-        "record_defaults": [np.array(
-            [], dtype=np.int64)],
+        "record_defaults": [np.array([],
+                                     dtype=np.int64)],
     }
 
     expected_out = [[1, 2, 2147483648]]
@@ -126,17 +103,6 @@ class DecodeCSVOpTest(test.TestCase):
 
     self._test(args, expected_out)
 
-  def testWithDefaultsAndNoQuoteDelimiter(self):
-    args = {
-        "records": [",1,", "0.2,3,bcd", '3.0,,"'],
-        "record_defaults": [[1.0], [0], ["a"]],
-        "use_quote_delim": False,
-    }
-
-    expected_out = [[1.0, 0.2, 3.0], [1, 3, 0], [b"a", b"bcd", b"\""]]
-
-    self._test(args, expected_out)
-
   def testWithTabDelim(self):
     args = {
         "records": ["1\t1", "0.2\t3", "3.0\t"],
@@ -151,22 +117,22 @@ class DecodeCSVOpTest(test.TestCase):
   def testWithoutDefaultsError(self):
     args = {
         "records": [",1", "0.2,3", "3.0,"],
-        "record_defaults": [[1.0], np.array(
-            [], dtype=np.int32)]
+        "record_defaults": [[1.0], np.array([],
+                                            dtype=np.int32)]
     }
 
-    self._test(
-        args, expected_err_re="Field 1 is required but missing in record 2!")
+    self._test(args,
+               expected_err_re="Field 1 is required but missing in record 2!")
 
   def testWrongFieldIntError(self):
     args = {
         "records": [",1", "0.2,234a", "3.0,2"],
-        "record_defaults": [[1.0], np.array(
-            [], dtype=np.int32)]
+        "record_defaults": [[1.0], np.array([],
+                                            dtype=np.int32)]
     }
 
-    self._test(
-        args, expected_err_re="Field 1 in record 1 is not a valid int32: 234a")
+    self._test(args,
+               expected_err_re="Field 1 in record 1 is not a valid int32: 234a")
 
   def testOutOfRangeError(self):
     args = {
@@ -174,39 +140,41 @@ class DecodeCSVOpTest(test.TestCase):
         "record_defaults": [[1]]
     }
 
-    self._test(
-        args, expected_err_re="Field 0 in record 1 is not a valid int32: ")
+    self._test(args,
+               expected_err_re="Field 0 in record 1 is not a valid int32: ")
 
   def testWrongFieldFloatError(self):
     args = {
         "records": [",1", "0.2,2", "3.0adf,3"],
-        "record_defaults": [[1.0], np.array(
-            [], dtype=np.int32)]
+        "record_defaults": [[1.0], np.array([],
+                                            dtype=np.int32)]
     }
 
-    self._test(
-        args, expected_err_re="Field 0 in record 2 is not a valid float: ")
+    self._test(args,
+               expected_err_re="Field 0 in record 2 is not a valid float: ")
 
   def testWrongFieldStringError(self):
     args = {"records": ['"1,a,"', "0.22", 'a"bc'], "record_defaults": [["a"]]}
 
     self._test(
-        args, expected_err_re="Unquoted fields cannot have quotes/CRLFs inside")
+        args,
+        expected_err_re="Unquoted fields cannot have quotes/CRLFs inside")
 
   def testWrongDefaults(self):
-    args = {"records": [",1", "0.2,2", "3.0adf,3"], "record_defaults": [[1.0]]}
-
-    self._test(args, expected_err_re="Expect 1 fields but have 2 in record 0")
-
-  def testShortQuotedString(self):
     args = {
-        "records": ["\""],
-        "record_defaults": [["default"]],
+        "records": [",1", "0.2,2", "3.0adf,3"],
+        "record_defaults": [[1.0]]
     }
 
-    self._test(
-        args, expected_err_re="Quoted field has to end with quote followed.*")
+    self._test(args,
+               expected_err_re="Expect 1 fields but have 2 in record 0")
+
+  def testShortQuotedString(self):
+    args = {"records": ["\""], "record_defaults": [["default"]],}
+
+    self._test(args,
+               expected_err_re="Quoted field has to end with quote followed.*")
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

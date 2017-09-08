@@ -15,28 +15,20 @@ limitations under the License.
 
 #include "tensorflow/core/framework/tensor_shape.h"
 
-#include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/kernels/bounds_check.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/util/overflow.h"
 
 namespace tensorflow {
 
-// TensorShape and PartialTensorShape should have no fields beyond
-// TensorShapeRep.  In particular, their sizes should be the same.
-static_assert(sizeof(TensorShapeRep) == sizeof(TensorShape),
-              "TensorShape must have no fields beyond TensorShapeRep");
-static_assert(sizeof(TensorShapeRep) == sizeof(PartialTensorShape),
-              "PartialTensorShape must have no fields beyond TensorShapeRep");
+// An upper limit of the total number of elements in a tensor.
+static const int64 kMaxElements = (1LL << 40);
 
-template <class Shape>
-static void AppendTo(const TensorShapeBase<Shape>& s,
-                     gtl::InlinedVector<int64, 8>* vals) {
-  for (auto dim : s) {
-    vals->push_back(dim.size);
+static void AppendTo(const TensorShape& s, gtl::InlinedVector<int64, 8>* vals) {
+  for (auto it = s.begin(); it != s.end(); ++it) {
+    vals->push_back((*it).size);
   }
 }
 
@@ -51,117 +43,71 @@ void TensorShape::CheckDimsAtLeast(int NDIMS) const {
                           << " dimensions";
 }
 
-template <class Shape>
-bool TensorShapeBase<Shape>::IsValid(const TensorShapeProto& proto) {
-  // NOTE(irving): Unfortunately, TensorShape allows parsing protos with
-  // unknown_shape() set, and it seems hard to remove this without backwards
-  // compatibility issues.
-  if (kIsPartial && proto.unknown_rank()) return proto.dim_size() == 0;
+bool TensorShape::IsValid(const TensorShapeProto& proto) {
   int64 num_elements = 1;
   if (proto.dim().size() > MaxDimensions()) return false;
   for (const auto& d : proto.dim()) {
-    if (d.size() < (kIsPartial ? -1 : 0)) return false;
-    if (d.size() == -1) {
-      num_elements = -1;
-    } else if (!kIsPartial || num_elements >= 0) {
-      num_elements = MultiplyWithoutOverflow(num_elements, d.size());
-      if (num_elements < 0) return false;
-    }
+    if (d.size() < 0) return false;
+    num_elements *= d.size();
+    if (num_elements > kMaxElements) return false;
   }
   return true;
 }
 
-template <class Shape>
-Status TensorShapeBase<Shape>::IsValidShape(const TensorShapeProto& proto) {
-  // NOTE(irving): Unfortunately, TensorShape allows parsing protos with
-  // unknown_shape() set, and it seems hard to remove this without backwards
-  // compatibility issues.
-  if (kIsPartial && proto.unknown_rank()) {
-    if (proto.dim_size() > 0) {
-      return errors::InvalidArgument(
-          "An unknown shape must not have any dimensions set.");
-    }
-    return Status::OK();
-  }
+Status TensorShape::IsValidShape(const TensorShapeProto& proto) {
   int64 num_elements = 1;
   if (proto.dim().size() > MaxDimensions()) {
     return errors::InvalidArgument("Shape ", DebugString(proto),
                                    " has too many dimensions");
   }
   for (const auto& d : proto.dim()) {
-    if (d.size() < (kIsPartial ? -1 : 0)) {
-      if (kIsPartial) {
-        return errors::InvalidArgument(
-            "Shape ", DebugString(proto),
-            " has dimensions with values below -1 (where -1 means unknown)");
-      } else {
-        return errors::InvalidArgument("Shape ", DebugString(proto),
-                                       " is not fully defined");
-      }
+    if (d.size() < 0) {
+      return errors::InvalidArgument("Shape ", DebugString(proto),
+                                     " has negative dimensions");
     }
-    if (d.size() == -1) {
-      num_elements = -1;
-    } else if (!kIsPartial || num_elements >= 0) {
-      num_elements = MultiplyWithoutOverflow(num_elements, d.size());
-      if (num_elements < 0) {
-        return errors::InvalidArgument(
-            "Shape ", DebugString(proto),
-            " is too large (more than 2**63 - 1 entries)");
-      }
+    num_elements *= d.size();
+    if (num_elements > kMaxElements) {
+      return errors::InvalidArgument("Shape ", DebugString(proto),
+                                     " is too large (more than ", kMaxElements,
+                                     " entries)");
     }
   }
   return Status::OK();
 }
 
-template <class Shape>
-TensorShapeBase<Shape>::TensorShapeBase(const TensorShapeProto& proto) {
+TensorShape::TensorShape(const TensorShapeProto& proto) {
   set_tag(REP16);
+  set_ndims_byte(0);
   set_data_type(DT_INVALID);
-  // NOTE(irving): Unfortunately, TensorShape allows parsing protos with
-  // unknown_shape() set, and it seems hard to remove this without backwards
-  // compatibility issues.
-  if (kIsPartial && proto.unknown_rank()) {
-    set_ndims_byte(kUnknownRank);
-    set_num_elements(-1);
-  } else {
-    set_ndims_byte(0);
-    set_num_elements(1);
-    for (const auto& d : proto.dim()) {
-      AddDim(d.size());
-    }
+  num_elements_ = 1;
+  for (const auto& d : proto.dim()) {
+    AddDim(d.size());
   }
 }
 
-template <class Shape>
-TensorShapeBase<Shape>::TensorShapeBase(gtl::ArraySlice<int64> dim_sizes) {
+TensorShape::TensorShape(gtl::ArraySlice<int64> dim_sizes) {
   set_tag(REP16);
-  set_data_type(DT_INVALID);
   set_ndims_byte(0);
-  set_num_elements(1);
-  for (int64 s : dim_sizes) {
+  set_data_type(DT_INVALID);
+  num_elements_ = 1;
+  for (const int64& s : dim_sizes) {
     AddDim(internal::SubtleMustCopy(s));
   }
 }
 
-template <class Shape>
-TensorShapeBase<Shape>::TensorShapeBase() {
+TensorShape::TensorShape() {
   set_tag(REP16);
+  set_ndims_byte(0);
   set_data_type(DT_INVALID);
-  if (kIsPartial) {
-    set_ndims_byte(kUnknownRank);
-    set_num_elements(-1);
-  } else {
-    set_ndims_byte(0);
-    set_num_elements(1);
-  }
+  num_elements_ = 1;
 }
 
-void TensorShapeRep::DestructorOutOfLine() {
+void TensorShape::DestructorOutOfLine() {
   DCHECK(tag() == REP_OUT_OF_LINE);
   delete as64()->dims_;
 }
 
-void TensorShapeRep::SlowCopyFrom(const TensorShapeRep& b) {
+void TensorShape::SlowCopyFrom(const TensorShape& b) {
   if (b.tag() != REP_OUT_OF_LINE) {
     if (tag() == REP_OUT_OF_LINE) {
       delete as64()->dims_;
@@ -185,81 +131,51 @@ void TensorShapeRep::SlowCopyFrom(const TensorShapeRep& b) {
   }
 }
 
-template <class Shape>
-int64 TensorShapeBase<Shape>::dim_size(int d) const {
-  if (unknown_rank()) return -1;
+int64 TensorShape::dim_size(int d) const {
   DCHECK_GE(d, 0);
   DCHECK_LT(d, dims());
   if (tag() == REP16) {
-    uint16 dim = as16()->dims_[d];
-    if (kIsPartial && dim == kUnknownRep16) return -1;
-    return dim;
+    return as16()->dims_[d];
   } else if (tag() == REP32) {
-    uint32 dim = as32()->dims_[d];
-    if (kIsPartial && dim == kUnknownRep32) return -1;
-    return dim;
+    return as32()->dims_[d];
   } else {
     return (*as64()->dims_)[d];
   }
 }
 
-void TensorShapeRep::Clear() {
+void TensorShape::Clear() {
   ClearAllButDataType();
   set_data_type(DT_INVALID);
 }
 
-void TensorShapeRep::ClearAllButDataType() {
+void TensorShape::ClearAllButDataType() {
   if (tag() == REP_OUT_OF_LINE) {
     delete as64()->dims_;
   }
   set_tag(REP16);
   set_ndims_byte(0);
   // Leaves data_type alone
-  set_num_elements(1);
+  num_elements_ = 1;
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::RecomputeNumElements() {
-  if (unknown_rank()) {
-    set_num_elements(-1);
-    return;
-  }
+void TensorShape::RecomputeNumElements() {
   int64 n = 1;
-  for (auto dim : *this) {
-    if (kIsPartial && dim.size < 0) {
-      n = -1;
-      break;
-    }
-    n = MultiplyWithoutOverflow(n, dim.size);
+  for (auto it = begin(); it != end(); ++it) {
+    n *= (*it).size;
     CHECK_LE(0, n);
+    CHECK_LE(n, kMaxElements);
   }
-  set_num_elements(n);
+  num_elements_ = n;
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::AddDim(int64 size) {
-  if (!kIsPartial) CHECK_GE(size, 0);
-  if (unknown_rank()) return;
-  CHECK_LT(ndims_byte(), MaxDimensions()) << "Too many dimensions in tensor";
-  int64 new_num_elements;
-  if (kIsPartial && (num_elements() < 0 || size < 0)) {
-    new_num_elements = -1;
-  } else {
-    new_num_elements = MultiplyWithoutOverflow(num_elements(), size);
-    CHECK_LE(0, new_num_elements);
-  }
-  UnsafeAddDim(size, new_num_elements);
-}
-
-template <class Shape>
-void TensorShapeBase<Shape>::UnsafeAddDim(int64 size, int64 new_num_elements) {
+void TensorShape::AddDim(int64 size) {
+  CHECK_GE(size, 0);
   const int nd = ndims_byte();
+  CHECK_LT(nd, MaxDimensions()) << "Too many dimensions in tensor";
   if (tag() == REP16 && nd < 6 && size < kMaxRep16) {
-    as16()->dims_[nd] =
-        kIsPartial && size < 0 ? kUnknownRep16 : static_cast<uint16>(size);
+    as16()->dims_[nd] = static_cast<int16>(size);
   } else if (tag() == REP32 && nd < 3 && size < kMaxRep32) {
-    as32()->dims_[nd] =
-        kIsPartial && size < 0 ? kUnknownRep32 : static_cast<uint32>(size);
+    as32()->dims_[nd] = static_cast<int32>(size);
   } else if (tag() == REP_OUT_OF_LINE) {
     as64()->dims_->push_back(size);
   } else {
@@ -282,9 +198,7 @@ void TensorShapeBase<Shape>::UnsafeAddDim(int64 size, int64 new_num_elements) {
     if (can_be_rep32) {
       set_tag(REP32);
       for (size_t d = 0; d < vals.size(); d++) {
-        as32()->dims_[d] = kIsPartial && vals[d] < 0
-                               ? kUnknownRep32
-                               : static_cast<uint32>(vals[d]);
+        as32()->dims_[d] = static_cast<int32>(vals[d]);
       }
     } else {
       set_tag(REP_OUT_OF_LINE);
@@ -293,19 +207,19 @@ void TensorShapeBase<Shape>::UnsafeAddDim(int64 size, int64 new_num_elements) {
     }
   }
   set_ndims_byte(nd + 1);
-  set_num_elements(new_num_elements);
+  num_elements_ *= size;
+  CHECK_LE(0, num_elements_);
+  CHECK_LE(num_elements_, kMaxElements);
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::AppendShape(const TensorShapeBase& shape) {
+void TensorShape::AppendShape(const TensorShape& shape) {
   for (auto d : shape) AddDim(d.size);
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::InsertDim(int d, int64 size) {
+void TensorShape::InsertDim(int d, int64 size) {
   CHECK_GE(d, 0);
   CHECK_LE(d, dims());
-  if (!kIsPartial) CHECK_GE(size, 0);
+  CHECK_GE(size, 0);
   CHECK_LT(dims(), MaxDimensions());
   gtl::InlinedVector<int64, 8> vals;
   AppendTo(*this, &vals);
@@ -316,26 +230,22 @@ void TensorShapeBase<Shape>::InsertDim(int d, int64 size) {
   }
 }
 
-template <class Shape>
-gtl::InlinedVector<int64, 4> TensorShapeBase<Shape>::dim_sizes() const {
+gtl::InlinedVector<int64, 4> TensorShape::dim_sizes() const {
   gtl::InlinedVector<int64, 4> result;
-  for (auto dim : *this) {
-    result.push_back(dim.size);
+  for (auto it = begin(); it != end(); ++it) {
+    result.push_back((*it).size);
   }
   return result;
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::set_dim(int d, int64 size) {
+void TensorShape::set_dim(int d, int64 size) {
   CHECK_GE(d, 0);
   CHECK_LT(d, dims());
   CHECK_GE(size, 0);
   if (tag() == REP16 && size < kMaxRep16) {
-    as16()->dims_[d] =
-        kIsPartial && size < 0 ? kUnknownRep16 : static_cast<uint16>(size);
+    as16()->dims_[d] = static_cast<int16>(size);
   } else if (tag() == REP32 && size < kMaxRep32) {
-    as32()->dims_[d] =
-        kIsPartial && size < 0 ? kUnknownRep32 : static_cast<uint32>(size);
+    as32()->dims_[d] = static_cast<int32>(size);
   } else if (tag() == REP_OUT_OF_LINE) {
     (*as64()->dims_)[d] = size;
   } else {
@@ -351,9 +261,7 @@ void TensorShapeBase<Shape>::set_dim(int d, int64 size) {
   RecomputeNumElements();
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::RemoveDim(int d) {
-  if (unknown_rank()) return;
+void TensorShape::RemoveDim(int d) {
   CHECK_GE(d, 0);
   CHECK_LT(d, dims());
   gtl::InlinedVector<int64, 8> vals;
@@ -374,19 +282,15 @@ bool TensorShape::IsSameSize(const TensorShape& b) const {
   return true;
 }
 
-template <class Shape>
-void TensorShapeBase<Shape>::AsProto(TensorShapeProto* proto) const {
+void TensorShape::AsProto(TensorShapeProto* proto) const {
   proto->Clear();
-  if (unknown_rank()) {
-    proto->set_unknown_rank(true);
-  } else {
-    for (int i = 0; i < dims(); i++) {
-      proto->add_dim()->set_size(dim_size(i));
-    }
+  for (auto d = begin(); d != end(); ++d) {
+    auto* dim = proto->add_dim();
+    dim->set_size((*d).size);
   }
 }
 
-void TensorShapeRep::DumpRep() const {
+void TensorShape::DumpRep() const {
 #if 0
   fprintf(stderr, "Rep: %d %d dims\n", tag(), dims());
   if (tag() == REP16) {
@@ -408,49 +312,24 @@ void TensorShapeRep::DumpRep() const {
 #endif
 }
 
-template <class Shape>
-TensorShapeIter<Shape> TensorShapeBase<Shape>::begin() const {
-  return TensorShapeIter<Shape>(static_cast<const Shape*>(this), 0);
+TensorShapeIter TensorShape::begin() const { return TensorShapeIter(this, 0); }
+
+TensorShapeIter TensorShape::end() const {
+  return TensorShapeIter(this, dims());
 }
 
-template <class Shape>
-TensorShapeIter<Shape> TensorShapeBase<Shape>::end() const {
-  CHECK(!unknown_rank());
-  return TensorShapeIter<Shape>(static_cast<const Shape*>(this), dims());
+string TensorShape::DebugString() const {
+  gtl::InlinedVector<int64, 8> vals;
+  AppendTo(*this, &vals);
+  return strings::StrCat("[", str_util::Join(gtl::ArraySlice<int64>(vals), ","),
+                         "]");
 }
 
-string TensorShapeRep::DebugString() const {
-  const auto& shape = *static_cast<const PartialTensorShape*>(this);
-  if (shape.unknown_rank()) return "<unknown>";
+string TensorShape::DebugString(const TensorShapeProto& proto) {
   string s = "[";
-  for (int i = 0; i < shape.dims(); i++) {
-    if (i > 0) strings::StrAppend(&s, ",");
-    int64 dim = shape.dim_size(i);
-    if (dim < 0) {
-      strings::StrAppend(&s, "?");
-    } else {
-      strings::StrAppend(&s, dim);
-    }
-  }
-  strings::StrAppend(&s, "]");
-  return s;
-}
-
-string TensorShapeRep::DebugString(const TensorShapeProto& proto) {
-  string s;
-  if (proto.unknown_rank()) {
-    strings::StrAppend(&s, "<unknown>");
-    if (proto.dim_size() == 0) return s;
-  }
-  strings::StrAppend(&s, "[");
   bool first = true;
   for (const auto& d : proto.dim()) {
-    if (!first) strings::StrAppend(&s, ",");
-    if (d.size() == -1) {
-      strings::StrAppend(&s, "?");
-    } else {
-      strings::StrAppend(&s, d.size());
-    }
+    strings::StrAppend(&s, first ? "" : ",", d.size());
     first = false;
   }
   strings::StrAppend(&s, "]");
@@ -478,9 +357,9 @@ bool TensorShapeUtils::EndsWith(const TensorShape& shape,
   return true;
 }
 
-template <typename T, class Shape>
-Status MakeShapeHelper(const T* dims, int64 n, Shape* out) {
-  out->Clear();
+template <typename T>
+static inline Status MakeShapeHelper(const T* dims, int64 n, TensorShape* out) {
+  *out = TensorShape();
   if (n > TensorShape::MaxDimensions()) {
     return errors::InvalidArgument("Too many dimensions");
   }
@@ -488,47 +367,27 @@ Status MakeShapeHelper(const T* dims, int64 n, Shape* out) {
     return errors::InvalidArgument("Negative number of dimensions ", n);
   }
   for (int64 i = 0; i < n; ++i) {
-    T dim = internal::SubtleMustCopy(dims[i]);
-    int64 new_num_elements;
-    if (dim < 0) {
-      if (!out->kIsPartial) {
-        return errors::InvalidArgument("Dimension ", dim, " must be >= 0");
-      }
-      if (dim < -1) {
-        return errors::InvalidArgument("Dimension ", dim, " must be >= -1");
-      }
-      dim = -1;
-      new_num_elements = -1;
-    } else if (out->num_elements() < 0) {
-      new_num_elements = -1;
+    const T dim = internal::SubtleMustCopy(dims[i]);
+    if (dim >= 0) {
+      out->AddDim(dim);
     } else {
-      new_num_elements = MultiplyWithoutOverflow(out->num_elements(), dim);
-      if (TF_PREDICT_FALSE(new_num_elements < 0)) {
-        TensorShapeProto proto;
-        for (int64 j = 0; j < n; ++j) {
-          proto.add_dim()->set_size(dim);
-        }
-        return errors::InvalidArgument(
-            "Shape ", TensorShape::DebugString(proto),
-            " would have more than 2**63 - 1 elements");
-      }
+      return errors::InvalidArgument("Dimension ", dim, " must be >= 0");
     }
-    out->UnsafeAddDim(dim, new_num_elements);
   }
   return Status::OK();
 }
 
-#define MAKE_SHAPE(T, Shape)                                                 \
-  Status TensorShapeUtils::MakeShape(const T* dims, int64 n, Shape* out) {   \
-    return MakeShapeHelper(dims, n, out);                                    \
-  }                                                                          \
-  Status TensorShapeUtils::MakeShape(gtl::ArraySlice<T> shape, Shape* out) { \
-    return MakeShapeHelper(shape.data(), shape.size(), out);                 \
+#define MAKE_SHAPE(T)                                          \
+  Status TensorShapeUtils::MakeShape(const T* dims, int64 n,   \
+                                     TensorShape* out) {       \
+    return MakeShapeHelper(dims, n, out);                      \
+  }                                                            \
+  Status TensorShapeUtils::MakeShape(gtl::ArraySlice<T> shape, \
+                                     TensorShape* out) {       \
+    return MakeShapeHelper(shape.data(), shape.size(), out);   \
   }
-MAKE_SHAPE(int32, TensorShape)
-MAKE_SHAPE(int64, TensorShape)
-MAKE_SHAPE(int32, PartialTensorShape)
-MAKE_SHAPE(int64, PartialTensorShape)
+MAKE_SHAPE(int32)
+MAKE_SHAPE(int64)
 #undef MAKE_SHAPE
 
 string TensorShapeUtils::ShapeListString(
@@ -542,144 +401,5 @@ string TensorShapeUtils::ShapeListString(
   strings::StrAppend(&result, "]");
   return result;
 }
-
-PartialTensorShape PartialTensorShape::Concatenate(int64 size) const {
-  PartialTensorShape out = *this;
-  out.AddDim(size);
-  return out;
-}
-
-PartialTensorShape PartialTensorShape::Concatenate(
-    const PartialTensorShape& shape) const {
-  if (unknown_rank() || shape.unknown_rank()) {
-    return PartialTensorShape();
-  }
-  PartialTensorShape out = *this;
-  for (auto dim : shape) out.AddDim(dim.size);
-  return out;
-}
-
-Status PartialTensorShape::MergeWith(const PartialTensorShape& shape,
-                                     PartialTensorShape* result) const {
-  if (unknown_rank()) {
-    *result = shape;
-    return Status::OK();
-  }
-  if (shape.unknown_rank()) {
-    *result = *this;
-    return Status::OK();
-  }
-  const int dims_ = dims();
-  if (dims_ != shape.dims()) {
-    return errors::InvalidArgument(
-        "PartialTensorShape: Incompatible ranks during merge: ", dims_, " vs. ",
-        shape.dims());
-  }
-  CHECK(result != this);
-  result->Clear();
-  for (int i = 0; i < dims_; ++i) {
-    const int64 dim0 = dim_size(i);
-    const int64 dim1 = shape.dim_size(i);
-    if (dim0 >= 0 && dim1 >= 0 && dim0 != dim1) {
-      return errors::InvalidArgument(
-          "PartialTensorShape: Incompatible shapes during merge: ",
-          DebugString(), " vs. ", shape.DebugString());
-    }
-    result->AddDim(dim0 >= 0 ? dim0 : dim1);
-  }
-  return Status::OK();
-}
-
-bool PartialTensorShape::AsTensorShape(TensorShape* shape) const {
-  if (IsFullyDefined()) {
-    const TensorShapeRep* rep = this;
-    *shape = *static_cast<const TensorShape*>(rep);
-    return true;
-  }
-  return false;
-}
-
-bool PartialTensorShape::IsIdenticalTo(const PartialTensorShape& shape) const {
-  if (unknown_rank() || shape.unknown_rank()) {
-    return unknown_rank() == shape.unknown_rank();
-  }
-  if (dims() != shape.dims()) return false;
-  for (int i = 0; i < dims(); i++) {
-    if (dim_size(i) != shape.dim_size(i)) return false;
-  }
-  return true;
-}
-
-bool PartialTensorShape::IsCompatibleWith(
-    const PartialTensorShape& shape) const {
-  if (unknown_rank() || shape.unknown_rank()) return true;
-  if (dims() != shape.dims()) return false;
-  for (int i = 0; i < dims(); i++) {
-    const int64 dim0 = dim_size(i);
-    const int64 dim1 = shape.dim_size(i);
-    if (dim0 >= 0 && dim1 >= 0 && dim0 != dim1) return false;
-  }
-  return true;
-}
-
-string PartialTensorShapeUtils::PartialShapeListString(
-    const gtl::ArraySlice<PartialTensorShape>& shapes) {
-  string result = "[";
-  bool first = true;
-  for (const PartialTensorShape& shape : shapes) {
-    strings::StrAppend(&result, (first ? "" : ", "), shape.DebugString());
-    first = false;
-  }
-  strings::StrAppend(&result, "]");
-  return result;
-}
-
-bool PartialTensorShapeUtils::AreCompatible(
-    const gtl::ArraySlice<PartialTensorShape>& shapes0,
-    const gtl::ArraySlice<PartialTensorShape>& shapes1) {
-  if (shapes0.size() == shapes1.size()) {
-    for (size_t i = 0; i < shapes0.size(); ++i) {
-      if (!shapes0[i].IsCompatibleWith(shapes1[i])) {
-        return false;
-      }
-    }
-    return true;
-  } else {
-    return false;
-  }
-}
-
-bool PartialTensorShapeUtils::AreIdentical(
-    const gtl::ArraySlice<PartialTensorShape>& shapes0,
-    const gtl::ArraySlice<PartialTensorShape>& shapes1) {
-  if (shapes0.size() == shapes1.size()) {
-    for (size_t i = 0; i < shapes0.size(); ++i) {
-      if (!shapes0[i].IsIdenticalTo(shapes1[i])) {
-        return false;
-      }
-    }
-    return true;
-  } else {
-    return false;
-  }
-}
-
-Status TensorShapeUtils::NumElements(gtl::ArraySlice<int64> shape,
-                                     int64* num_elements) {
-  int64 n = 1;
-  for (auto dim : shape) {
-    n = MultiplyWithoutOverflow(n, dim);
-    if (n < 0) {
-      return errors::InvalidArgument("Can't compute total size of shape [",
-                                     str_util::Join(shape, ","),
-                                     "]; product would overflow int64");
-    }
-  }
-  *num_elements = n;
-  return Status::OK();
-}
-
-template class TensorShapeBase<TensorShape>;
-template class TensorShapeBase<PartialTensorShape>;
 
 }  // namespace tensorflow

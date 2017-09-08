@@ -24,11 +24,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.contrib.layers.python.layers import layers
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import sparse_ops
+
+import tensorflow as tf
 
 
 def _shape(tensor):
@@ -38,15 +35,15 @@ def _shape(tensor):
 
 def pixels_as_vector(images, scope=None):
   """Reduce images to vectors by combining all pixels."""
-  with ops.name_scope(scope, "PixelsAsVector", [images]):
+  with tf.name_scope(scope, "PixelsAsVector", [images]):
     batch_size, height, width, depth = _shape(images)
-    return array_ops.reshape(images, [batch_size, height * width * depth])
+    return tf.reshape(images, [batch_size, height * width * depth])
 
 
 def pool_as_vector(images, scope=None):
   """Reduce images to vectors by averaging all pixels."""
-  with ops.name_scope(scope, "PoolAsVector", [images]):
-    return math_ops.reduce_mean(images, [1, 2])
+  with tf.name_scope(scope, "PoolAsVector", [images]):
+    return tf.reduce_mean(images, [1, 2])
 
 
 def one_hot_planes(labels, num_classes, scope=None):
@@ -64,10 +61,10 @@ def one_hot_planes(labels, num_classes, scope=None):
   Returns:
     Tensor of shape (batch_size, 1, 1, num_classes) with a 1-hot encoding.
   """
-  with ops.name_scope(scope, "OneHotPlanes", [labels]):
+  with tf.name_scope(scope, "OneHotPlanes", [labels]):
     batch_size, = _shape(labels)
-    batched = layers.one_hot_encoding(labels, num_classes)
-    return array_ops.reshape(batched, [batch_size, 1, 1, num_classes])
+    batched = tf.contrib.layers.one_hot_encoding(labels, num_classes)
+    return tf.reshape(batched, [batch_size, 1, 1, num_classes])
 
 
 def one_hot_mask(labels, num_classes, scope=None):
@@ -85,15 +82,14 @@ def one_hot_mask(labels, num_classes, scope=None):
     Tensor of shape (batch_size, width, height, num_classes) with
     a 1-hot encoding.
   """
-  with ops.name_scope(scope, "OneHotMask", [labels]):
+  with tf.name_scope(scope, "OneHotMask", [labels]):
     height, width, depth = _shape(labels)
     assert depth == 1
-    sparse_labels = math_ops.to_int32(array_ops.reshape(labels, [-1, 1]))
+    sparse_labels = tf.to_int32(tf.reshape(labels, [-1, 1]))
     sparse_size, _ = _shape(sparse_labels)
-    indices = array_ops.reshape(math_ops.range(0, sparse_size, 1), [-1, 1])
-    concated = array_ops.concat([indices, sparse_labels], 1)
-    dense_result = sparse_ops.sparse_to_dense(concated,
-                                              [sparse_size, num_classes], 1.0,
-                                              0.0)
-    result = array_ops.reshape(dense_result, [height, width, num_classes])
+    indices = tf.reshape(tf.range(0, sparse_size, 1), [-1, 1])
+    concated = tf.concat(1, [indices, sparse_labels])
+    dense_result = tf.sparse_to_dense(concated, [sparse_size, num_classes], 1.0,
+                                      0.0)
+    result = tf.reshape(dense_result, [height, width, num_classes])
     return result

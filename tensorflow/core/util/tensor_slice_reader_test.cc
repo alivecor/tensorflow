@@ -13,12 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <utility>
-
 #include "tensorflow/core/util/tensor_slice_reader.h"
 
 #include "tensorflow/core/framework/types.h"
-#include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/core/stringpiece.h"
 #include "tensorflow/core/lib/io/path.h"
@@ -51,9 +48,8 @@ namespace {
 //
 // We assume this is a row-major matrix.
 
-void SimpleFloatHelper(
-    const TensorSliceWriter::CreateBuilderFunction& create_function,
-    TensorSliceReader::OpenTableFunction open_function) {
+void SimpleFloatHelper(TensorSliceWriter::CreateBuilderFunction create_function,
+                       TensorSliceReader::OpenTableFunction open_function) {
   const string fname_base = io::JoinPath(testing::TmpDir(), "float_checkpoint");
 
   TensorShape shape({4, 5});
@@ -112,7 +108,7 @@ void SimpleFloatHelper(
 
   // Now we need to read the tensor slices
   const string filepattern = strings::StrCat(fname_base, "_*");
-  TensorSliceReader reader(filepattern, std::move(open_function));
+  TensorSliceReader reader(filepattern, open_function);
   TF_EXPECT_OK(reader.status());
   EXPECT_EQ(2, reader.num_files());
 
@@ -175,10 +171,9 @@ TEST(TensorSliceReaderTest, SimpleFloat) {
 }
 
 template <typename T, typename U>
-void SimpleIntXHelper(
-    const TensorSliceWriter::CreateBuilderFunction& create_function,
-    TensorSliceReader::OpenTableFunction open_function,
-    const string& checkpoint_file) {
+void SimpleIntXHelper(TensorSliceWriter::CreateBuilderFunction create_function,
+                      TensorSliceReader::OpenTableFunction open_function,
+                      const string& checkpoint_file) {
   const string fname_base = io::JoinPath(testing::TmpDir(), checkpoint_file);
 
   TensorShape shape({4, 5});
@@ -237,7 +232,7 @@ void SimpleIntXHelper(
 
   // Now we need to read the tensor slices
   const string filepattern = strings::StrCat(fname_base, "_*");
-  TensorSliceReader reader(filepattern, std::move(open_function));
+  TensorSliceReader reader(filepattern, open_function);
   TF_EXPECT_OK(reader.status());
   EXPECT_EQ(2, reader.num_files());
 
@@ -309,8 +304,8 @@ TEST_SIMPLE_INT(int8, int32)
 TEST_SIMPLE_INT(uint8, int32)
 
 void CachedTensorSliceReaderTesterHelper(
-    const TensorSliceWriter::CreateBuilderFunction& create_function,
-    const TensorSliceReader::OpenTableFunction& open_function) {
+    TensorSliceWriter::CreateBuilderFunction create_function,
+    TensorSliceReader::OpenTableFunction open_function) {
   const string fname_base = io::JoinPath(testing::TmpDir(), "float_checkpoint");
 
   TensorShape shape({4, 5});
@@ -406,7 +401,7 @@ static void VersionTest(const VersionDef& versions, const string& error) {
   {
     // Prepare an empty checkpoint with some version information
     SavedTensorSlices sts;
-    *sts.mutable_meta()->mutable_versions() = versions;
+    sts.mutable_meta()->mutable_versions()->CopyFrom(versions);
     string contents;
     EXPECT_TRUE(sts.SerializeToString(&contents));
 
@@ -415,7 +410,7 @@ static void VersionTest(const VersionDef& versions, const string& error) {
     TF_ASSERT_OK(CreateTableTensorSliceBuilder(path, &builder));
     builder->Add(kSavedTensorSlicesKey, contents);
     int64 file_size;
-    TF_EXPECT_OK(builder->Finish(&file_size));
+    builder->Finish(&file_size);
     delete builder;
   }
 

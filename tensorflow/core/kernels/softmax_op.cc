@@ -28,27 +28,17 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
-#ifdef TENSORFLOW_USE_SYCL
-typedef Eigen::SyclDevice SYCLDevice;
-#endif // TENSORFLOW_USE_SYCL
 
 // Partial specialization for a CPUDevice, that uses the Eigen implementation
 // from SoftmaxEigenImpl.
 namespace functor {
-template <typename Device, typename T>
-struct SoftmaxFunctorBase {
-  void operator()(const Device& d, typename TTypes<T>::ConstMatrix logits,
+template <typename T>
+struct SoftmaxFunctor<CPUDevice, T> {
+  void operator()(const CPUDevice& d, typename TTypes<T>::ConstMatrix logits,
                   typename TTypes<T>::Matrix softmax, const bool log) {
-    SoftmaxEigenImpl<Device, T>::Compute(d, logits, softmax, log);
+    SoftmaxEigenImpl<CPUDevice, T>::Compute(d, logits, softmax, log);
   }
 };
-template <typename T>
-struct SoftmaxFunctor<CPUDevice, T> : SoftmaxFunctorBase<CPUDevice, T> {};
-
-#ifdef TENSORFLOW_USE_SYCL
-template <typename T>
-struct SoftmaxFunctor<SYCLDevice, T> : SoftmaxFunctorBase<SYCLDevice, T> {};
-#endif // TENSORFLOW_USE_SYCL
 }  // namespace functor
 
 #define REGISTER_CPU(T)                                          \
@@ -76,9 +66,6 @@ REGISTER_KERNEL_BUILDER(
     Name("Softmax").Device(DEVICE_GPU).TypeConstraint<float>("T"),
     SoftmaxOp<GPUDevice, float>);
 REGISTER_KERNEL_BUILDER(
-    Name("Softmax").Device(DEVICE_GPU).TypeConstraint<double>("T"),
-    SoftmaxOp<GPUDevice, double>);
-REGISTER_KERNEL_BUILDER(
     Name("LogSoftmax").Device(DEVICE_GPU).TypeConstraint<Eigen::half>("T"),
     SoftmaxOp<GPUDevice, Eigen::half>);
 REGISTER_KERNEL_BUILDER(
@@ -86,12 +73,4 @@ REGISTER_KERNEL_BUILDER(
     SoftmaxOp<GPUDevice, float>);
 #endif  // GOOGLE_CUDA
 
-#ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(
-    Name("Softmax").Device(DEVICE_SYCL).TypeConstraint<float>("T"),
-    SoftmaxOp<SYCLDevice, float>);
-REGISTER_KERNEL_BUILDER(
-    Name("Softmax").Device(DEVICE_SYCL).TypeConstraint<double>("T"),
-    SoftmaxOp<SYCLDevice, double>);
-#endif // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

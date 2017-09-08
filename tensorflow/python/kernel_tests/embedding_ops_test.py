@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Functional tests for ops used with embeddings."""
 
+"""Functional tests for ops used with embeddings."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -22,24 +22,7 @@ import itertools
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
-from tensorflow.python.framework import sparse_tensor
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import data_flow_ops
-from tensorflow.python.ops import embedding_ops
-from tensorflow.python.ops import gradient_checker
-from tensorflow.python.ops import linalg_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import partitioned_variables
-from tensorflow.python.ops import state_ops
-from tensorflow.python.ops import variable_scope
-from tensorflow.python.ops import variables
-from tensorflow.python.platform import test
-from tensorflow.python.platform import tf_logging
-from tensorflow.python.util import compat
+import tensorflow as tf
 
 
 def _AsLong(array):
@@ -47,9 +30,9 @@ def _AsLong(array):
   return [int(x) for x in array]
 
 
-class ScatterAddSubTest(test.TestCase):
+class ScatterAddSubTest(tf.test.TestCase):
 
-  def _TestCase(self, shape, indices, scatter_op=state_ops.scatter_add):
+  def _TestCase(self, shape, indices, scatter_op=tf.scatter_add):
     """Run a random test case with the given shape and indices.
 
     Args:
@@ -67,22 +50,22 @@ class ScatterAddSubTest(test.TestCase):
       vals_shape = [len(indices)] + shape[1:]
       vals_init = np.random.rand(*vals_shape).astype("f")
       v_i = [float(x) for x in vals_init.ravel()]
-      p = variables.Variable(p_init)
-      vals = constant_op.constant(v_i, shape=vals_shape, name="vals")
-      ind = constant_op.constant(indices, dtype=dtypes.int32)
+      p = tf.Variable(p_init)
+      vals = tf.constant(v_i, shape=vals_shape, name="vals")
+      ind = tf.constant(indices, dtype=tf.int32)
       p2 = scatter_op(p, ind, vals, name="updated_p")
       # p = init
-      variables.global_variables_initializer().run()
+      tf.initialize_all_variables().run()
       # p += vals
       result = p2.eval()
     # Compute the expected 'p' using numpy operations.
     for i, ind in enumerate(indices):
-      if scatter_op == state_ops.scatter_add:
-        p_init.reshape(shape[0], -1)[ind, :] += (vals_init.reshape(
-            vals_shape[0], -1)[i, :])
+      if scatter_op == tf.scatter_add:
+        p_init.reshape(shape[0], -1)[ind, :] += (
+            vals_init.reshape(vals_shape[0], -1)[i, :])
       else:
-        p_init.reshape(shape[0], -1)[ind, :] -= (vals_init.reshape(
-            vals_shape[0], -1)[i, :])
+        p_init.reshape(shape[0], -1)[ind, :] -= (
+            vals_init.reshape(vals_shape[0], -1)[i, :])
     self.assertTrue(all((p_init == result).ravel()))
 
   def testNoRepetitions(self):
@@ -107,37 +90,35 @@ class ScatterAddSubTest(test.TestCase):
     for _ in range(5):
       shape = np.random.randint(1, 20, size=4)
       indices = np.random.randint(shape[0], size=2 * shape[0])
-      self._TestCase(_AsLong(list(shape)), list(indices), state_ops.scatter_sub)
+      self._TestCase(_AsLong(list(shape)), list(indices),
+                     tf.scatter_sub)
 
   def testWrongShape(self):
     # Indices and values mismatch.
-    var = variables.Variable(
-        array_ops.zeros(shape=[1024, 64, 64], dtype=dtypes.float32))
-    indices = array_ops.placeholder(dtypes.int32, shape=[32])
-    values = array_ops.placeholder(dtypes.float32, shape=[33, 64, 64])
+    var = tf.Variable(tf.zeros(shape=[1024, 64, 64], dtype=tf.float32))
+    indices = tf.placeholder(tf.int32, shape=[32])
+    values = tf.placeholder(tf.float32, shape=[33, 64, 64])
     with self.assertRaises(ValueError):
-      state_ops.scatter_add(var, indices, values)
+      tf.scatter_add(var, indices, values)
 
     # Var and values mismatch.
-    values = array_ops.placeholder(dtypes.float32, shape=[32, 64, 63])
+    values = tf.placeholder(tf.float32, shape=[32, 64, 63])
     with self.assertRaises(ValueError):
-      state_ops.scatter_add(var, indices, values)
+      tf.scatter_add(var, indices, values)
 
 
 def _PName(param_id):
   return "p" + str(param_id)
 
 
-def _EmbeddingParams(num_shards,
-                     vocab_size,
-                     dtype=dtypes.float32,
+def _EmbeddingParams(num_shards, vocab_size,
+                     dtype=tf.float32,
                      shape=None,
                      use_shapeless_placeholder=False):
   p = []
   params = {}
   feed_dict = {}
-  if not shape:
-    shape = [10]
+  if not shape: shape = [10]
   for i in range(num_shards):
     shard_shape = [vocab_size // num_shards] + shape
     if i < vocab_size % num_shards:  # Excess goes evenly on the first shards
@@ -146,40 +127,32 @@ def _EmbeddingParams(num_shards,
     param_name = _PName(i)
 
     if use_shapeless_placeholder:
-      param = array_ops.placeholder(dtype, shape=None, name=param_name)
+      param = tf.placeholder(dtype, shape=None, name=param_name)
     else:
-      param = constant_op.constant(
-          1.0, shape=shard_shape, dtype=dtype, name=param_name)
+      param = tf.constant(1.0, shape=shard_shape, dtype=dtype, name=param_name)
     p.append(param)
-    np_type = "f" if dtype == dtypes.float32 else "d"
+    np_type = "f" if dtype == tf.float32 else "d"
     val = (np.random.rand(*shard_shape).astype(np_type)) + 1
     params[param_name + ":0"] = val
     feed_dict[param.name] = val
   return p, params, feed_dict
 
 
-def _EmbeddingParamsAsPartitionedVariable(num_shards,
-                                          vocab_size,
-                                          dtype=dtypes.float32,
-                                          shape=None,
-                                          use_resource=False):
+def _EmbeddingParamsAsPartitionedVariable(num_shards, vocab_size,
+                                          dtype=tf.float32, shape=None):
   p, params, feed_dict = _EmbeddingParams(
       num_shards, vocab_size, dtype=dtype, shape=shape)
   shape = shape or [10]
-  partitioned_variable = variable_scope.get_variable(
+  partitioned_variable = tf.get_variable(
       "p",
       shape=[vocab_size] + shape,
-      initializer=array_ops.concat([params[p_i.name] for p_i in p], 0),
-      partitioner=partitioned_variables.min_max_variable_partitioner(
-          max_partitions=num_shards, min_slice_size=1),
-      use_resource=use_resource)
+      initializer=tf.concat(0, [params[p_i.name] for p_i in p]),
+      partitioner=tf.min_max_variable_partitioner(
+          max_partitions=num_shards, min_slice_size=1))
   return p, partitioned_variable, params, feed_dict
 
 
-def _EmbeddingResult(params,
-                     id_vals,
-                     num_shards,
-                     vocab_size,
+def _EmbeddingResult(params, id_vals, num_shards, vocab_size,
                      partition_strategy="mod",
                      weight_vals=None):
   if weight_vals is None:
@@ -192,7 +165,7 @@ def _EmbeddingResult(params,
     value_aggregation = None
     weight_aggregation = None
     squared_weight_aggregation = None
-    if isinstance(ids, compat.integral_types):
+    if isinstance(ids, tf.compat.integral_types):
       ids = [ids]
       wts = [wts]
     for i, weight_value in zip(ids, wts):
@@ -233,7 +206,7 @@ def _EmbeddingResult(params,
   return values, weights, weights_squared
 
 
-class EmbeddingLookupTest(test.TestCase):
+class EmbeddingLookupTest(tf.test.TestCase):
 
   # This test looks up [0, 0] in a parameter matrix sharded 2 ways. Since
   # both the ids are in the first shard, one of the resulting lookup
@@ -246,37 +219,14 @@ class EmbeddingLookupTest(test.TestCase):
       p, params, feed_dict = _EmbeddingParams(num_shards, vocab_size)
 
       id_vals = np.array([0, 0])
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int32)
+      ids = tf.constant(list(id_vals), dtype=tf.int32)
       print("Construct ids", ids.get_shape())
-      embedding = embedding_ops.embedding_lookup(p, ids)
+      embedding = tf.nn.embedding_lookup(p, ids)
 
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(params, id_vals, num_shards, vocab_size)
     self.assertAllEqual(np_result, tf_result)
     self.assertShapeEqual(np_result, embedding)
-
-  def testMaxNorm(self):
-    with self.test_session():
-      embeddings = constant_op.constant([[2.0]])
-
-      ids = constant_op.constant([0], dtype=dtypes.int32)
-      embedding = embedding_ops.embedding_lookup(
-          [embeddings], ids, max_norm=1.0)
-
-      self.assertAllEqual(embedding.eval(), [[1.0]])
-
-  def testMaxNormNontrivial(self):
-    with self.test_session():
-      embeddings = constant_op.constant([[2.0, 4.0], [3.0, 1.0]])
-
-      ids = constant_op.constant([0, 1], dtype=dtypes.int32)
-      embedding = embedding_ops.embedding_lookup(
-          [embeddings], ids, max_norm=2.0)
-
-      norms = math_ops.sqrt(
-          math_ops.reduce_sum(embeddings * embeddings, axis=1))
-      normalized = embeddings / array_ops.stack([norms, norms], axis=1)
-      self.assertAllEqual(embedding.eval(), 2 * normalized.eval())
 
   def testSimpleShardedPartitionedVariable(self):
     with self.test_session() as sess:
@@ -286,38 +236,15 @@ class EmbeddingLookupTest(test.TestCase):
           num_shards, vocab_size)
 
       id_vals = np.array([0, 0])
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int32)
+      ids = tf.constant(list(id_vals), dtype=tf.int32)
       print("Construct ids", ids.get_shape())
-      embedding = embedding_ops.embedding_lookup(p_variable, ids)
-      variables.global_variables_initializer().run()
+      embedding = tf.nn.embedding_lookup(p_variable, ids)
+      tf.initialize_all_variables().run()
       params_values = [params[p_i.name] for p_i in p]
       # Test that the PartitionedVariable components equal the list in p
       p_var_val = sess.run(list(p_variable))
       # Actual test
       tf_result = embedding.eval(feed_dict=feed_dict)
-    np_result, _, _ = _EmbeddingResult(params, id_vals, num_shards, vocab_size)
-    self.assertAllEqual(params_values, p_var_val)
-    self.assertAllEqual(np_result, tf_result)
-    self.assertShapeEqual(np_result, embedding)
-
-  def testSimpleShardedPartitionedResourceVariable(self):
-    with self.test_session() as sess:
-      num_shards = 2
-      vocab_size = 4
-      p, p_variable, params, _ = _EmbeddingParamsAsPartitionedVariable(
-          num_shards, vocab_size, use_resource=True)
-
-      id_vals = np.array([0, 0])
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int32)
-      print("Construct ids", ids.get_shape())
-      embedding = embedding_ops.embedding_lookup(p_variable, ids)
-      variables.global_variables_initializer().run()
-      params_values = [params[p_i.name] for p_i in p]
-      # Test that the PartitionedVariable components equal the list in p
-      p_var_val = sess.run(list(p_variable))
-      # Actual test
-      print(ops.get_default_graph().as_graph_def())
-      tf_result = embedding.eval()
     np_result, _, _ = _EmbeddingResult(params, id_vals, num_shards, vocab_size)
     self.assertAllEqual(params_values, p_var_val)
     self.assertAllEqual(np_result, tf_result)
@@ -337,9 +264,9 @@ class EmbeddingLookupTest(test.TestCase):
       # num_vals > vocab_size, this ought to have repetitions, so
       # will test that aspect.
       id_vals = np.random.randint(vocab_size, size=num_vals)
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int32)
+      ids = tf.constant(list(id_vals), dtype=tf.int32)
 
-      embedding = embedding_ops.embedding_lookup(p, ids)
+      embedding = tf.nn.embedding_lookup(p, ids)
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(params, id_vals, num_shards, vocab_size)
     self.assertAllEqual(np_result, tf_result)
@@ -359,9 +286,9 @@ class EmbeddingLookupTest(test.TestCase):
       # num_vals > vocab_size, this ought to have repetitions, so
       # will test that aspect.
       id_vals = np.random.randint(vocab_size, size=num_vals)
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int64)
+      ids = tf.constant(list(id_vals), dtype=tf.int64)
 
-      embedding = embedding_ops.embedding_lookup(p, ids)
+      embedding = tf.nn.embedding_lookup(p, ids)
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(params, id_vals, num_shards, vocab_size)
     self.assertAllEqual(np_result, tf_result)
@@ -381,10 +308,9 @@ class EmbeddingLookupTest(test.TestCase):
       # num_vals > vocab_size, this ought to have repetitions, so
       # will test that aspect.
       id_vals = np.random.randint(vocab_size, size=num_vals)
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int32)
+      ids = tf.constant(list(id_vals), dtype=tf.int32)
 
-      embedding = embedding_ops.embedding_lookup(
-          p, ids, partition_strategy="div")
+      embedding = tf.nn.embedding_lookup(p, ids, partition_strategy="div")
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(
         params, id_vals, num_shards, vocab_size, partition_strategy="div")
@@ -406,9 +332,9 @@ class EmbeddingLookupTest(test.TestCase):
       # num_vals > vocab_size, this ought to have repetitions, so
       # will test that aspect.
       id_vals = np.random.randint(vocab_size, size=num_vals)
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int32)
-      variables.global_variables_initializer().run()
-      embedding = embedding_ops.embedding_lookup(
+      ids = tf.constant(list(id_vals), dtype=tf.int32)
+      tf.initialize_all_variables().run()
+      embedding = tf.nn.embedding_lookup(
           p_variable, ids, partition_strategy="div")
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(
@@ -430,10 +356,9 @@ class EmbeddingLookupTest(test.TestCase):
       # num_vals > vocab_size, this ought to have repetitions, so
       # will test that aspect.
       id_vals = np.random.randint(vocab_size, size=num_vals)
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int64)
+      ids = tf.constant(list(id_vals), dtype=tf.int64)
 
-      embedding = embedding_ops.embedding_lookup(
-          p, ids, partition_strategy="div")
+      embedding = tf.nn.embedding_lookup(p, ids, partition_strategy="div")
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(
         params, id_vals, num_shards, vocab_size, partition_strategy="div")
@@ -457,10 +382,9 @@ class EmbeddingLookupTest(test.TestCase):
       # num_vals > vocab_size, this ought to have repetitions, so
       # will test that aspect.
       id_vals = np.random.randint(vocab_size, size=num_vals)
-      ids = constant_op.constant(list(id_vals), dtype=dtypes.int64)
+      ids = tf.constant(list(id_vals), dtype=tf.int64)
 
-      embedding = embedding_ops.embedding_lookup(
-          p, ids, partition_strategy="div")
+      embedding = tf.nn.embedding_lookup(p, ids, partition_strategy="div")
       tf_result = embedding.eval(feed_dict=feed_dict)
     np_result, _, _ = _EmbeddingResult(
         params, id_vals, num_shards, vocab_size, partition_strategy="div")
@@ -470,59 +394,62 @@ class EmbeddingLookupTest(test.TestCase):
     vocab_size = 9
     num_ids = 10
     id_vals = list(np.random.randint(vocab_size, size=num_ids))
-    tf_logging.vlog(1, id_vals)
+    tf.logging.vlog(1, id_vals)
     for ids_shape in [(10,), (2, 5)]:
       for num_shards in [1, 3]:
         with self.test_session():
-          ids = constant_op.constant(
-              id_vals, shape=ids_shape, dtype=dtypes.int32)
-          x, params, _ = _EmbeddingParams(num_shards, vocab_size, shape=[2])
-          y = embedding_ops.embedding_lookup(x, ids)
+          ids = tf.constant(id_vals, shape=ids_shape, dtype=tf.int32)
+          x, params, _ = _EmbeddingParams(
+              num_shards, vocab_size, shape=[2])
+          y = tf.nn.embedding_lookup(x, ids)
           y_shape = [num_ids] + list(params[_PName(0) + ":0"].shape[1:])
           x_name = [_PName(i) for i in range(num_shards)]
           x_init_value = [params[x_n + ":0"] for x_n in x_name]
           x_shape = [i.shape for i in x_init_value]
-          err = gradient_checker.compute_gradient_error(
-              x, x_shape, y, y_shape, x_init_value=x_init_value)
+          err = tf.test.compute_gradient_error(x,
+                                               x_shape,
+                                               y,
+                                               y_shape,
+                                               x_init_value=x_init_value)
         self.assertLess(err, 1e-4)
 
   def testGradientsEmbeddingLookupWithComputedParams(self):
     vocab_size = 9
     num_ids = 5
     id_vals = list(np.random.randint(vocab_size, size=num_ids))
-    tf_logging.vlog(1, id_vals)
+    tf.logging.vlog(1, id_vals)
     for num_shards in [1, 3]:
       with self.test_session():
-        ids = constant_op.constant(id_vals, dtype=dtypes.int32)
-        x, params, _ = _EmbeddingParams(num_shards, vocab_size, shape=[2])
+        ids = tf.constant(id_vals, dtype=tf.int32)
+        x, params, _ = _EmbeddingParams(
+            num_shards, vocab_size, shape=[2])
         # This will force a conversion from IndexedSlices to Tensor.
-        x_squared = [math_ops.square(elem) for elem in x]
-        y = embedding_ops.embedding_lookup(x_squared, ids)
+        x_squared = [tf.square(elem) for elem in x]
+        y = tf.nn.embedding_lookup(x_squared, ids)
         y_shape = [num_ids] + list(params[_PName(0) + ":0"].shape[1:])
         x_name = [_PName(i) for i in range(num_shards)]
         x_init_value = [params[x_n + ":0"] for x_n in x_name]
         x_shape = [i.shape for i in x_init_value]
-        err = gradient_checker.compute_gradient_error(
-            x, x_shape, y, y_shape, x_init_value=x_init_value)
+        err = tf.test.compute_gradient_error(x,
+                                             x_shape,
+                                             y,
+                                             y_shape,
+                                             x_init_value=x_init_value)
       self.assertLess(err, 1e-3)
 
   def testConstructionNonSharded(self):
-    with ops.Graph().as_default():
-      p = variables.Variable(
-          array_ops.zeros(shape=[100, 100], dtype=dtypes.float32))
-      ids = constant_op.constant([0, 1, 1, 7], dtype=dtypes.int32)
-      embedding_ops.embedding_lookup([p], ids)
+    with tf.Graph().as_default():
+      p = tf.Variable(tf.zeros(shape=[100, 100], dtype=tf.float32))
+      ids = tf.constant([0, 1, 1, 7], dtype=tf.int32)
+      tf.nn.embedding_lookup([p], ids)
 
   def testConstructionSharded(self):
-    with ops.Graph().as_default():
+    with tf.Graph().as_default():
       p = []
       for _ in range(2):
-        p += [
-            variables.Variable(
-                array_ops.zeros(shape=[100, 100], dtype=dtypes.float32))
-        ]
-        ids = constant_op.constant([0, 1, 1, 17], dtype=dtypes.int32)
-      embedding_ops.embedding_lookup(p, ids)
+        p += [tf.Variable(tf.zeros(shape=[100, 100], dtype=tf.float32))]
+        ids = tf.constant([0, 1, 1, 17], dtype=tf.int32)
+      tf.nn.embedding_lookup(p, ids)
 
   def testHigherRank(self):
     np.random.seed(8)
@@ -530,86 +457,21 @@ class EmbeddingLookupTest(test.TestCase):
       for params_shape in (12,), (6, 3):
         params = np.random.randn(*params_shape)
         for ids_shape in (3, 2), (4, 3):
-          ids = np.random.randint(
-              params.shape[0], size=np.prod(ids_shape)).reshape(ids_shape)
+          ids = np.random.randint(params.shape[0],
+                                  size=np.prod(ids_shape)).reshape(ids_shape)
           # Compare nonsharded to gather
-          simple = embedding_ops.embedding_lookup(params, ids).eval()
-          self.assertAllEqual(simple, array_ops.gather(params, ids).eval())
+          simple = tf.nn.embedding_lookup(params, ids).eval()
+          self.assertAllEqual(simple, tf.gather(params, ids).eval())
           # Run a few random sharded versions
           for procs in 1, 2, 3:
-            stride = procs * math_ops.range(params.shape[0] // procs)
-            split_params = [
-                array_ops.gather(params, stride + p) for p in xrange(procs)
-            ]
-            sharded = embedding_ops.embedding_lookup(split_params, ids).eval()
+            stride = procs * tf.range(params.shape[0] // procs)
+            split_params = [tf.gather(params, stride + p)
+                            for p in xrange(procs)]
+            sharded = tf.nn.embedding_lookup(split_params, ids).eval()
             self.assertAllEqual(simple, sharded)
 
-  def testHigherRankMaxNorm(self):
-    np.random.seed(8)
-    with self.test_session():
-      for params_shape in (12,), (6, 3), (6, 2, 3):
-        # Test embedding rank 0, 1, 2.
-        # Note: the first dimension must be a common multiple of procs below.
-        params = 2 * np.ones(params_shape)
-        params_norm = params / np.sqrt(
-            np.sum(
-                params * params, tuple(range(params.ndim)[1:]), keepdims=True))
-        for ids_shape in (), (3), (4, 3), (2, 3, 4):
-          ids = np.random.randint(
-              params.shape[0], size=np.prod(ids_shape,
-                                            dtype=np.int64)).reshape(ids_shape)
-          # Compare nonsharded to gather
-          simple = embedding_ops.embedding_lookup(
-              params, ids, max_norm=1.0).eval()
-          self.assertAllEqual(simple, array_ops.gather(params_norm, ids).eval())
-          # Run a few different sharded versions.
-          for procs in 1, 2, 3:
-            stride = procs * math_ops.range(params.shape[0] // procs)
-            split_params = [
-                array_ops.gather(params, stride + p) for p in xrange(procs)
-            ]
-            sharded = embedding_ops.embedding_lookup(
-                split_params, ids, max_norm=1.0).eval()
-            self.assertAllEqual(simple, sharded)
 
-  def testTransform(self):
-    # This tests all combinations of:
-    #   - ids rank 0, 1, >1
-    #   - params sharded/unsharded
-    # It always applies max_norm.
-    np.random.seed(8)
-    l2_norm = 2.
-    with self.test_session():
-      # Param values are in [l2_norm, l2_norm+1) so it will always clip.
-      params = np.random.rand(6, 3) + l2_norm
-      params_norm = l2_norm * params / np.sqrt(
-          np.sum(params * params, axis=1, keepdims=True))
-      # Compute the norm of each embedding. This will change the embedding
-      # rank to 0.
-      params_norm = np.linalg.norm(params_norm, axis=1)
-      transform = lambda x: linalg_ops.norm(x, axis=1)
-      for ids_shape in (), (3), (4, 3), (2, 3, 4):
-        # Test ids rank 0, 1, 2, 3.
-        ids = np.random.randint(
-            params.shape[0], size=np.prod(ids_shape,
-                                          dtype=np.int64)).reshape(ids_shape)
-        # Compare nonsharded to gather.
-        simple = embedding_ops._embedding_lookup_and_transform(
-            params, ids, max_norm=l2_norm, transform_fn=transform).eval()
-        self.assertAllClose(simple, array_ops.gather(params_norm, ids).eval())
-        # Run a few different sharded versions.
-        for procs in 1, 2, 3:
-          stride = procs * math_ops.range(params.shape[0] // procs)
-          split_params = [
-              array_ops.gather(params, stride + p) for p in xrange(procs)
-          ]
-          sharded = embedding_ops._embedding_lookup_and_transform(
-              split_params, ids, max_norm=l2_norm,
-              transform_fn=transform).eval()
-          self.assertAllEqual(simple, sharded)
-
-
-class EmbeddingLookupSparseTest(test.TestCase):
+class EmbeddingLookupSparseTest(tf.test.TestCase):
 
   def _RandomIdsAndWeights(self, batch_size, vocab_size):
     max_val_per_entry = 6
@@ -627,14 +489,14 @@ class EmbeddingLookupSparseTest(test.TestCase):
 
     shape = [batch_size, max_val_per_entry]
 
-    sp_ids = sparse_tensor.SparseTensor(
-        constant_op.constant(indices, dtypes.int64),
-        constant_op.constant(ids, dtypes.int32),
-        constant_op.constant(shape, dtypes.int64))
-    sp_weights = sparse_tensor.SparseTensor(
-        constant_op.constant(indices, dtypes.int64),
-        constant_op.constant(weights, dtypes.float32),
-        constant_op.constant(shape, dtypes.int64))
+    sp_ids = tf.SparseTensor(
+        tf.constant(indices, tf.int64),
+        tf.constant(ids, tf.int32),
+        tf.constant(shape, tf.int64))
+    sp_weights = tf.SparseTensor(
+        tf.constant(indices, tf.int64),
+        tf.constant(weights, tf.float32),
+        tf.constant(shape, tf.int64))
 
     return sp_ids, sp_weights, ids, weights, vals_per_batch_entry
 
@@ -642,7 +504,7 @@ class EmbeddingLookupSparseTest(test.TestCase):
     grouped_vals = []
     index = 0
     for num_val in vals_per_batch_entry:
-      grouped_vals.append(list(vals[index:(index + num_val)]))
+      grouped_vals.append(list(vals[index: (index + num_val)]))
       index += num_val
     return grouped_vals
 
@@ -661,16 +523,17 @@ class EmbeddingLookupSparseTest(test.TestCase):
         np.ones(np.sum(vals_per_batch_entry)), vals_per_batch_entry)
 
     for num_shards, combiner, dtype, ignore_weights in itertools.product(
-        [1, 5], ["sum", "mean", "sqrtn"], [dtypes.float32,
-                                           dtypes.float64], [True, False]):
+        [1, 5],
+        ["sum", "mean", "sqrtn"],
+        [tf.float32, tf.float64],
+        [True, False]):
 
       with self.test_session():
-        p, params, feed_dict = _EmbeddingParams(
-            num_shards, vocab_size, shape=param_shape, dtype=dtype)
-        embedding_sum = embedding_ops.embedding_lookup_sparse(
-            p,
-            sp_ids,
-            None if ignore_weights else sp_weights,
+        p, params, feed_dict = _EmbeddingParams(num_shards, vocab_size,
+                                                shape=param_shape,
+                                                dtype=dtype)
+        embedding_sum = tf.nn.embedding_lookup_sparse(
+            p, sp_ids, None if ignore_weights else sp_weights,
             combiner=combiner)
 
         self.assertEqual(embedding_sum.get_shape().as_list(),
@@ -679,10 +542,7 @@ class EmbeddingLookupSparseTest(test.TestCase):
         tf_embedding_sum = embedding_sum.eval(feed_dict=feed_dict)
 
         np_embedding_sum, np_weight_sum, np_weight_sq_sum = _EmbeddingResult(
-            params,
-            grouped_ids,
-            num_shards,
-            vocab_size,
+            params, grouped_ids, num_shards, vocab_size,
             weight_vals=grouped_ignored_weights
             if ignore_weights else grouped_weights)
         if combiner == "mean":
@@ -696,112 +556,86 @@ class EmbeddingLookupSparseTest(test.TestCase):
     vocab_size = 12
     batch_size = 4
     param_shape = [2, 3]
-    sp_ids, sp_weights, _, _, _ = (self._RandomIdsAndWeights(
-        batch_size, vocab_size))
+    sp_ids, sp_weights, _, _, _ = (
+        self._RandomIdsAndWeights(batch_size, vocab_size))
 
     for num_shards, combiner, dtype, ignore_weights in itertools.product(
-        [1, 3], ["sum", "mean", "sqrtn"], [dtypes.float32,
-                                           dtypes.float64], [True, False]):
+        [1, 3],
+        ["sum", "mean", "sqrtn"],
+        [tf.float32, tf.float64],
+        [True, False]):
       with self.test_session():
-        x, params, _ = _EmbeddingParams(
-            num_shards, vocab_size, shape=param_shape, dtype=dtype)
+        x, params, _ = _EmbeddingParams(num_shards, vocab_size,
+                                        shape=param_shape,
+                                        dtype=dtype)
 
-        y = embedding_ops.embedding_lookup_sparse(
-            x,
-            sp_ids,
-            None if ignore_weights else sp_weights,
+        y = tf.nn.embedding_lookup_sparse(
+            x, sp_ids, None if ignore_weights else sp_weights,
             combiner=combiner)
         x_name = [_PName(i) for i in range(num_shards)]
         x_init_value = [params[x_n + ":0"] for x_n in x_name]
         x_shape = [i.shape for i in x_init_value]
         y_shape = [batch_size] + list(params[_PName(0) + ":0"].shape[1:])
-        err = gradient_checker.compute_gradient_error(
-            x, x_shape, y, y_shape, x_init_value=x_init_value)
-      self.assertLess(err, 1e-5 if dtype == dtypes.float64 else 2e-3)
+        err = tf.test.compute_gradient_error(x,
+                                             x_shape,
+                                             y,
+                                             y_shape,
+                                             x_init_value=x_init_value)
+      self.assertLess(err, 1e-5 if dtype == tf.float64 else 2e-3)
 
   def testIncompatibleShapes(self):
     with self.test_session():
-      x, _, _ = _EmbeddingParams(1, 10, dtype=dtypes.float32)
-      sp_ids = sparse_tensor.SparseTensor(
-          constant_op.constant([[0, 0], [0, 1], [1, 0]], dtypes.int64),
-          constant_op.constant([0, 1, 2], dtypes.int32),
-          constant_op.constant([2, 2], dtypes.int64))
-      sp_weights = sparse_tensor.SparseTensor(
-          constant_op.constant([[0, 0], [0, 1]], dtypes.int64),
-          constant_op.constant([12.0, 5.0], dtypes.float32),
-          constant_op.constant([1, 2], dtypes.int64))
+      x, _, _ = _EmbeddingParams(1, 10, dtype=tf.float32)
+      sp_ids = tf.SparseTensor(
+          tf.constant([[0, 0], [0, 1], [1, 0]], tf.int64),
+          tf.constant([0, 1, 2], tf.int32),
+          tf.constant([2, 2], tf.int64))
+      sp_weights = tf.SparseTensor(
+          tf.constant([[0, 0], [0, 1]], tf.int64),
+          tf.constant([12.0, 5.0], tf.float32),
+          tf.constant([1, 2], tf.int64))
 
       with self.assertRaises(ValueError):
-        embedding_ops.embedding_lookup_sparse(
-            x, sp_ids, sp_weights, combiner="mean")
+        tf.nn.embedding_lookup_sparse(x, sp_ids, sp_weights, combiner="mean")
 
 
-class DynamicStitchOpTest(test.TestCase):
+class DynamicStitchOpTest(tf.test.TestCase):
 
   def testCint32Cpu(self):
     with self.test_session(use_gpu=False):
-      indices = [
-          ops.convert_to_tensor([0, 1, 2]),
-          ops.convert_to_tensor([2, 3])
-      ]
-      values = [
-          ops.convert_to_tensor([12, 23, 34]),
-          ops.convert_to_tensor([1, 2])
-      ]
+      indices = [tf.convert_to_tensor([0, 1, 2]), tf.convert_to_tensor([2, 3])]
+      values = [tf.convert_to_tensor([12, 23, 34]), tf.convert_to_tensor([1, 2])]
       self.assertAllEqual(
-          data_flow_ops.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
+          tf.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
 
   def testCint32Gpu(self):
     with self.test_session(use_gpu=True):
-      indices = [
-          ops.convert_to_tensor([0, 1, 2]),
-          ops.convert_to_tensor([2, 3])
-      ]
-      values = [
-          ops.convert_to_tensor([12, 23, 34]),
-          ops.convert_to_tensor([1, 2])
-      ]
+      indices = [tf.convert_to_tensor([0, 1, 2]), tf.convert_to_tensor([2, 3])]
+      values = [tf.convert_to_tensor([12, 23, 34]), tf.convert_to_tensor([1, 2])]
       self.assertAllEqual(
-          data_flow_ops.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
+          tf.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
 
   def testInt32Cpu(self):
     with self.test_session(use_gpu=False):
-      indices = [
-          ops.convert_to_tensor([0, 1, 2]),
-          ops.convert_to_tensor([2, 3])
-      ]
-      values = [
-          ops.convert_to_tensor([12, 23, 34]),
-          ops.convert_to_tensor([1, 2])
-      ]
+      indices = [tf.convert_to_tensor([0, 1, 2]), tf.convert_to_tensor([2, 3])]
+      values = [tf.convert_to_tensor([12, 23, 34]), tf.convert_to_tensor([1, 2])]
       self.assertAllEqual(
-          data_flow_ops.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
+          tf.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
 
   def testInt32Gpu(self):
     with self.test_session(use_gpu=True):
-      indices = [
-          ops.convert_to_tensor([0, 1, 2]),
-          ops.convert_to_tensor([2, 3])
-      ]
-      values = [
-          ops.convert_to_tensor([12, 23, 34]),
-          ops.convert_to_tensor([1, 2])
-      ]
+      indices = [tf.convert_to_tensor([0, 1, 2]), tf.convert_to_tensor([2, 3])]
+      values = [tf.convert_to_tensor([12, 23, 34]), tf.convert_to_tensor([1, 2])]
       self.assertAllEqual(
-          data_flow_ops.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
+          tf.dynamic_stitch(indices, values).eval(), [12, 23, 1, 2])
 
   def testSumGradArgs(self):
     with self.test_session(use_gpu=False):
-      indices = [
-          ops.convert_to_tensor([0, 1, 2, 3]),
-          ops.convert_to_tensor([2, 3])
-      ]
-      values = [
-          ops.convert_to_tensor([2, 3, 5, 7]),
-          ops.convert_to_tensor([1, 1])
-      ]
+      indices = [tf.convert_to_tensor([0, 1, 2, 3]),
+                 tf.convert_to_tensor([2, 3])]
+      values = [tf.convert_to_tensor([2, 3, 5, 7]), tf.convert_to_tensor([1, 1])]
       self.assertAllEqual(
-          data_flow_ops.dynamic_stitch(indices, values).eval(), [2, 3, 1, 1])
+          tf.dynamic_stitch(indices, values).eval(), [2, 3, 1, 1])
 
   # We expect that the values are merged in order.
   def testStitchOrder(self):
@@ -810,51 +644,12 @@ class DynamicStitchOpTest(test.TestCase):
       np_values = []
       values = []
       for _ in range(10):
-        indices.extend([ops.convert_to_tensor(np.arange(100).astype(np.int32))])
+        indices.extend([tf.convert_to_tensor(np.arange(100).astype(np.int32))])
         np_values.extend([np.random.uniform(size=100)])
-        values.extend([ops.convert_to_tensor(np_values[-1])])
-      stitched = data_flow_ops.dynamic_stitch(indices, values).eval()
+        values.extend([tf.convert_to_tensor(np_values[-1])])
+      stitched = tf.dynamic_stitch(indices, values).eval()
     self.assertAllEqual(np_values[-1], stitched)
 
 
-class ParallelDynamicStitchOpTest(test.TestCase):
-
-  def testCint32Cpu(self):
-    with self.test_session(use_gpu=False):
-      indices = [
-          ops.convert_to_tensor([0, 1, 4, 6]),
-          ops.convert_to_tensor([2, 3, 5])
-      ]
-      values = [
-          ops.convert_to_tensor([12, 23, 34, 45]),
-          ops.convert_to_tensor([1, 2, 3])
-      ]
-      self.assertAllEqual(
-          data_flow_ops.parallel_dynamic_stitch(indices, values).eval(),
-          [12, 23, 1, 2, 34, 3, 45])
-
-  def testInt32Cpu(self):
-    with self.test_session(use_gpu=False):
-      indices = [
-          ops.convert_to_tensor([0, 1, 5, 6, 7]),
-          ops.convert_to_tensor([2, 4, 3])
-      ]
-      values = [
-          ops.convert_to_tensor([12, 23, 34, 45, 56]),
-          ops.convert_to_tensor([1, 3, 2])
-      ]
-      self.assertAllEqual(
-          data_flow_ops.parallel_dynamic_stitch(indices, values).eval(),
-          [12, 23, 1, 2, 3, 34, 45, 56])
-
-  def testSimple(self):
-    with self.test_session(use_gpu=False):
-      indices = [ops.convert_to_tensor([0, 1]), ops.convert_to_tensor([2, 3])]
-      values = [ops.convert_to_tensor([2, 3]), ops.convert_to_tensor([1, 1])]
-      self.assertAllEqual(
-          data_flow_ops.parallel_dynamic_stitch(indices, values).eval(),
-          [2, 3, 1, 1])
-
-
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

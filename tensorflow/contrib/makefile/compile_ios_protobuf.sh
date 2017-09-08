@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x -e
 # Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,12 +15,6 @@
 # ==============================================================================
 # Builds protobuf 3 for iOS.
 
-set -e
-
-if [[ -n MACOSX_DEPLOYMENT_TARGET ]]; then
-    export MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion)
-fi
-
 SCRIPT_DIR=$(dirname $0)
 source "${SCRIPT_DIR}/build_helper.subr"
 
@@ -34,20 +28,24 @@ if [[ ! -f "./downloads/protobuf/autogen.sh" ]]; then
     exit 1
 fi
 
-JOB_COUNT="${JOB_COUNT:-$(get_job_count)}"
+if [ "$#" -gt 1 ]; then
+    JOBS_COUNT=$1
+else
+    JOBS_COUNT=4
+fi
 
-GENDIR=$(pwd)/gen/protobuf_ios/
+GENDIR=`pwd`/gen/protobuf_ios/
 LIBDIR=${GENDIR}lib
 mkdir -p ${LIBDIR}
 
 OSX_VERSION=darwin14.0.0
 
-IPHONEOS_PLATFORM=$(xcrun --sdk iphoneos --show-sdk-platform-path)
-IPHONEOS_SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-IPHONESIMULATOR_PLATFORM=$(xcrun --sdk iphonesimulator --show-sdk-platform-path)
-IPHONESIMULATOR_SYSROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
-IOS_SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
-MIN_SDK_VERSION=8.0
+IPHONEOS_PLATFORM=`xcrun --sdk iphoneos --show-sdk-platform-path`
+IPHONEOS_SYSROOT=`xcrun --sdk iphoneos --show-sdk-path`
+IPHONESIMULATOR_PLATFORM=`xcrun --sdk iphonesimulator --show-sdk-platform-path`
+IPHONESIMULATOR_SYSROOT=`xcrun --sdk iphonesimulator --show-sdk-path`
+IOS_SDK_VERSION=`xcrun --sdk iphoneos --show-sdk-version`
+MIN_SDK_VERSION=8.2
 
 CFLAGS="-DNDEBUG -Os -pipe -fPIC -fno-exceptions"
 CXXFLAGS="${CFLAGS} -std=c++11 -stdlib=libc++"
@@ -73,6 +71,7 @@ fi
 
 make distclean
 ./configure \
+--build=x86_64-apple-${OSX_VERSION} \
 --host=i386-apple-${OSX_VERSION} \
 --disable-shared \
 --enable-cross-compile \
@@ -82,27 +81,25 @@ make distclean
 "CFLAGS=${CFLAGS} \
 -mios-simulator-version-min=${MIN_SDK_VERSION} \
 -arch i386 \
--fembed-bitcode \
 -isysroot ${IPHONESIMULATOR_SYSROOT}" \
 "CXX=${CXX}" \
 "CXXFLAGS=${CXXFLAGS} \
 -mios-simulator-version-min=${MIN_SDK_VERSION} \
 -arch i386 \
--fembed-bitcode \
 -isysroot \
 ${IPHONESIMULATOR_SYSROOT}" \
 LDFLAGS="-arch i386 \
--fembed-bitcode \
 -mios-simulator-version-min=${MIN_SDK_VERSION} \
 ${LDFLAGS} \
 -L${IPHONESIMULATOR_SYSROOT}/usr/lib/ \
 -L${IPHONESIMULATOR_SYSROOT}/usr/lib/system" \
 "LIBS=${LIBS}"
-make -j"${JOB_COUNT}"
+make -j ${JOBS_COUNT}
 make install
 
 make distclean
 ./configure \
+--build=x86_64-apple-${OSX_VERSION} \
 --host=x86_64-apple-${OSX_VERSION} \
 --disable-shared \
 --enable-cross-compile \
@@ -112,27 +109,25 @@ make distclean
 "CFLAGS=${CFLAGS} \
 -mios-simulator-version-min=${MIN_SDK_VERSION} \
 -arch x86_64 \
--fembed-bitcode \
 -isysroot ${IPHONESIMULATOR_SYSROOT}" \
 "CXX=${CXX}" \
 "CXXFLAGS=${CXXFLAGS} \
 -mios-simulator-version-min=${MIN_SDK_VERSION} \
 -arch x86_64 \
--fembed-bitcode \
 -isysroot \
 ${IPHONESIMULATOR_SYSROOT}" \
 LDFLAGS="-arch x86_64 \
--fembed-bitcode \
 -mios-simulator-version-min=${MIN_SDK_VERSION} \
 ${LDFLAGS} \
 -L${IPHONESIMULATOR_SYSROOT}/usr/lib/ \
 -L${IPHONESIMULATOR_SYSROOT}/usr/lib/system" \
 "LIBS=${LIBS}"
-make -j"${JOB_COUNT}"
+make -j ${JOBS_COUNT}
 make install
 
 make distclean
 ./configure \
+--build=x86_64-apple-${OSX_VERSION} \
 --host=armv7-apple-${OSX_VERSION} \
 --with-protoc="${PROTOC_PATH}" \
 --disable-shared \
@@ -141,24 +136,22 @@ make distclean
 "CFLAGS=${CFLAGS} \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 -arch armv7 \
--fembed-bitcode \
 -isysroot ${IPHONEOS_SYSROOT}" \
 "CXX=${CXX}" \
 "CXXFLAGS=${CXXFLAGS} \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 -arch armv7 \
--fembed-bitcode \
 -isysroot ${IPHONEOS_SYSROOT}" \
 LDFLAGS="-arch armv7 \
--fembed-bitcode \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 ${LDFLAGS}" \
 "LIBS=${LIBS}"
-make -j"${JOB_COUNT}"
+make -j ${JOBS_COUNT}
 make install
 
 make distclean
 ./configure \
+--build=x86_64-apple-${OSX_VERSION} \
 --host=armv7s-apple-${OSX_VERSION} \
 --with-protoc="${PROTOC_PATH}" \
 --disable-shared \
@@ -167,24 +160,22 @@ make distclean
 "CFLAGS=${CFLAGS} \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 -arch armv7s \
--fembed-bitcode \
 -isysroot ${IPHONEOS_SYSROOT}" \
 "CXX=${CXX}" \
 "CXXFLAGS=${CXXFLAGS} \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 -arch armv7s \
--fembed-bitcode \
 -isysroot ${IPHONEOS_SYSROOT}" \
 LDFLAGS="-arch armv7s \
--fembed-bitcode \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 ${LDFLAGS}" \
 "LIBS=${LIBS}"
-make -j"${JOB_COUNT}"
+make -j ${JOBS_COUNT}
 make install
 
 make distclean
 ./configure \
+--build=x86_64-apple-${OSX_VERSION} \
 --host=arm \
 --with-protoc="${PROTOC_PATH}" \
 --disable-shared \
@@ -193,19 +184,16 @@ make distclean
 "CFLAGS=${CFLAGS} \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 -arch arm64 \
--fembed-bitcode \
 -isysroot ${IPHONEOS_SYSROOT}" \
 "CXXFLAGS=${CXXFLAGS} \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 -arch arm64 \
--fembed-bitcode \
 -isysroot ${IPHONEOS_SYSROOT}" \
 LDFLAGS="-arch arm64 \
--fembed-bitcode \
 -miphoneos-version-min=${MIN_SDK_VERSION} \
 ${LDFLAGS}" \
 "LIBS=${LIBS}"
-make -j"${JOB_COUNT}"
+make -j ${JOBS_COUNT}
 make install
 
 lipo \

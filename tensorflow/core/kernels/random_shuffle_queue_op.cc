@@ -18,7 +18,6 @@ limitations under the License.
 #include <deque>
 #include <vector>
 
-#include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -309,13 +308,7 @@ void RandomShuffleQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
       // an optimized case where the queue 'knows' what attributes to
       // use, and plumbs them through here.
       Tensor element;
-      Status s = ctx->allocate_temp(component_dtypes_[i], ManyOutShape(i, 0),
-                                    &element);
-      if (!s.ok()) {
-        ctx->SetStatus(s);
-        callback(Tuple());
-        return;
-      }
+      ctx->allocate_temp(component_dtypes_[i], ManyOutShape(i, 0), &element);
       tuple.emplace_back(element);
     }
     callback(tuple);
@@ -359,7 +352,7 @@ void RandomShuffleQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
                       }
                     }
                   }
-                  if (allow_small_batch && !queues_[0].empty()) {
+                  if (allow_small_batch && queues_[0].size() > 0) {
                     // Request all remaining elements in the queue.
                     queue_size = queues_[0].size();
                     attempt->tuple.clear();
@@ -394,10 +387,8 @@ void RandomShuffleQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
                       const TensorShape shape =
                           ManyOutShape(i, attempt->elements_requested);
                       Tensor element;
-                      attempt->context->SetStatus(
-                          attempt->context->allocate_temp(component_dtypes_[i],
-                                                          shape, &element));
-                      if (!attempt->context->status().ok()) return kComplete;
+                      attempt->context->allocate_temp(component_dtypes_[i],
+                                                      shape, &element);
                       attempt->tuple.emplace_back(element);
                     }
                   }
@@ -434,11 +425,7 @@ void RandomShuffleQueue::TryDequeueMany(int num_elements, OpKernelContext* ctx,
 }
 
 Status RandomShuffleQueue::MatchesNodeDef(const NodeDef& node_def) {
-  if (!MatchesNodeDefOp(node_def, "RandomShuffleQueue").ok() &&
-      !MatchesNodeDefOp(node_def, "RandomShuffleQueueV2").ok()) {
-    return errors::InvalidArgument("Expected RandomShuffleQueue, found ",
-                                   node_def.op());
-  }
+  TF_RETURN_IF_ERROR(MatchesNodeDefOp(node_def, "RandomShuffleQueue"));
   TF_RETURN_IF_ERROR(MatchesNodeDefCapacity(node_def, capacity_));
 
   int32 min_after_dequeue = -1;
@@ -472,10 +459,10 @@ Status RandomShuffleQueue::MatchesNodeDef(const NodeDef& node_def) {
 // backed by RandomShuffleQueue) that persists across different graph
 // executions, and sessions. Running this op produces a single-element
 // tensor of handles to Queues in the corresponding device.
-class RandomShuffleQueueOp : public TypedQueueOp {
+class RandomShuffleQueueOp : public QueueOp {
  public:
   explicit RandomShuffleQueueOp(OpKernelConstruction* context)
-      : TypedQueueOp(context) {
+      : QueueOp(context) {
     OP_REQUIRES_OK(context,
                    context->GetAttr("min_after_dequeue", &min_after_dequeue_));
     OP_REQUIRES(context, min_after_dequeue_ >= 0,
@@ -491,15 +478,23 @@ class RandomShuffleQueueOp : public TypedQueueOp {
     OP_REQUIRES_OK(context, context->GetAttr("shapes", &component_shapes_));
   }
 
- private:
-  Status CreateResource(QueueInterface** ret) override
-      EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-    RandomShuffleQueue* queue = new RandomShuffleQueue(
-        capacity_, min_after_dequeue_, seed_, seed2_, component_types_,
-        component_shapes_, cinfo_.name());
-    return CreateTypedQueue(queue, ret);
+ protected:
+  CreatorCallback GetCreator() const override {
+    return [this](QueueInterface** ret) {
+      auto* q = new RandomShuffleQueue(capacity_, min_after_dequeue_, seed_,
+                                       seed2_, component_types_,
+                                       component_shapes_, cinfo_.name());
+      Status s = q->Initialize();
+      if (s.ok()) {
+        *ret = q;
+      } else {
+        q->Unref();
+      }
+      return s;
+    };
   }
 
+ private:
   int32 min_after_dequeue_;
   int64 seed_;
   int64 seed2_;
@@ -509,8 +504,6 @@ class RandomShuffleQueueOp : public TypedQueueOp {
 };
 
 REGISTER_KERNEL_BUILDER(Name("RandomShuffleQueue").Device(DEVICE_CPU),
-                        RandomShuffleQueueOp);
-REGISTER_KERNEL_BUILDER(Name("RandomShuffleQueueV2").Device(DEVICE_CPU),
                         RandomShuffleQueueOp);
 
 }  // namespace tensorflow

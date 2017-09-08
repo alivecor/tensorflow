@@ -28,7 +28,6 @@ limitations under the License.
 %unignore tensorflow::EventsWriter;
 %unignore tensorflow::EventsWriter::EventsWriter;
 %unignore tensorflow::EventsWriter::~EventsWriter;
-%unignore tensorflow::EventsWriter::InitWithSuffix;
 %unignore tensorflow::EventsWriter::FileName;
 %rename("_WriteSerializedEvent") tensorflow::EventsWriter::WriteSerializedEvent;
 %unignore tensorflow::EventsWriter::Flush;

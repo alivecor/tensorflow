@@ -84,7 +84,6 @@ if [[ -z "${TF_INC}" ]]; then
   die "FAILED to determine TensorFlow include path"
 else
   echo "TensorFlow include path: ${TF_INC}"
-  TF_INCLUDE_PATH="-I${TF_INC} -I${TF_INC}/external/nsync/public"
 fi
 
 # Check g++ availability
@@ -124,7 +123,7 @@ if [[ ${IS_GPU} == "0" ]]; then
   EXPECTED_OUTPUT="[42, 0, 0]"
 
   # Locate the op kernel C++ file
-  OP_KERNEL_CC="${SCRIPT_DIR}/user_ops/zero_out_op_kernel_1.cc"
+  OP_KERNEL_CC="${SCRIPT_DIR}/../../../g3doc/how_tos/adding_an_op/zero_out_op_kernel_1.cc"
   OP_KERNEL_CC=$(realpath "${OP_KERNEL_CC}")
 
   if [[ ! -f "${OP_KERNEL_CC}" ]]; then
@@ -143,7 +142,7 @@ if [[ ${IS_GPU} == "0" ]]; then
 
   "${GPP_BIN}" -std=c++11 ${EXTRA_GPP_FLAGS} \
     -shared "${SRC_FILE}" -o "${USER_OP_SO}" \
-    -fPIC ${TF_INCLUDE_PATH} || \
+    -fPIC -I "${TF_INC}" || \
     die "g++ compilation of ${SRC_FILE} FAILED"
 
 else
@@ -163,13 +162,13 @@ else
   "${NVCC_BIN}" --version
   echo ""
 
-  OP_KERNEL_CU="${SCRIPT_DIR}/user_ops/cuda_op_kernel.cu.cc"
+  OP_KERNEL_CU="${SCRIPT_DIR}/../../../g3doc/how_tos/adding_an_op/cuda_op_kernel.cu.cc"
   OP_KERNEL_CU=$(realpath "${OP_KERNEL_CU}")
   if [[ ! -f "${OP_KERNEL_CU}" ]]; then
     die "ERROR: Unable to find user-op kernel CUDA file at: ${OP_KERNEL_CU}"
   fi
 
-  OP_KERNEL_CC="${SCRIPT_DIR}/user_ops/cuda_op_kernel.cc"
+  OP_KERNEL_CC="${SCRIPT_DIR}/../../../g3doc/how_tos/adding_an_op/cuda_op_kernel.cc"
   OP_KERNEL_CC=$(realpath "${OP_KERNEL_CC}")
   if [[ ! -f "${OP_KERNEL_CC}" ]]; then
     die "ERROR: Unable to find user-op kernel C++ file at: ${OP_KERNEL_CC}"
@@ -182,7 +181,7 @@ else
   OP_KERNEL_O=$(echo "${OP_KERNEL_CC}" | sed -e 's/\.cc/\.o/')
   "${NVCC_BIN}" -std=c++11 \
       -c -o "${OP_KERNEL_O}" "${OP_KERNEL_CU}" \
-      ${TF_INCLUDE_PATH} -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC || \
+      -I "${TF_INC}" -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC || \
       die "nvcc compilation of ${OP_KERNEL_CC} FAILED"
 
   CUDA_LIB_DIR="/usr/local/cuda/lib64"
@@ -201,7 +200,7 @@ else
   USER_OP_SO="add_one.so"
   "${GPP_BIN}" -std=c++11 ${EXTRA_GPP_FLAGS} \
       -shared -o "${USER_OP_SO}" "${OP_KERNEL_CC}" \
-      "${OP_KERNEL_O}" ${TF_INCLUDE_PATH} -L "${CUDA_LIB_DIR}" \
+      "${OP_KERNEL_O}" -I "${TF_INC}" -L "${CUDA_LIB_DIR}" \
       -fPIC -lcudart || \
       die "g++ compilation of ${OP_KERNEL_CC}" FAILED
 fi

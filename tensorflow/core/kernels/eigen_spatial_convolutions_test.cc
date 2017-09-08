@@ -20,9 +20,12 @@ limitations under the License.
 
 namespace Eigen {
 
-#define EigenApprox(a, b) \
-  { ASSERT_TRUE(std::abs(a - b) <= std::min(std::abs(a), std::abs(b)) * 1e-3); }
+namespace {
+void EigenApprox(float a, float b) {
+  ASSERT_TRUE(std::abs(a - b) <= std::min(std::abs(a), std::abs(b)) * 1e-3);
+}
 static int ceil_div(int a, int b) { return (a + b - 1) / b; }
+}
 
 TEST(EigenSpatialConvolutionsTest, Simple) {
   const int input_depth = 7;

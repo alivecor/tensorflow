@@ -15,8 +15,6 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/reduction_ops_common.h"
 
-#include "tensorflow/core/lib/strings/str_util.h"
-
 namespace tensorflow {
 
 TensorShape ReductionHelper::out_reshape() const {

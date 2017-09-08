@@ -24,19 +24,18 @@ import shutil
 import tempfile
 import time
 
+import tensorflow as tf
+
 from tensorflow.core.util import event_pb2
-from tensorflow.python.platform import test
 from tensorflow.python.platform import tf_logging as logging
-from tensorflow.python.summary import summary_iterator
-from tensorflow.python.summary.writer import writer
 from tensorflow.python.training import tensorboard_logging
 
 
-class EventLoggingTest(test.TestCase):
+class EventLoggingTest(tf.test.TestCase):
 
   def setUp(self):
     self._work_dir = tempfile.mkdtemp(dir=self.get_temp_dir())
-    self._sw = writer.FileWriter(self._work_dir)
+    self._sw = tf.train.SummaryWriter(self._work_dir)
     tensorboard_logging.set_summary_writer(self._sw)
     self.addCleanup(shutil.rmtree, self._work_dir)
 
@@ -66,7 +65,7 @@ class EventLoggingTest(test.TestCase):
     # If the tests runs multiple time in the same directory we can have
     # more than one matching event file.  We only want to read the last one.
     self.assertTrue(event_paths)
-    event_reader = summary_iterator.summary_iterator(event_paths[-1])
+    event_reader = tf.train.summary_iterator(event_paths[-1])
     # Skip over the version event.
     next(event_reader)
 
@@ -81,8 +80,10 @@ class EventLoggingTest(test.TestCase):
     tensorboard_logging.error("oh no!")
     tensorboard_logging.error("for%s", "mat")
 
-    self.assertLoggedMessagesAre([(event_pb2.LogMessage.ERROR, "oh no!"),
-                                  (event_pb2.LogMessage.ERROR, "format")])
+    self.assertLoggedMessagesAre([
+        (event_pb2.LogMessage.ERROR, "oh no!"), (event_pb2.LogMessage.ERROR,
+                                                 "format")
+    ])
     self.assertEqual(2, self.logged_message_count)
 
   def testVerbosity(self):
@@ -93,8 +94,10 @@ class EventLoggingTest(test.TestCase):
     tensorboard_logging.set_verbosity(tensorboard_logging.DEBUG)
     tensorboard_logging.debug("debug")
 
-    self.assertLoggedMessagesAre([(event_pb2.LogMessage.ERROR, "error"),
-                                  (event_pb2.LogMessage.DEBUGGING, "debug")])
+    self.assertLoggedMessagesAre([
+        (event_pb2.LogMessage.ERROR, "error"),
+        (event_pb2.LogMessage.DEBUG, "debug")
+    ])
     # All message should be logged because tensorboard_logging verbosity doesn't
     # affect logging verbosity.
     self.assertEqual(3, self.logged_message_count)
@@ -119,4 +122,4 @@ class EventLoggingTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

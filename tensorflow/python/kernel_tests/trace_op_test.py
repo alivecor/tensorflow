@@ -18,12 +18,10 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
-from tensorflow.python.ops import math_ops
-from tensorflow.python.platform import test
+import tensorflow as tf
 
 
-class TraceTest(test.TestCase):
+class TraceTest(tf.test.TestCase):
 
   def setUp(self):
     x = np.random.seed(0)
@@ -31,7 +29,7 @@ class TraceTest(test.TestCase):
   def compare(self, x):
     np_ans = np.trace(x, axis1=-2, axis2=-1)
     with self.test_session(use_gpu=True):
-      tf_ans = math_ops.trace(x).eval()
+      tf_ans = tf.trace(x).eval()
     self.assertAllClose(tf_ans, np_ans)
 
   def testTrace(self):
@@ -42,4 +40,4 @@ class TraceTest(test.TestCase):
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

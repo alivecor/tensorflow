@@ -88,9 +88,7 @@ class Scanner {
     return *this;
   }
 
-  // Consume characters from the input as long as they match <clz>. Zero
-  // characters is still considered a match, so it will never cause GetResult to
-  // return false.
+  // Consume characters from the input as long as they match <clz>.
   Scanner& Any(CharClass clz) {
     while (!cur_.empty() && Matches(clz, cur_[0])) {
       cur_.remove_prefix(1);
