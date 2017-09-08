@@ -22,6 +22,9 @@ import math
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import test_util
+from tensorflow.python.ops import gen_state_ops
+# Import resource_variable_ops for the variables-to-tensor implicit conversion.
+from tensorflow.python.ops import resource_variable_ops  # pylint: disable=unused-import
 from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import googletest
@@ -39,7 +42,8 @@ class LRDecayTest(test_util.TensorFlowTestCase):
 
   def testStaircase(self):
     with self.test_session():
-      step = state_ops.variable_op([], dtypes.int32)
+      step = gen_state_ops._variable(shape=[], dtype=dtypes.int32,
+          name="step", container="", shared_name="")
       assign_100 = state_ops.assign(step, 100)
       assign_1 = state_ops.assign(step, 1)
       assign_2 = state_ops.assign(step, 2)
@@ -63,7 +67,7 @@ class LRDecayTest(test_util.TensorFlowTestCase):
       assign_100 = step.assign(100)
       decayed_lr = learning_rate_decay.exponential_decay(.1, step, 3, 0.96,
                                                          staircase=True)
-      variables.initialize_all_variables().run()
+      variables.global_variables_initializer().run()
       # No change to learning rate
       assign_1.op.run()
       self.assertAllClose(decayed_lr.eval(), .1, 1e-6)
@@ -85,7 +89,7 @@ class LRDecayTest(test_util.TensorFlowTestCase):
       pc = learning_rate_decay.piecewise_constant(x, [100, 110, 120],
                                                   [1.0, 0.1, 0.01, 0.001])
 
-      variables.initialize_all_variables().run()
+      variables.global_variables_initializer().run()
       self.assertAllClose(pc.eval(), 1.0, 1e-6)
       assign_100.op.run()
       self.assertAllClose(pc.eval(), 1.0, 1e-6)
@@ -108,6 +112,31 @@ class LRDecayTest(test_util.TensorFlowTestCase):
       boundaries, values = [-1.0, 1.0], [1.0, 2, 3]
       with self.assertRaises(ValueError):
         learning_rate_decay.piecewise_constant(x, boundaries, values)
+
+      # Test that ref types are valid.
+      x_ref = x.op.outputs[0]   # float32_ref tensor should be accepted
+      boundaries, values = [1.0, 2.0], [1, 2, 3]
+      learning_rate_decay.piecewise_constant(x_ref, boundaries, values)
+
+      # Test casting boundaries from int32 to int64.
+      x_int64 = variables.Variable(0, dtype=variables.dtypes.int64)
+      assign_1 = x_int64.assign(1)
+      assign_2 = x_int64.assign(2)
+      assign_3 = x_int64.assign(3)
+      assign_4 = x_int64.assign(4)
+      boundaries, values = [1, 2, 3], [0.4, 0.5, 0.6, 0.7]
+      pc = learning_rate_decay.piecewise_constant(x_int64, boundaries, values)
+
+      variables.global_variables_initializer().run()
+      self.assertAllClose(pc.eval(), 0.4, 1e-6)
+      assign_1.op.run()
+      self.assertAllClose(pc.eval(), 0.4, 1e-6)
+      assign_2.op.run()
+      self.assertAllClose(pc.eval(), 0.5, 1e-6)
+      assign_3.op.run()
+      self.assertAllClose(pc.eval(), 0.6, 1e-6)
+      assign_4.op.run()
+      self.assertAllClose(pc.eval(), 0.7, 1e-6)
 
 
 class LinearDecayTest(test_util.TensorFlowTestCase):
@@ -223,7 +252,8 @@ class ExponentialDecayTest(test_util.TensorFlowTestCase):
     initial_lr = 0.1
     k = 10
     decay_rate = 0.96
-    step = state_ops.variable_op([], dtypes.int32)
+    step = gen_state_ops._variable(shape=[], dtype=dtypes.int32,
+        name="step", container="", shared_name="")
     assign_step = state_ops.assign(step, 0)
     increment_step = state_ops.assign_add(step, 1)
     decayed_lr = learning_rate_decay.natural_exp_decay(initial_lr, step,
@@ -239,7 +269,8 @@ class ExponentialDecayTest(test_util.TensorFlowTestCase):
     initial_lr = 0.1
     k = 10
     decay_rate = 0.96
-    step = state_ops.variable_op([], dtypes.int32)
+    step = gen_state_ops._variable(shape=[], dtype=dtypes.int32,
+        name="step", container="", shared_name="")
     assign_step = state_ops.assign(step, 0)
     increment_step = state_ops.assign_add(step, 1)
     decayed_lr = learning_rate_decay.natural_exp_decay(initial_lr,
@@ -261,7 +292,8 @@ class InverseDecayTest(test_util.TensorFlowTestCase):
     initial_lr = 0.1
     k = 10
     decay_rate = 0.96
-    step = state_ops.variable_op([], dtypes.int32)
+    step = gen_state_ops._variable(shape=[], dtype=dtypes.int32,
+        name="step", container="", shared_name="")
     assign_step = state_ops.assign(step, 0)
     increment_step = state_ops.assign_add(step, 1)
     decayed_lr = learning_rate_decay.inverse_time_decay(initial_lr,
@@ -279,7 +311,8 @@ class InverseDecayTest(test_util.TensorFlowTestCase):
     initial_lr = 0.1
     k = 10
     decay_rate = 0.96
-    step = state_ops.variable_op([], dtypes.int32)
+    step = gen_state_ops._variable(shape=[], dtype=dtypes.int32,
+        name="step", container="", shared_name="")
     assign_step = state_ops.assign(step, 0)
     increment_step = state_ops.assign_add(step, 1)
     decayed_lr = learning_rate_decay.inverse_time_decay(initial_lr,

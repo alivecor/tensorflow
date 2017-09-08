@@ -76,7 +76,11 @@ def configure(src_base_path, debug=False):
   # Remove and recreate the path
   if os.path.exists(gen_path):
     if os.path.isdir(gen_path):
-      shutil.rmtree(gen_path)
+      try:
+        shutil.rmtree(gen_path)
+      except OSError:
+        raise RuntimeError("Cannot delete directory %s due to permission "
+                           "error, inspect and remove manually" % gen_path)
     else:
       raise RuntimeError("Cannot delete non-directory %s, inspect ",
                          "and remove manually" % gen_path)
@@ -147,8 +151,10 @@ def get_git_version(git_base_path):
   """
   unknown_label = b"unknown"
   try:
-    val = subprocess.check_output(["git", "-C", git_base_path, "describe",
-                                   "--long", "--dirty", "--tags"]).strip()
+    val = bytes(subprocess.check_output([
+        "git", str("--git-dir=%s/.git" % git_base_path),
+        str("--work-tree=" + git_base_path), "describe", "--long", "--tags"
+    ]).strip())
     return val if val else unknown_label
   except subprocess.CalledProcessError:
     return unknown_label
@@ -199,7 +205,7 @@ def generate(arglist):
   data = json.load(open(spec))
   git_version = None
   if not data["git"]:
-    git_version = "unknown"
+    git_version = b"unknown"
   else:
     old_branch = data["branch"]
     new_branch = parse_branch_ref(head_symlink)

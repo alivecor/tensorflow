@@ -96,6 +96,13 @@ Status Get3dOutputSize(const std::array<int64, 3>& input,
 
 namespace shape_inference {
 
+// Like GetWindowedOutputSize, but deals with DimensionHandles.
+Status GetWindowedOutputSizeFromDims(InferenceContext* c,
+                                     DimensionHandle input_size,
+                                     DimensionOrConstant filter_size,
+                                     int64 stride, Padding padding_type,
+                                     DimensionHandle* output_size);
+
 // Transfers shape of input(0) to output(0).
 Status UnchangedShape(shape_inference::InferenceContext* c);
 
@@ -160,6 +167,9 @@ Status Conv2DShape(shape_inference::InferenceContext* c);
 // Shape function for Conv3D-like operations.
 Status Conv3DShape(shape_inference::InferenceContext* c);
 
+// Shape function for FusedConvBiasActivation operation.
+Status FusedConvBiasActivationShape(shape_inference::InferenceContext* c);
+
 // Shape function for DepthwiseConv2D-like operations.
 Status DepthwiseConv2DNativeShape(shape_inference::InferenceContext* c);
 
@@ -168,6 +178,9 @@ Status AvgPoolShape(shape_inference::InferenceContext* c);
 
 // Shape function for MaxPool-like operations.
 Status MaxPoolShape(shape_inference::InferenceContext* c);
+
+// Shape function for MaxPoolV2-like operations.
+Status MaxPoolV2Shape(shape_inference::InferenceContext* c, int num_inputs);
 
 // Shape function for 3D Pooling operations.
 Status Pool3DShape(shape_inference::InferenceContext* c);
@@ -178,12 +191,12 @@ Status UnknownShape(shape_inference::InferenceContext* c);
 // Shape function for reduction operations.
 Status ReductionShape(shape_inference::InferenceContext* c);
 
-// Shape function for reduction operations where an empty reduction indices
-// vector means to reduce all.
-Status ReductionShapeForReduceJoin(shape_inference::InferenceContext* c);
-
 // Shape function for concat operations.
-Status ConcatShape(shape_inference::InferenceContext* c);
+// <num_inputs_to_concat> is the number of inputs to concatenate and are taken
+// from inputs
+// [1,num_inputs_to_concat] of the op.  Input 0 is the concat_dim input.
+Status ConcatShape(shape_inference::InferenceContext* c,
+                   int num_inputs_to_concat);
 
 // Shape function for concat operations.
 Status ConcatV2Shape(shape_inference::InferenceContext* c);
@@ -191,6 +204,17 @@ Status ConcatV2Shape(shape_inference::InferenceContext* c);
 // Shape function for binary operators that broadcast their inputs.
 // Tested by ops/math_ops_test.cc.
 Status BroadcastBinaryOpShapeFn(InferenceContext* c);
+
+// Shape function for random operations.
+Status RandomShape(shape_inference::InferenceContext* c);
+
+// Validates the 3 component tensors of a sparse tensor have the proper
+// shapes. This mimics SparseTensor.__init__ in python/framework/ops.py.
+Status ValidateSparseTensor(InferenceContext* c, ShapeHandle indices_shape,
+                            ShapeHandle values_shape, ShapeHandle shape_shape);
+
+// Shape function for ScatterNd update/add/sub/... operations.
+Status ScatterNdUpdateShape(InferenceContext* c);
 
 }  // namespace shape_inference
 

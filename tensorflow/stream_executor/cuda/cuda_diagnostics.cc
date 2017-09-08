@@ -15,6 +15,10 @@ limitations under the License.
 
 #include "tensorflow/stream_executor/cuda/cuda_diagnostics.h"
 
+#if !defined(PLATFORM_WINDOWS)
+#include <dirent.h>
+#endif
+
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -25,7 +29,6 @@ limitations under the License.
 #include <mach-o/dyld.h>
 #else
 #if !defined(PLATFORM_WINDOWS)
-#include <dirent.h>
 #include <link.h>
 #include <sys/sysmacros.h>
 #include <unistd.h>
@@ -54,7 +57,7 @@ namespace cuda {
 
 #ifdef __APPLE__
 static const CFStringRef kDriverKextIdentifier = CFSTR("com.nvidia.CUDA");
-#else
+#elif !defined(PLATFORM_WINDOWS)
 static const char *kDriverVersionPath = "/proc/driver/nvidia/version";
 #endif
 
@@ -167,7 +170,7 @@ void Diagnostician::LogDiagnosticInformation() {
     VLOG(1) << "LD_LIBRARY_PATH is: \"" << library_path << "\"";
 
     std::vector<string> pieces = port::Split(library_path, ':');
-    for (auto piece : pieces) {
+    for (const auto &piece : pieces) {
       if (piece.empty()) {
         continue;
       }
@@ -338,6 +341,12 @@ port::StatusOr<DriverVersion> Diagnostician::FindKernelDriverVersion() {
                               CFStringGetCStringPtr(kDriverKextIdentifier, kCFStringEncodingUTF8))
     };
   return status;
+#elif defined(PLATFORM_WINDOWS)
+  auto status =
+    port::Status{port::error::UNIMPLEMENTED,
+                 "kernel reported driver version not implemented on Windows"
+    };
+  return status;
 #else
   FILE *driver_version_file = fopen(kDriverVersionPath, "r");
   if (driver_version_file == nullptr) {
@@ -360,7 +369,7 @@ port::StatusOr<DriverVersion> Diagnostician::FindKernelDriverVersion() {
     LOG(INFO) << "driver version file contents: \"\"\"" << contents.begin()
               << "\"\"\"";
     fclose(driver_version_file);
-    return FindKernelModuleVersion(string{contents.begin()});
+    return FindKernelModuleVersion(contents.begin());
   }
 
   auto status =

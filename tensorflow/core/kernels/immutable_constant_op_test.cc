@@ -64,7 +64,7 @@ class TestFileSystem : public NullFileSystem {
       std::unique_ptr<ReadOnlyMemoryRegion>* result) override {
     float val = 0;
     StringPiece scheme, host, path;
-    ParseURI(fname, &scheme, &host, &path);
+    io::ParseURI(fname, &scheme, &host, &path);
     // For the tests create in-memory regions with float values equal to the
     // region name.
     if (path == "/2") {
@@ -121,7 +121,7 @@ TEST(ImmutableConstantOpTest, ExecutionError) {
   const TensorShape kBadTensorShape({40, 100});
   const TensorShape kTestTensorShapeT({1, 4});
 
-  auto root = Scope::NewRootScope().ExitOnError();
+  auto root = Scope::DisabledShapeInferenceScope().ExitOnError();
   auto node1 =
       ops::ImmutableConst(root, DT_FLOAT, kBadTensorShape, "test:///2");
   auto node2 =

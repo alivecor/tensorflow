@@ -17,7 +17,8 @@
 
 This version is like fully_connected_feed.py but uses data converted
 to a TFRecords file containing tf.train.Example protocol buffers.
-See tensorflow/g3doc/how_tos/reading_data.md#reading-from-files
+See:
+https://www.tensorflow.org/programmers_guide/reading_data#reading_from_files
 for context.
 
 YOU MUST run convert_to_records before running this (but you only need to
@@ -29,6 +30,7 @@ from __future__ import print_function
 
 import argparse
 import os.path
+import sys
 import time
 
 import tensorflow as tf
@@ -137,8 +139,8 @@ def run_training():
     train_op = mnist.training(loss, FLAGS.learning_rate)
 
     # The op for initializing the variables.
-    init_op = tf.group(tf.initialize_all_variables(),
-                       tf.initialize_local_variables())
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())
 
     # Create a session for running operations in the Graph.
     sess = tf.Session()
@@ -224,6 +226,5 @@ if __name__ == '__main__':
       default='/tmp/data',
       help='Directory with the training data.'
   )
-  FLAGS = parser.parse_args()
-
-  tf.app.run()
+  FLAGS, unparsed = parser.parse_known_args()
+  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

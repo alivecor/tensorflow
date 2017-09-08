@@ -14,7 +14,6 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/framework/fake_input.h"
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference_testutil.h"
@@ -149,6 +148,38 @@ TEST(NNOpsTest, BatchNormWithGlobalNormalization_ShapeFn) {
   INFER_OK(op, "?;?;?;?;[1]", "[?,?,?,d4_0]");
   INFER_OK(op, "[1,2,3,4];[4];[4];[4];[4]",
            "[d0_0,d0_1,d0_2,d0_3|d1_0|d2_0|d3_0|d4_0]");
+}
+
+TEST(NNOpsTest, QuantizedBatchNormWithGlobalNormalization_ShapeFn) {
+  // These are the same tests as BatchNormWithGlobalNormalization tests, but
+  // with extra scalar inputs and outputs for the mins and maxes.
+
+  ShapeInferenceTestOp op("QuantizedBatchNormWithGlobalNormalization");
+
+  // Test rank errors.
+  INFER_ERROR("Shape must be rank 4 but is rank 3", op,
+              "[1,2,3];?;?;?;?;?;?;?;?;?;?;?;?;?;?");
+  INFER_ERROR("Shape must be rank 1 but is rank 3", op,
+              "?;?;?;[1,2,3];?;?;?;?;?;?;?;?;?;?;?");
+  INFER_ERROR("Shape must be rank 1 but is rank 3", op,
+              "?;?;?;?;?;?;[1,2,3];?;?;?;?;?;?;?;?");
+  INFER_ERROR("Shape must be rank 1 but is rank 3", op,
+              "?;?;?;?;?;?;?;?;?;[1,2,3];?;?;?;?;?");
+  INFER_ERROR("Shape must be rank 1 but is rank 3", op,
+              "?;?;?;?;?;?;?;?;?;?;?;?;[1,2,3];?;?");
+
+  // last dim of first input is merged with the single dim in other 4 inputs.
+  INFER_OK(op, "?;[];[];?;[];[];?;[];[];?;[];[];?;[];[]", "[?,?,?,?];[];[]");
+  INFER_OK(op, "?;[];[];[1];[];[];?;[];[];?;[];[];?;[];[]",
+           "[?,?,?,d3_0];[];[]");
+  INFER_OK(op, "?;[];[];?;[];[];[1];[];[];?;[];[];?;[];[]",
+           "[?,?,?,d6_0];[];[]");
+  INFER_OK(op, "?;[];[];?;[];[];?;[];[];[1];[];[];?;[];[]",
+           "[?,?,?,d9_0];[];[]");
+  INFER_OK(op, "?;[];[];?;[];[];?;[];[];?;[];[];[1];[];[]",
+           "[?,?,?,d12_0];[];[]");
+  INFER_OK(op, "[1,2,3,4];[];[];[4];[];[];[4];[];[];[4];[];[];[4];[];[]",
+           "[d0_0,d0_1,d0_2,d0_3|d3_0|d6_0|d9_0|d12_0];[];[]");
 }
 
 TEST(NNOpsTest, BatchNormWithGlobalNormalizationGrad_ShapeFn) {
@@ -381,7 +412,8 @@ TEST(NNOpsTest, Dilation2DBackpropFilter_ShapeFn) {
 
 TEST(NNOpsTest, MergeBothInputs_ShapeFn) {
   for (const char* op_name :
-       {"ReluGrad", "Relu6Grad", "EluGrad", "SoftplusGrad", "SoftsignGrad"}) {
+       {"ReluGrad", "Relu6Grad", "EluGrad", "SeluGrad", "SoftplusGrad",
+        "SoftsignGrad"}) {
     ShapeInferenceTestOp op(op_name);
 
     INFER_OK(op, "?;?", "in0|in1");
@@ -475,7 +507,7 @@ TEST(NNOpsTest, FractionalPool_ShapeFn) {
                        .Finalize(&op.node_def));
     };
 
-    set_op(std::vector<float>{2.0, 1, 1 / 1.5, 1 / 2.0});
+    set_op(std::vector<float>{2.0f, 1, 1 / 1.5f, 1 / 2.0f});
 
     // Rank check.
     INFER_ERROR("must be rank 4", op, "[?,?,?]");

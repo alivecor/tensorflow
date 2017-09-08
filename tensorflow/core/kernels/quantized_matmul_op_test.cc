@@ -13,14 +13,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#define EIGEN_USE_THREADS
+
 #include <functional>
 #include <memory>
 #include <vector>
 
-#include "tensorflow/core/kernels/quantization_utils.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/fake_input.h"
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/kernels/ops_testutil.h"
 #include "tensorflow/core/kernels/ops_util.h"
+#include "tensorflow/core/kernels/quantization_utils.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
 
@@ -110,7 +111,7 @@ TEST_F(QuantizedMatMulTest, VerySmall_WithParams) {
   // values as n+a_offset, where a_offset is 12 above. For example that means -1
   // is represented as -1 + 12, or 11.
   // We have set the transpose_a flag to true, so the matrix is transposed, and
-  // for filling the the values the in-memory storage order is effectively
+  // for filling the values the in-memory storage order is effectively
   // column major, rather than the default row-major.
   AddInputFromArray<quint8>(TensorShape({a_rows, a_cols}), {11});
 
@@ -203,7 +204,7 @@ TEST_F(QuantizedMatMulTest, Small_WithParams) {
   // values as n+a_offset, where a_offset is 12 above. For example that means -1
   // is represented as -1 + 12, or 11.
   // We have set the transpose_a flag to true, so the matrix is transposed, and
-  // for filling the the values the in-memory storage order is effectively
+  // for filling the values the in-memory storage order is effectively
   // column major, rather than the default row-major.
   AddInputFromArray<quint8>(TensorShape({a_rows, a_cols}),
                             {

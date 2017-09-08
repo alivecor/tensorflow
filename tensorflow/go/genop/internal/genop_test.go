@@ -1,16 +1,18 @@
-// Copyright 2016 The TensorFlow Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package internal
 
@@ -39,12 +41,16 @@ summary: "No. Op."
 `,
 			wanted: `
 // No. Op.
-func NoOp(scope *Scope) (err error) {
+//
+// Returns the created operation.
+func NoOp(scope *Scope) (o *tf.Operation) {
+	if scope.Err() != nil {
+		return
+	}
 	opspec := tf.OpSpec{
 		Type: "NoOp",
 	}
-	_, err = scope.Graph().AddOperation(opspec)
-	return err
+	return scope.AddOperation(opspec)
 }
 `,
 		},
@@ -81,15 +87,18 @@ description: "Blah blah",
 // Returns x + y element-wise.
 //
 // Blah blah
-func Add(scope *Scope, x tf.Output, y tf.Output) (z tf.Output, err error) {
+func Add(scope *Scope, x tf.Output, y tf.Output) (z tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
 	opspec := tf.OpSpec{
 		Type: "Add",
 		Input: []tf.Input{
 			x, y,
 		},
 	}
-	op, err := scope.Graph().AddOperation(opspec)
-	return op.Output(0), err
+	op := scope.AddOperation(opspec)
+	return op.Output(0)
 }
 `,
 		},
@@ -117,7 +126,10 @@ summary: "Cast x of type SrcT to y of DstT."
 `,
 			wanted: `
 // Cast x of type SrcT to y of DstT.
-func Cast(scope *Scope, x tf.Output, DstT tf.DataType) (y tf.Output, err error) {
+func Cast(scope *Scope, x tf.Output, DstT tf.DataType) (y tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
 	attrs := map[string]interface{}{"DstT": DstT}
 	opspec := tf.OpSpec{
 		Type: "Cast",
@@ -126,8 +138,8 @@ func Cast(scope *Scope, x tf.Output, DstT tf.DataType) (y tf.Output, err error) 
 		},
 		Attrs: attrs,
 	}
-	op, err := scope.Graph().AddOperation(opspec)
-	return op.Output(0), err
+	op := scope.AddOperation(opspec)
+	return op.Output(0)
 }
 `,
 		},
@@ -179,8 +191,8 @@ type DecodeJpegAttr func(optionalAttr)
 // DecodeJpegChannels sets the optional channels attribute to value.
 //
 // value: Number of color channels for the decoded image.
-// If not specified, defaults to i:0
-func DecodeJpegChannels(value int) DecodeJpegAttr {
+// If not specified, defaults to 0
+func DecodeJpegChannels(value int64) DecodeJpegAttr {
 	return func(m optionalAttr) {
 		m["channels"] = value
 	}
@@ -190,7 +202,7 @@ func DecodeJpegChannels(value int) DecodeJpegAttr {
 //
 // value: If true use a slower but nicer upscaling of the
 // chroma planes (yuv420/422 only).
-// If not specified, defaults to b:true
+// If not specified, defaults to true
 func DecodeJpegFancyUpscaling(value bool) DecodeJpegAttr {
 	return func(m optionalAttr) {
 		m["fancy_upscaling"] = value
@@ -201,7 +213,7 @@ func DecodeJpegFancyUpscaling(value bool) DecodeJpegAttr {
 //
 // value: The minimum required fraction of lines before a truncated
 // input is accepted.
-// If not specified, defaults to f:1
+// If not specified, defaults to 1
 func DecodeJpegAcceptableFraction(value float32) DecodeJpegAttr {
 	return func(m optionalAttr) {
 		m["acceptable_fraction"] = value
@@ -218,7 +230,10 @@ func DecodeJpegAcceptableFraction(value float32) DecodeJpegAttr {
 //	contents: 0-D.  The JPEG-encoded image.
 //
 // Returns 3-D with shape [height, width, channels]
-func DecodeJpeg(scope *Scope, contents tf.Output, optional ...DecodeJpegAttr) (image tf.Output, err error) {
+func DecodeJpeg(scope *Scope, contents tf.Output, optional ...DecodeJpegAttr) (image tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
 	attrs := map[string]interface{}{}
 	for _, a := range optional {
 		a(attrs)
@@ -230,8 +245,47 @@ func DecodeJpeg(scope *Scope, contents tf.Output, optional ...DecodeJpegAttr) (i
 		},
 		Attrs: attrs,
 	}
-	op, err := scope.Graph().AddOperation(opspec)
-	return op.Output(0), err
+	op := scope.AddOperation(opspec)
+	return op.Output(0)
+}
+`,
+		},
+		{
+			tag: "MultipleOutputs",
+			opdef: `
+name: "TwoOutputs"
+input_arg: <
+  name: "input"
+  type_attr: "T"
+>
+output_arg <
+  name: "x"
+  type_attr: "T"
+>
+output_arg <
+  name: "y"
+  type_attr: "T"
+>
+attr: <
+  name: "T"
+  type: "type"
+>
+summary: "Op that produces multiple outputs"
+`,
+			wanted: `
+// Op that produces multiple outputs
+func TwoOutputs(scope *Scope, input tf.Output) (x tf.Output, y tf.Output) {
+        if scope.Err() != nil {
+                return
+        }
+        opspec := tf.OpSpec{
+                Type: "TwoOutputs",
+                Input: []tf.Input{
+                        input,
+                },
+        }
+        op := scope.AddOperation(opspec)
+        return op.Output(0), op.Output(1)
 }
 `,
 		},
@@ -280,7 +334,7 @@ description: "Some description here."
 type ShapeNAttr func(optionalAttr)
 
 // ShapeNOutType sets the optional out_type attribute to value.
-// If not specified, defaults to type:DT_INT32
+// If not specified, defaults to DT_INT32
 func ShapeNOutType(value tf.DataType) ShapeNAttr {
 	return func(m optionalAttr) {
 		m["out_type"] = value
@@ -290,7 +344,10 @@ func ShapeNOutType(value tf.DataType) ShapeNAttr {
 // Returns shape of tensors.
 //
 // Some description here.
-func ShapeN(scope *Scope, input []tf.Output, optional ...ShapeNAttr) (output []tf.Output, err error) {
+func ShapeN(scope *Scope, input []tf.Output, optional ...ShapeNAttr) (output []tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
 	attrs := map[string]interface{}{}
 	for _, a := range optional {
 		a(attrs)
@@ -302,12 +359,17 @@ func ShapeN(scope *Scope, input []tf.Output, optional ...ShapeNAttr) (output []t
 		},
 		Attrs: attrs,
 	}
-	op, err := scope.Graph().AddOperation(opspec)
-	var idx int
-	if output, idx, err = makeOutputList(op, idx, "output"); err != nil {
-		return output, err
+	op := scope.AddOperation(opspec)
+	if scope.Err() != nil {
+		return
 	}
-	return output, err
+	var idx int
+	var err error
+	if output, idx, err = makeOutputList(op, idx, "output"); err != nil {
+		scope.UpdateErr("ShapeN", err)
+		return
+	}
+	return output
 }
 `,
 		},
@@ -325,11 +387,11 @@ func ShapeN(scope *Scope, input []tf.Output, optional ...ShapeNAttr) (output []t
 			}
 			got, err := format.Source(buf.Bytes())
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Unable to format: %v\n%s", err, buf.Bytes())
 			}
 			want, err := format.Source([]byte(test.wanted))
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Unable to format: %v\n%s", err, test.wanted)
 			}
 			if !bytes.Equal(got, want) {
 				t.Fatalf("Got:\n%s\nWant:\n%s\n", got, want)
