@@ -34,6 +34,9 @@ else
     JOBS_COUNT=4
 fi
 
+export MACOSX_DEPLOYMENT_TARGET="10.10"
+export WATCHOS_DEPLOYMENT_TARGET="4.0"
+
 GENDIR=`pwd`/gen/protobuf_watchos/
 LIBDIR=${GENDIR}lib
 mkdir -p ${LIBDIR}
@@ -48,7 +51,8 @@ IOS_SDK_VERSION=`xcrun --sdk watchos --show-sdk-version`
 MIN_SDK_VERSION=4.0
 
 CFLAGS="-DNDEBUG -Os -pipe -fPIC -fno-exceptions -fembed-bitcode"
-CXXFLAGS="${CFLAGS} -std=c++11 -stdlib=libc++"
+CXXFLAGS="${CFLAGS}"
+CXX="clang++ -std=c++11"
 LDFLAGS="-stdlib=libc++"
 LIBS="-lc++ -lc++abi"
 

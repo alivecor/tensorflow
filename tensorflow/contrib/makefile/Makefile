@@ -138,7 +138,7 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 # Settings for the target compiler.
 CXX := $(CC_PREFIX) gcc
 OPTFLAGS := -O2
-CXXFLAGS := --std=c++11 -DIS_SLIM_BUILD -fno-exceptions -fembed-bitcode -DNDEBUG -DNOTFDBG $(OPTFLAGS) -Wno-unknown-warning-option -Wno-invalid-partial-specialization
+CXXFLAGS := --std=c++11 -DIS_SLIM_BUILD -fno-exceptions -DNDEBUG -DNOTFDBG $(OPTFLAGS) -Wno-unknown-warning-option -Wno-invalid-partial-specialization
 LDFLAGS := \
 -L/usr/local/lib
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
@@ -432,6 +432,13 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -dead_strip \
 		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
+		-fembed-bitcode \
+		-DIS_SLIM_BUILD \
+		-Os \
+		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
+		-Wno-invalid-partial-specialization \
+		-DSELECTIVE_REGISTRATION \
+		-DSUPPORT_SELECTIVE_REGISTRATION \
 		-lz
 	endif
 	ifeq ($(WATCHOS_ARCH),I386)
@@ -451,6 +458,13 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -dead_strip \
 		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
+		-fembed-bitcode \
+		-DIS_SLIM_BUILD \
+		-Os \
+		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
+		-Wno-invalid-partial-specialization \
+		-DSELECTIVE_REGISTRATION \
+		-DSUPPORT_SELECTIVE_REGISTRATION \
 		-lz
 	endif
 	ifeq ($(WATCHOS_ARCH),X86_64)
@@ -470,6 +484,13 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -dead_strip \
 		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
+		-fembed-bitcode \
+		-DIS_SLIM_BUILD \
+		-Os \
+		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
+		-Wno-invalid-partial-specialization \
+		-DSELECTIVE_REGISTRATION \
+		-DSUPPORT_SELECTIVE_REGISTRATION \
 		-lz
 	endif
 	OBJDIR := $(OBJDIR)watchos_$(WATCHOS_ARCH)/
@@ -561,6 +582,7 @@ BENCHMARK_OBJS := $(addprefix $(OBJDIR), $(BENCHMARK_SRCS:.cc=.o))
 # The target that's compiled if there's no command-line arguments.
 all: $(LIB_PATH) $(BENCHMARK_NAME)
 
+lib_only: $(LIB_PATH)
 # Rules for target compilation.
 
 

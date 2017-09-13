@@ -40,8 +40,10 @@ GENDIR=tensorflow/contrib/makefile/gen/
 LIBDIR=${GENDIR}lib
 LIB_PREFIX=libtensorflow-core
 
+CXX="clang -std=c++11"
+
 make -f tensorflow/contrib/makefile/Makefile \
-TARGET=WATCHOS WATCHOS_ARCH=ARMV7K LIB_NAME=${LIB_PREFIX}-armv7k.a OPTFLAGS="$1" $2 $3
+TARGET=WATCHOS WATCHOS_ARCH=ARMV7K LIB_NAME=${LIB_PREFIX}-armv7k.a OPTFLAGS="$1" CXX="${CXX}" $2 $3 lib_only
 if [ $? -ne 0 ]
 then
   echo "armv7k compilation failed."
@@ -49,7 +51,7 @@ then
 fi
 
 make -f tensorflow/contrib/makefile/Makefile \
-TARGET=WATCHOS WATCHOS_ARCH=I386 LIB_NAME=${LIB_PREFIX}-i386.a OPTFLAGS="$1" $2 $3
+TARGET=WATCHOS WATCHOS_ARCH=I386 LIB_NAME=${LIB_PREFIX}-i386.a OPTFLAGS="$1" CXX="${CXX}" $2 $3 lib_only
 if [ $? -ne 0 ]
 then
   echo "i386 compilation failed."
@@ -57,7 +59,7 @@ then
 fi
 
 make -f tensorflow/contrib/makefile/Makefile \
-TARGET=WATCHOS WATCHOS_ARCH=X86_64 LIB_NAME=${LIB_PREFIX}-x86_64.a OPTFLAGS="$1" $2 $3
+TARGET=WATCHOS WATCHOS_ARCH=X86_64 LIB_NAME=${LIB_PREFIX}-x86_64.a OPTFLAGS="$1" CXX="${CXX}" $2 $3 lib_only
 if [ $? -ne 0 ]
 then
   echo "x86_64 compilation failed."

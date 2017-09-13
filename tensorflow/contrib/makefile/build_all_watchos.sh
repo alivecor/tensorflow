@@ -32,10 +32,11 @@ cd ${SCRIPT_DIR}/../../../
 if [ "$#" -gt 1 ]; then
     JOBS_COUNT=$1
 else
-    JOBS_COUNT=4
+    JOBS_COUNT=8
 fi
 
 export MACOSX_DEPLOYMENT_TARGET="10.10"
+export WATCHOS_DEPLOYMENT_TARGET="4.0"
 
 # Remove any old files first.
 make -f tensorflow/contrib/makefile/Makefile clean
@@ -48,7 +49,7 @@ tensorflow/contrib/makefile/download_dependencies.sh
 tensorflow/contrib/makefile/compile_watchos_protobuf.sh ${JOBS_COUNT}
 
 # Build the WatchOS TensorFlow libraries.
-tensorflow/contrib/makefile/compile_watchos_tensorflow.sh "-O3" -j ${JOBS_COUNT}
+tensorflow/contrib/makefile/compile_watchos_tensorflow.sh "-Os" -j ${JOBS_COUNT}
 
 # Creates a static universal library in 
 # tensorflow/contrib/makefile/gen/lib/libtensorflow-core.a
