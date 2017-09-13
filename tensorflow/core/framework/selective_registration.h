@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef TENSORFLOW_FRAMEWORK_SELECTIVE_REGISTRATION_H_
 #define TENSORFLOW_FRAMEWORK_SELECTIVE_REGISTRATION_H_
 
-#include <string.h>
-
 #ifdef SELECTIVE_REGISTRATION
 
 // Experimental selective registration support to reduce binary size.
