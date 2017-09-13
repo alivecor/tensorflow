@@ -32,7 +32,7 @@ cd ${SCRIPT_DIR}/../../../
 if [ "$#" -gt 1 ]; then
     JOBS_COUNT=$1
 else
-    JOBS_COUNT=4
+    JOBS_COUNT=8
 fi
 
 # Remove any old files first.
