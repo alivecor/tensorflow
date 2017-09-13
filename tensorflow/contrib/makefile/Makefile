@@ -413,7 +413,6 @@ ifeq ($(TARGET),WATCHOS)
 	MIN_SDK_VERSION := 4.0
 # Override WATCHOS_ARCH with ARMV7K, X86_64, or I386.
 # -DUSE_GEMM_FOR_CONV   # No Accelerate.framework on watchOS
-	WATCHOS_ARCH := X86_64
 	ifeq ($(WATCHOS_ARCH),ARMV7K)
 		CXXFLAGS += -mwatchos-version-min=$(MIN_SDK_VERSION) \
 		-arch armv7k \
@@ -424,7 +423,13 @@ ifeq ($(TARGET),WATCHOS)
 		-D__ANDROID_TYPES_FULL__ \
 		-fno-exceptions \
 		-isysroot \
-		${WATCHOS_SYSROOT}
+		${WATCHOS_SYSROOT} \
+		-fembed-bitcode \
+		-DIS_SLIM_BUILD \
+		-Os \
+		-Wno-invalid-partial-specialization \
+		-DSELECTIVE_REGISTRATION \
+		-DSUPPORT_SELECTIVE_REGISTRATION
 		LDFLAGS := -arch armv7k \
 		-mwatchos-version-min=${MIN_SDK_VERSION} \
 		-Xlinker -S \
@@ -432,13 +437,7 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -dead_strip \
 		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
-		-fembed-bitcode \
-		-DIS_SLIM_BUILD \
-		-Os \
 		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
-		-Wno-invalid-partial-specialization \
-		-DSELECTIVE_REGISTRATION \
-		-DSUPPORT_SELECTIVE_REGISTRATION \
 		-lz
 	endif
 	ifeq ($(WATCHOS_ARCH),I386)
@@ -450,7 +449,13 @@ ifeq ($(TARGET),WATCHOS)
 		-D__ANDROID_TYPES_FULL__ \
 		-fno-exceptions \
 		-isysroot \
-		${WATCHSIMULATOR_SYSROOT}
+		${WATCHSIMULATOR_SYSROOT} \
+		-fembed-bitcode \
+		-DIS_SLIM_BUILD \
+		-Os \
+		-Wno-invalid-partial-specialization \
+		-DSELECTIVE_REGISTRATION \
+		-DSUPPORT_SELECTIVE_REGISTRATION
 		LDFLAGS := -arch i386 \
 		-mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
 		-Xlinker -S \
@@ -458,13 +463,7 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -dead_strip \
 		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
-		-fembed-bitcode \
-		-DIS_SLIM_BUILD \
-		-Os \
 		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
-		-Wno-invalid-partial-specialization \
-		-DSELECTIVE_REGISTRATION \
-		-DSUPPORT_SELECTIVE_REGISTRATION \
 		-lz
 	endif
 	ifeq ($(WATCHOS_ARCH),X86_64)
@@ -476,7 +475,13 @@ ifeq ($(TARGET),WATCHOS)
 		-D__ANDROID_TYPES_FULL__ \
 		-fno-exceptions \
 		-isysroot \
-		${WATCHSIMULATOR_SYSROOT}
+		${WATCHSIMULATOR_SYSROOT} \
+		-fembed-bitcode \
+		-DIS_SLIM_BUILD \
+		-Os \
+		-Wno-invalid-partial-specialization \
+		-DSELECTIVE_REGISTRATION \
+		-DSUPPORT_SELECTIVE_REGISTRATION
 		LDFLAGS := -arch x86_64 \
 		-mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
 		-Xlinker -S \
@@ -484,13 +489,7 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -dead_strip \
 		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
-		-fembed-bitcode \
-		-DIS_SLIM_BUILD \
-		-Os \
 		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
-		-Wno-invalid-partial-specialization \
-		-DSELECTIVE_REGISTRATION \
-		-DSUPPORT_SELECTIVE_REGISTRATION \
 		-lz
 	endif
 	OBJDIR := $(OBJDIR)watchos_$(WATCHOS_ARCH)/
