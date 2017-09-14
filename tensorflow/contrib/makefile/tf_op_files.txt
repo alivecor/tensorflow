@@ -1,7 +1,9 @@
 tensorflow/core/kernels/bias_op.cc
 tensorflow/core/kernels/constant_op.cc
+tensorflow/core/kernels/fill_functor.cc
 tensorflow/core/kernels/identity_op.cc
 tensorflow/core/kernels/no_op.cc
+tensorflow/core/kernels/reduction_ops_common.cc
 tensorflow/core/kernels/reduction_ops_sum.cc
 tensorflow/core/kernels/transpose_op.cc
 tensorflow/core/kernels/transpose_functor_cpu.cc
@@ -37,7 +39,6 @@ tensorflow/core/kernels/cwise_op_div.cc
 tensorflow/core/kernels/cwise_op_floor.cc
 tensorflow/core/kernels/cwise_op_add_2.cc
 tensorflow/core/kernels/cwise_op_add_1.cc
-tensorflow/core/kernels/conv_ops.cc
 tensorflow/core/kernels/concat_op.cc
 tensorflow/core/kernels/concat_lib_cpu.cc
 tensorflow/core/ops/sendrecv_ops.cc
