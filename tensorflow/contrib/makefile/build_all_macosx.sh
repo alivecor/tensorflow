@@ -35,6 +35,8 @@ else
     JOBS_COUNT=8
 fi
 
+export MACOSX_DEPLOYMENT_TARGET="10.10"
+
 # Remove any old files first.
 make -f tensorflow/contrib/makefile/Makefile clean
 rm -rf tensorflow/contrib/makefile/downloads

@@ -39,13 +39,13 @@ fi
 GENDIR=tensorflow/contrib/makefile/gen/
 LIBDIR=${GENDIR}lib
 LIB_PREFIX=libtensorflow-core
-#CXXFLAGS="-Ltensorflow/contrib/makefile/gen/protobuf-host/lib -Wno-invalid-partial-specialization -DSELECTIVE_REGISTRATION -DSUPPORT_SELECTIVE_REGISTRATION"
-CXXFLAGS="-Ltensorflow/contrib/makefile/gen/protobuf-host/lib -Wno-invalid-partial-specialization"
-CXX="clang++ -std=c++11"
+
+CXXFLAGS="--std=c++11 -DIS_SLIM_BUILD -fno-exceptions -DNDEBUG -DNOTFDBG -O3 -Wno-unknown-warning-option -Wno-invalid-partial-specialization -Ltensorflow/contrib/makefile/gen/protobuf-host/lib -DSELECTIVE_REGISTRATION -DSUPPORT_SELECTIVE_REGISTRATION"
+CXX="clang++"
 
 make -f tensorflow/contrib/makefile/Makefile \
 TARGET=OSX LIB_NAME=${LIB_PREFIX}.a CXX="${CXX}" CXXFLAGS="${CXXFLAGS}" \
-OPTFLAGS="$1" $2 $3 
+OPTFLAGS="$1" $2 $3 lib_only
 
 
 if [ $? -ne 0 ]
