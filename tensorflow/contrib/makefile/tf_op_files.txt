@@ -6,14 +6,6 @@ tensorflow/core/kernels/reduction_ops_sum.cc
 tensorflow/core/kernels/transpose_op.cc
 tensorflow/core/kernels/transpose_functor_cpu.cc
 tensorflow/core/kernels/tensor_array.cc
-tensorflow/core/kernels/strided_slice_op_inst_6.cc
-tensorflow/core/kernels/strided_slice_op_inst_5.cc
-tensorflow/core/kernels/strided_slice_op_inst_4.cc
-tensorflow/core/kernels/strided_slice_op_inst_3.cc
-tensorflow/core/kernels/strided_slice_op_inst_2.cc
-tensorflow/core/kernels/strided_slice_op_inst_1.cc
-tensorflow/core/kernels/strided_slice_op_inst_0.cc
-tensorflow/core/kernels/strided_slice_op.cc
 tensorflow/core/kernels/split_op.cc
 tensorflow/core/kernels/split_v_op.cc
 tensorflow/core/kernels/split_lib_cpu.cc
