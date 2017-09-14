@@ -5,7 +5,6 @@ tensorflow/core/kernels/no_op.cc
 tensorflow/core/kernels/reduction_ops_sum.cc
 tensorflow/core/kernels/transpose_op.cc
 tensorflow/core/kernels/transpose_functor_cpu.cc
-tensorflow/core/kernels/tensor_array_ops.cc
 tensorflow/core/kernels/tensor_array.cc
 tensorflow/core/kernels/strided_slice_op_inst_6.cc
 tensorflow/core/kernels/strided_slice_op_inst_5.cc
