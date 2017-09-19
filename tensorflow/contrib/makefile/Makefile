@@ -420,13 +420,12 @@ ifeq ($(TARGET),WATCHOS)
 		-Wno-c++11-narrowing \
 		-mno-thumb \
 		-DTF_LEAN_BINARY \
-		-D__ANDROID_TYPES_FULL__ \
+		-D__ANDROID_TYPES_SLIM__ \
 		-fno-exceptions \
 		-isysroot \
 		${WATCHOS_SYSROOT} \
 		-fembed-bitcode \
 		-DIS_SLIM_BUILD \
-		-Os \
 		-Wno-invalid-partial-specialization \
 		-DSELECTIVE_REGISTRATION \
 		-DSUPPORT_SELECTIVE_REGISTRATION
@@ -435,7 +434,6 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -S \
 		-Xlinker -x \
 		-Xlinker -dead_strip \
-		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
 		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
 		-lz
@@ -446,13 +444,12 @@ ifeq ($(TARGET),WATCHOS)
 		-D__thread= \
 		-Wno-c++11-narrowing \
 		-DTF_LEAN_BINARY \
-		-D__ANDROID_TYPES_FULL__ \
+		-D__ANDROID_TYPES_SLIM__ \
 		-fno-exceptions \
 		-isysroot \
 		${WATCHSIMULATOR_SYSROOT} \
 		-fembed-bitcode \
 		-DIS_SLIM_BUILD \
-		-Os \
 		-Wno-invalid-partial-specialization \
 		-DSELECTIVE_REGISTRATION \
 		-DSUPPORT_SELECTIVE_REGISTRATION
@@ -461,7 +458,6 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -S \
 		-Xlinker -x \
 		-Xlinker -dead_strip \
-		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
 		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
 		-lz
@@ -472,13 +468,12 @@ ifeq ($(TARGET),WATCHOS)
 		-D__thread= \
 		-Wno-c++11-narrowing \
 		-DTF_LEAN_BINARY \
-		-D__ANDROID_TYPES_FULL__ \
+		-D__ANDROID_TYPES_SLIM__ \
 		-fno-exceptions \
 		-isysroot \
 		${WATCHSIMULATOR_SYSROOT} \
 		-fembed-bitcode \
 		-DIS_SLIM_BUILD \
-		-Os \
 		-Wno-invalid-partial-specialization \
 		-DSELECTIVE_REGISTRATION \
 		-DSUPPORT_SELECTIVE_REGISTRATION
@@ -487,7 +482,6 @@ ifeq ($(TARGET),WATCHOS)
 		-Xlinker -S \
 		-Xlinker -x \
 		-Xlinker -dead_strip \
-		-all_load \
 		-L$(GENDIR)protobuf_watchos/lib \
 		-Ltensorflow/contrib/makefile/gen/protobuf_watchos/lib \
 		-lz
