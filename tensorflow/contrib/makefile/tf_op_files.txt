@@ -6,6 +6,7 @@ tensorflow/core/kernels/identity_op.cc
 tensorflow/core/kernels/no_op.cc
 tensorflow/core/kernels/reduction_ops_common.cc
 tensorflow/core/kernels/reduction_ops_sum.cc
+tensorflow/core/kernels/relu_op.cc
 tensorflow/core/kernels/transpose_op.cc
 tensorflow/core/kernels/transpose_functor_cpu.cc
 tensorflow/core/kernels/tensor_array.cc
