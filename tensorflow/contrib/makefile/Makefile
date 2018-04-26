@@ -426,6 +426,9 @@ ifeq ($(TARGET),WATCHOS)
 		${WATCHOS_SYSROOT} \
 		-fembed-bitcode \
 		-DIS_SLIM_BUILD \
+		-DEIGEN_DONT_VECTORIZE \
+		-D'EIGEN_ASM_COMMENT(x)=' \
+		-fno-gnu-inline-asm \
 		-Wno-invalid-partial-specialization \
 		-DSELECTIVE_REGISTRATION \
 		-DSUPPORT_SELECTIVE_REGISTRATION

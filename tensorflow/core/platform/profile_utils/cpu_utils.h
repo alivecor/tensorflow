@@ -20,6 +20,10 @@ limitations under the License.
 #include <chrono>
 #include <memory>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/profile_utils/i_cpu_utils_helper.h"
 #include "tensorflow/core/platform/types.h"
@@ -59,6 +63,9 @@ class CpuUtils {
     return DUMMY_CYCLE_CLOCK;
 #endif  // defined(__ARM_ARCH_7A__) && (__ANDROID_API__ >= 21)
 // ----------------------------------------------------------------
+#elif defined(TARGET_OS_WATCH)
+    // We cannot use inline assembly on watchOS 
+    return DUMMY_CYCLE_CLOCK;
 #elif defined(__x86_64__) || defined(__amd64__)
     uint64_t high, low;
     __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
