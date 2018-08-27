@@ -22,9 +22,9 @@ set -e
 prog=compile_nsync.sh
 android_api_version=21
 default_android_arch=armeabi-v7a
-default_ios_arch="i386 x86_64 armv7 armv7s arm64"
+default_watchos_arch="i386 x86_64 armv7k"
 
-usage="usage: $prog [-t linux|ios|android|macos|native]
+usage="usage: $prog [-t linux|watchos|android|macos|native]
         [-a architecture] [-v android_api_version]
 
 A script to build nsync for tensorflow.
@@ -38,7 +38,7 @@ The default target platform is the native host platform.
 -a architecture
 For Android and iOS target platforms, specify which architecture
 to target.
-For iOS, the default is: $default_ios_arch.
+For iOS, the default is: $default_watchos_arch.
 For Android, the default is: $default_android_arch.
 
 -v android_api_version
@@ -84,8 +84,8 @@ cd "${SCRIPT_DIR}/../../.."
 nsync_builds_dir=tensorflow/contrib/makefile/downloads/nsync/builds
 
 case "$target_platform" in
-ios)            case "$target_arch" in
-                default) archs="$default_ios_arch";;
+watchos)            case "$target_arch" in
+                default) archs="$default_watchos_arch";;
                 *)       archs="$target_arch";;
                 esac
                 ;;
@@ -97,7 +97,7 @@ android)        case "$target_arch" in
 *)              archs="$target_arch";;
 esac
 
-# For ios, the library names for the CPU types accumulate in $platform_libs
+# For watchos, the library names for the CPU types accumulate in $platform_libs
 platform_libs=
 
 # Compile nsync.
@@ -128,15 +128,15 @@ for arch in $archs; do
                         include dependfile
                 ';;
 
-        ios)    arch_flags=
+        watchos)    arch_flags=
                 case "$arch" in
                 i386|x86_64)
-                        arch_flags="$arch_flags -mios-simulator-version-min=8.0"
-                        arch_flags="$arch_flags -isysroot $(xcrun --sdk iphonesimulator --show-sdk-path)"
+                        arch_flags="$arch_flags -mwatchos-simulator-version-min=8.0"
+                        arch_flags="$arch_flags -isysroot $(xcrun --sdk watchsimulator --show-sdk-path)"
                         ;;
                 *)
-                        arch_flags="$arch_flags -miphoneos-version-min=8.0"
-                        arch_flags="$arch_flags -isysroot $(xcrun --sdk iphoneos --show-sdk-path)"
+                        arch_flags="$arch_flags -mwatchos-version-min=8.0"
+                        arch_flags="$arch_flags -isysroot $(xcrun --sdk watchos --show-sdk-path)"
                         ;;
                 esac
                 makefile='
@@ -292,7 +292,7 @@ for arch in $archs; do
         fi
         if (cd "$nsync_platform_dir" && make depend nsync.a >&2); then
                 case "$target_platform" in
-                ios)    platform_libs="$platform_libs '$nsync_platform_dir/nsync.a'";;
+                watchos)    platform_libs="$platform_libs '$nsync_platform_dir/nsync.a'";;
                 *)      echo "$nsync_platform_dir/nsync.a";;
                 esac
         else
@@ -301,7 +301,7 @@ for arch in $archs; do
 done
 
 case "$target_platform" in
-ios)    nsync_platform_dir="$nsync_builds_dir/lipo.$target_platform.c++11"
+watchos)    nsync_platform_dir="$nsync_builds_dir/lipo.$target_platform.c++11"
         if [ -d "$nsync_platform_dir" ]; then
             rm -rf "$nsync_platform_dir"
         fi

@@ -31,7 +31,7 @@ usage() {
   exit 1
 }
 
-DEFAULT_ARCH="i386 x86_64 armv7 armv7s arm64"
+DEFAULT_ARCH="i386 x86_64 armv7k"
 while getopts "a:g:T" opt_name; do
   case "$opt_name" in
     a) BUILD_ARCH="${OPTARG}";;
@@ -107,10 +107,10 @@ fi
 HOST_NSYNC_LIB=`tensorflow/contrib/makefile/compile_nsync.sh`
 if [[ -z "${BUILD_ARCH}" ]]; then
     # No arch specified so build all architectures
-    TARGET_NSYNC_LIB=`tensorflow/contrib/makefile/compile_nsync.sh -t ios`
+    TARGET_NSYNC_LIB=`tensorflow/contrib/makefile/compile_nsync.sh -t watchos`
 else
     # arch specified so build just that
-    TARGET_NSYNC_LIB=`tensorflow/contrib/makefile/compile_nsync.sh -t ios -a "${BUILD_ARCH}"`
+    TARGET_NSYNC_LIB=`tensorflow/contrib/makefile/compile_nsync.sh -t watchos -a "${BUILD_ARCH}"`
 fi
 export HOST_NSYNC_LIB TARGET_NSYNC_LIB
 

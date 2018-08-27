@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# Builds protobuf 3 for iOS.
+# Builds protobuf 3 for watchos.
 
 set -e
 
@@ -28,7 +28,7 @@ usage() {
   exit 1
 }
 
-BUILD_TARGET="i386 x86_64 armv7 armv7s arm64"
+BUILD_TARGET="i386 x86_64 armv7k"
 while getopts "a:" opt_name; do
   case "$opt_name" in
     a) BUILD_TARGET="${OPTARG}";;
@@ -54,17 +54,17 @@ fi
 
 JOB_COUNT="${JOB_COUNT:-$(get_job_count)}"
 
-GENDIR=$(pwd)/gen/protobuf_ios/
+GENDIR=$(pwd)/gen/protobuf_watchos/
 LIBDIR=${GENDIR}lib
 mkdir -p ${LIBDIR}
 
 OSX_VERSION=darwin14.0.0
 
-IPHONEOS_PLATFORM=$(xcrun --sdk iphoneos --show-sdk-platform-path)
-IPHONEOS_SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-IPHONESIMULATOR_PLATFORM=$(xcrun --sdk iphonesimulator --show-sdk-platform-path)
-IPHONESIMULATOR_SYSROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
-IOS_SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
+watchos_PLATFORM=$(xcrun --sdk watchos --show-sdk-platform-path)
+watchos_SYSROOT=$(xcrun --sdk watchos --show-sdk-path)
+watchsimulator_PLATFORM=$(xcrun --sdk watchsimulator --show-sdk-platform-path)
+watchsimulator_SYSROOT=$(xcrun --sdk watchsimulator --show-sdk-path)
+watchos_SDK_VERSION=$(xcrun --sdk watchos --show-sdk-version)
 MIN_SDK_VERSION=8.0
 
 CFLAGS="-DNDEBUG -Os -pipe -fPIC -fno-exceptions"
@@ -121,31 +121,31 @@ case "$1" in
         --disable-shared \
         --enable-cross-compile \
         --with-protoc="${PROTOC_PATH}" \
-        --prefix=${LIBDIR}/iossim_386 \
-        --exec-prefix=${LIBDIR}/iossim_386 \
+        --prefix=${LIBDIR}/watchossim_386 \
+        --exec-prefix=${LIBDIR}/watchossim_386 \
         "CFLAGS=${CFLAGS} \
-        -mios-simulator-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
         -arch i386 \
         -fembed-bitcode \
-        -isysroot ${IPHONESIMULATOR_SYSROOT}" \
+        -isysroot ${watchsimulator_SYSROOT}" \
         "CXX=${CXX}" \
         "CXXFLAGS=${CXXFLAGS} \
-        -mios-simulator-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
         -arch i386 \
         -fembed-bitcode \
         -isysroot \
-        ${IPHONESIMULATOR_SYSROOT}" \
+        ${watchsimulator_SYSROOT}" \
         LDFLAGS="-arch i386 \
         -fembed-bitcode \
-        -mios-simulator-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
         ${LDFLAGS} \
-        -L${IPHONESIMULATOR_SYSROOT}/usr/lib/ \
-        -L${IPHONESIMULATOR_SYSROOT}/usr/lib/system" \
+        -L${watchsimulator_SYSROOT}/usr/lib/ \
+        -L${watchsimulator_SYSROOT}/usr/lib/system" \
         "LIBS=${LIBS}"
         make -j"${JOB_COUNT}"
         make install
 
-        package_pb_library "iossim_386"
+        package_pb_library "watchossim_386"
         ;;
 
     x86_64) make distclean
@@ -154,118 +154,62 @@ case "$1" in
         --disable-shared \
         --enable-cross-compile \
         --with-protoc="${PROTOC_PATH}" \
-        --prefix=${LIBDIR}/iossim_x86_64 \
-        --exec-prefix=${LIBDIR}/iossim_x86_64 \
+        --prefix=${LIBDIR}/watchossim_x86_64 \
+        --exec-prefix=${LIBDIR}/watchossim_x86_64 \
         "CFLAGS=${CFLAGS} \
-        -mios-simulator-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
         -arch x86_64 \
         -fembed-bitcode \
-        -isysroot ${IPHONESIMULATOR_SYSROOT}" \
+        -isysroot ${watchsimulator_SYSROOT}" \
         "CXX=${CXX}" \
         "CXXFLAGS=${CXXFLAGS} \
-        -mios-simulator-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
         -arch x86_64 \
         -fembed-bitcode \
         -isysroot \
-        ${IPHONESIMULATOR_SYSROOT}" \
+        ${watchsimulator_SYSROOT}" \
         LDFLAGS="-arch x86_64 \
         -fembed-bitcode \
-        -mios-simulator-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
         ${LDFLAGS} \
-        -L${IPHONESIMULATOR_SYSROOT}/usr/lib/ \
-        -L${IPHONESIMULATOR_SYSROOT}/usr/lib/system" \
+        -L${watchsimulator_SYSROOT}/usr/lib/ \
+        -L${watchsimulator_SYSROOT}/usr/lib/system" \
         "LIBS=${LIBS}"
         make -j"${JOB_COUNT}"
         make install
 
-        package_pb_library "iossim_x86_64"
+        package_pb_library "watchossim_x86_64"
         ;;
 
-    armv7) make distclean
+    armv7k) make distclean
         ./configure \
         --host=armv7-apple-${OSX_VERSION} \
         --with-protoc="${PROTOC_PATH}" \
         --disable-shared \
-        --prefix=${LIBDIR}/ios_arm7 \
-        --exec-prefix=${LIBDIR}/ios_arm7 \
+        --prefix=${LIBDIR}/watchos_arm7 \
+        --exec-prefix=${LIBDIR}/watchos_arm7 \
         "CFLAGS=${CFLAGS} \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        -arch armv7 \
+        -mwatchos-version-min=${MIN_SDK_VERSION} \
+        -arch armv7k \
         -fembed-bitcode \
-        -isysroot ${IPHONEOS_SYSROOT}" \
+        -isysroot ${watchos_SYSROOT}" \
         "CXX=${CXX}" \
         "CXXFLAGS=${CXXFLAGS} \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        -arch armv7 \
+        -mwatchos-version-min=${MIN_SDK_VERSION} \
+        -arch armv7k \
         -fembed-bitcode \
-        -isysroot ${IPHONEOS_SYSROOT}" \
-        LDFLAGS="-arch armv7 \
+        -isysroot ${watchos_SYSROOT}" \
+        LDFLAGS="-arch armv7k \
         -fembed-bitcode \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
+        -mwatchos-version-min=${MIN_SDK_VERSION} \
         ${LDFLAGS}" \
         "LIBS=${LIBS}"
         make -j"${JOB_COUNT}"
         make install
 
-        package_pb_library "ios_arm7"
+        package_pb_library "watchos_arm7"
         ;;
-
-    armv7s) make distclean
-        ./configure \
-        --host=armv7s-apple-${OSX_VERSION} \
-        --with-protoc="${PROTOC_PATH}" \
-        --disable-shared \
-        --prefix=${LIBDIR}/ios_arm7s \
-        --exec-prefix=${LIBDIR}/ios_arm7s \
-        "CFLAGS=${CFLAGS} \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        -arch armv7s \
-        -fembed-bitcode \
-        -isysroot ${IPHONEOS_SYSROOT}" \
-        "CXX=${CXX}" \
-        "CXXFLAGS=${CXXFLAGS} \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        -arch armv7s \
-        -fembed-bitcode \
-        -isysroot ${IPHONEOS_SYSROOT}" \
-        LDFLAGS="-arch armv7s \
-        -fembed-bitcode \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        ${LDFLAGS}" \
-        "LIBS=${LIBS}"
-        make -j"${JOB_COUNT}"
-        make install
-
-        package_pb_library "ios_arm7s"
-        ;;
-
-    arm64) make distclean
-        ./configure \
-        --host=arm \
-        --with-protoc="${PROTOC_PATH}" \
-        --disable-shared \
-        --prefix=${LIBDIR}/ios_arm64 \
-        --exec-prefix=${LIBDIR}/ios_arm64 \
-        "CFLAGS=${CFLAGS} \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        -arch arm64 \
-        -fembed-bitcode \
-        -isysroot ${IPHONEOS_SYSROOT}" \
-        "CXXFLAGS=${CXXFLAGS} \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        -arch arm64 \
-        -fembed-bitcode \
-        -isysroot ${IPHONEOS_SYSROOT}" \
-        LDFLAGS="-arch arm64 \
-        -fembed-bitcode \
-        -miphoneos-version-min=${MIN_SDK_VERSION} \
-        ${LDFLAGS}" \
-        "LIBS=${LIBS}"
-        make -j"${JOB_COUNT}"
-        make install
-
-        package_pb_library "ios_arm64"
-        ;;
+        
     *)
         echo "Unknown ARCH"
         exit 1

@@ -449,20 +449,20 @@ endif  # ANDROID
 # LINT.ThenChange(//tensorflow/contrib/android/cmake/CMakeLists.txt)
 
 # Settings for iOS.
-ifeq ($(TARGET),IOS)
-	IPHONEOS_PLATFORM := $(shell xcrun --sdk iphoneos --show-sdk-platform-path)
-	IPHONEOS_SYSROOT := $(shell xcrun --sdk iphoneos --show-sdk-path)
-	IPHONESIMULATOR_PLATFORM := $(shell xcrun --sdk iphonesimulator \
+ifeq ($(TARGET),WATCHOS)
+	IPHONEOS_PLATFORM := $(shell xcrun --sdk watchos --show-sdk-platform-path)
+	IPHONEOS_SYSROOT := $(shell xcrun --sdk watchos --show-sdk-path)
+	IPHONESIMULATOR_PLATFORM := $(shell xcrun --sdk watchsimulator \
 	--show-sdk-platform-path)
-	IPHONESIMULATOR_SYSROOT := $(shell xcrun --sdk iphonesimulator \
+	IPHONESIMULATOR_SYSROOT := $(shell xcrun --sdk watchsimulator \
 	--show-sdk-path)
-	IOS_SDK_VERSION := $(shell xcrun --sdk iphoneos --show-sdk-version)
+	IOS_SDK_VERSION := $(shell xcrun --sdk watchos --show-sdk-version)
 	MIN_SDK_VERSION := 9.0
 # Override IOS_ARCH with ARMV7, ARMV7S, ARM64, or I386.
-	IOS_ARCH := X86_64
-	ifeq ($(IOS_ARCH),ARMV7)
-		CXXFLAGS += -miphoneos-version-min=$(MIN_SDK_VERSION) \
-		-arch armv7 \
+	WATCHOS_ARCH := X86_64
+	ifeq ($(WATCHOS_ARCH),ARMV7K)
+		CXXFLAGS += -mwatchos-version-min=$(MIN_SDK_VERSION) \
+		-arch armv7k \
 		-fembed-bitcode \
 		-D__thread=thread_local \
 		-DUSE_GEMM_FOR_CONV \
@@ -473,66 +473,19 @@ ifeq ($(TARGET),IOS)
 		-fno-exceptions \
 		-isysroot \
 		${IPHONEOS_SYSROOT}
-		LDFLAGS := -arch armv7 \
+		LDFLAGS := -arch armv7k \
 		-fembed-bitcode \
-		-miphoneos-version-min=${MIN_SDK_VERSION} \
+		-mwatchos-version-min=${MIN_SDK_VERSION} \
 		-framework Accelerate \
 		-Xlinker -S \
 		-Xlinker -x \
 		-Xlinker -dead_strip \
 		-all_load \
-		-L$(GENDIR)protobuf_ios/lib \
+		-L$(GENDIR)protobuf_watchos/lib \
 		-lz
 	endif
-	ifeq ($(IOS_ARCH),ARMV7S)
-		CXXFLAGS += -miphoneos-version-min=$(MIN_SDK_VERSION) \
-		-arch armv7s \
-		-fembed-bitcode \
-		-D__thread=thread_local \
-		-DUSE_GEMM_FOR_CONV \
-		-Wno-c++11-narrowing \
-		-mno-thumb \
-		-DTF_LEAN_BINARY \
-		$(ANDROID_TYPES) \
-		-fno-exceptions \
-		-isysroot \
-		${IPHONEOS_SYSROOT}
-		LDFLAGS := -arch armv7s \
-		-fembed-bitcode \
-		-miphoneos-version-min=${MIN_SDK_VERSION} \
-		-framework Accelerate \
-		-Xlinker -S \
-		-Xlinker -x \
-		-Xlinker -dead_strip \
-		-all_load \
-		-L$(GENDIR)protobuf_ios/lib \
-		-lz
-	endif
-	ifeq ($(IOS_ARCH),ARM64)
-		CXXFLAGS += -miphoneos-version-min=$(MIN_SDK_VERSION) \
-		-arch arm64 \
-		-fembed-bitcode \
-		-D__thread=thread_local \
-		-DUSE_GEMM_FOR_CONV \
-		-Wno-c++11-narrowing \
-		-DTF_LEAN_BINARY \
-		$(ANDROID_TYPES) \
-		-fno-exceptions \
-		-isysroot \
-		${IPHONEOS_SYSROOT}
-		LDFLAGS := -arch arm64 \
-		-fembed-bitcode \
-		-miphoneos-version-min=${MIN_SDK_VERSION} \
-		-framework Accelerate \
-		-Xlinker -S \
-		-Xlinker -x \
-		-Xlinker -dead_strip \
-		-all_load \
-		-L$(GENDIR)protobuf_ios/lib \
-		-lz
-	endif
-	ifeq ($(IOS_ARCH),I386)
-		CXXFLAGS += -mios-simulator-version-min=$(MIN_SDK_VERSION) \
+	ifeq ($(WATCHOS_ARCH),I386)
+		CXXFLAGS += -mwatchos-simulator-version-min=$(MIN_SDK_VERSION) \
 		-arch i386 \
 		-mno-sse \
 		-fembed-bitcode \
@@ -546,17 +499,17 @@ ifeq ($(TARGET),IOS)
 		${IPHONESIMULATOR_SYSROOT}
 		LDFLAGS := -arch i386 \
 		-fembed-bitcode \
-		-mios-simulator-version-min=${MIN_SDK_VERSION} \
+		-mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
 		-framework Accelerate \
 		-Xlinker -S \
 		-Xlinker -x \
 		-Xlinker -dead_strip \
 		-all_load \
-		-L$(GENDIR)protobuf_ios/lib \
+		-L$(GENDIR)protobuf_watchos/lib \
 		-lz
 	endif
-	ifeq ($(IOS_ARCH),X86_64)
-		CXXFLAGS += -mios-simulator-version-min=$(MIN_SDK_VERSION) \
+	ifeq ($(WATCHOS_ARCH),X86_64)
+		CXXFLAGS += -mwatchos-simulator-version-min=$(MIN_SDK_VERSION) \
 		-arch x86_64 \
 		-fembed-bitcode \
 		-D__thread=thread_local \
@@ -569,19 +522,19 @@ ifeq ($(TARGET),IOS)
 		${IPHONESIMULATOR_SYSROOT}
 		LDFLAGS := -arch x86_64 \
 		-fembed-bitcode \
-		-mios-simulator-version-min=${MIN_SDK_VERSION} \
+		-mwatchos-simulator-version-min=${MIN_SDK_VERSION} \
 		-framework Accelerate \
 		-Xlinker -S \
 		-Xlinker -x \
 		-Xlinker -dead_strip \
 		-all_load \
-		-L$(GENDIR)protobuf_ios/lib \
+		-L$(GENDIR)protobuf_watchos/lib \
 		-lz
 	endif
-	OBJDIR := $(OBJDIR)ios_$(IOS_ARCH)/
-	LIBDIR := $(LIBDIR)ios_$(IOS_ARCH)/
-	BINDIR := $(BINDIR)ios_$(IOS_ARCH)/
-	DEPDIR := $(DEPDIR)ios_$(IOS_ARCH)/
+	OBJDIR := $(OBJDIR)watchos_$(WATCHOS_ARCH)/
+	LIBDIR := $(LIBDIR)watchos_$(WATCHOS_ARCH)/
+	BINDIR := $(BINDIR)watchos_$(WATCHOS_ARCH)/
+	DEPDIR := $(DEPDIR)watchos_$(WATCHOS_ARCH)/
 endif
 
 # This library is the main target for this makefile. It will contain a minimal

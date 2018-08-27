@@ -8,19 +8,19 @@ ifeq ($(TARGET), IOS)
 	     	BUILD_FOR_IOS_SIMULATOR := true
 	endif
 	ifeq ($(BUILD_FOR_IOS_SIMULATOR), true)
-		IPHONEOS_PLATFORM := $(shell xcrun --sdk iphonesimulator \
+		IPHONEOS_PLATFORM := $(shell xcrun --sdk watchsimulator \
 			--show-sdk-platform-path)
-		IPHONEOS_SYSROOT := $(shell xcrun --sdk iphonesimulator \
+		IPHONEOS_SYSROOT := $(shell xcrun --sdk watchsimulator \
 			--show-sdk-path)
 	else
-		IPHONEOS_PLATFORM := $(shell xcrun --sdk iphoneos --show-sdk-platform-path)
-		IPHONEOS_SYSROOT := $(shell xcrun --sdk iphoneos --show-sdk-path)
+		IPHONEOS_PLATFORM := $(shell xcrun --sdk watchos --show-sdk-platform-path)
+		IPHONEOS_SYSROOT := $(shell xcrun --sdk watchos --show-sdk-path)
 	endif
-	IOS_SDK_VERSION := $(shell xcrun --sdk iphoneos --show-sdk-version)
-	MIN_SDK_VERSION := 9.0
+	IOS_SDK_VERSION := $(shell xcrun --sdk watchos --show-sdk-version)
+	MIN_SDK_VERSION := 4.0
 	# Override IOS_ARCH with armv7, armv7s, arm64, i386, or x86_64.
 	IOS_ARCH := x86_64
-	CXXFLAGS += -miphoneos-version-min=$(MIN_SDK_VERSION) \
+	CXXFLAGS += -mwatchos-version-min=$(MIN_SDK_VERSION) \
 		-DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK \
 		-DTFLITE_USE_APPLE_ACCELERATE_FOR_CONV \
 		-fembed-bitcode \
@@ -31,7 +31,7 @@ ifeq ($(TARGET), IOS)
 		${IPHONEOS_SYSROOT} \
 		-arch $(IOS_ARCH) \
 		-O3
-	CCFLAGS += -miphoneos-version-min=$(MIN_SDK_VERSION) \
+	CCFLAGS += -mwatchos-version-min=$(MIN_SDK_VERSION) \
 		-fembed-bitcode \
 		-mno-thumb \
 		-isysroot \
@@ -39,7 +39,7 @@ ifeq ($(TARGET), IOS)
 		-arch $(IOS_ARCH) \
 		-O3
 	LDFLAGS := -fembed-bitcode \
-		-miphoneos-version-min=${MIN_SDK_VERSION} \
+		-mwatchos-version-min=${MIN_SDK_VERSION} \
 		-framework Accelerate \
 		-arch $(IOS_ARCH)
 	OBJDIR := $(OBJDIR)ios_$(IOS_ARCH)/

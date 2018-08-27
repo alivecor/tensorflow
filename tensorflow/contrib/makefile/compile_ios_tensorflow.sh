@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# Builds the TensorFlow core library with ARM and x86 architectures for iOS, and
+# Builds the TensorFlow core library with ARM and x86 architectures for watchos, and
 # packs them into a fat file.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/build_helper.subr"
@@ -50,7 +50,7 @@ usage() {
   exit 1
 }
 
-BUILD_TARGET="i386 x86_64 armv7 armv7s arm64"
+BUILD_TARGET="i386 x86_64 armv7k"
 while getopts "a:f:h:n:" opt_name; do
   case "$opt_name" in
     a) BUILD_TARGET="${OPTARG}";;
@@ -77,7 +77,7 @@ rm -rf ${LIBDIR}/${LIB_PREFIX}.a
 
 package_tf_library() {
     CAP_DIR=`echo $1 | tr 'a-z' 'A-Z'`
-    tf_libs="${LIBDIR}/ios_${CAP_DIR}/${LIB_PREFIX}-${1}.a"
+    tf_libs="${LIBDIR}/watchos_${CAP_DIR}/${LIB_PREFIX}-${1}.a"
     if [ -f "${LIBDIR}/${LIB_PREFIX}.a" ]; then
         tf_libs="$tf_libs ${LIBDIR}/${LIB_PREFIX}.a"
     fi
@@ -89,9 +89,9 @@ package_tf_library() {
 
 build_tf_target() {
 case "$1" in
-    armv7)
+    armv7k)
         make -j"${JOB_COUNT}" -f tensorflow/contrib/makefile/Makefile \
-        TARGET=IOS IOS_ARCH=ARMV7 LIB_NAME=${LIB_PREFIX}-armv7.a \
+        TARGET=WATCHOS WATCHOS_ARCH=ARMV7K LIB_NAME=${LIB_PREFIX}-armv7k.a \
         OPTFLAGS="${BUILD_OPT}" HOST_NSYNC_LIB="${NSYNC_HOST}" \
         TARGET_NSYNC_LIB="${NSYNC_TARGET}"
         if [ $? -ne 0 ]
@@ -99,36 +99,11 @@ case "$1" in
           echo "armv7 compilation failed."
           exit 1
         fi
-        package_tf_library "armv7"
-        ;;
-    armv7s)
-        make -j"${JOB_COUNT}" -f tensorflow/contrib/makefile/Makefile \
-        TARGET=IOS IOS_ARCH=ARMV7S LIB_NAME=${LIB_PREFIX}-armv7s.a \
-        OPTFLAGS="${BUILD_OPT}" HOST_NSYNC_LIB="${NSYNC_HOST}" \
-        TARGET_NSYNC_LIB="${NSYNC_TARGET}"
-
-        if [ $? -ne 0 ]
-        then
-          echo "arm7vs compilation failed."
-          exit 1
-        fi
-        package_tf_library "armv7s"
-        ;;
-    arm64)
-        make -j"${JOB_COUNT}" -f tensorflow/contrib/makefile/Makefile \
-        TARGET=IOS IOS_ARCH=ARM64 LIB_NAME=${LIB_PREFIX}-arm64.a \
-        OPTFLAGS="${BUILD_OPT}" HOST_NSYNC_LIB="${NSYNC_HOST}" \
-        TARGET_NSYNC_LIB="${NSYNC_TARGET}"
-        if [ $? -ne 0 ]
-        then
-          echo "arm64 compilation failed."
-          exit 1
-        fi
-        package_tf_library "arm64"
+        package_tf_library "armv7k"
         ;;
     i386)
         make -j"${JOB_COUNT}" -f tensorflow/contrib/makefile/Makefile \
-        TARGET=IOS IOS_ARCH=I386 LIB_NAME=${LIB_PREFIX}-i386.a \
+        TARGET=WATCHOS WATCHOS_ARCH=I386 LIB_NAME=${LIB_PREFIX}-i386.a \
         OPTFLAGS="${BUILD_OPT}" HOST_NSYNC_LIB="${NSYNC_HOST}" \
         TARGET_NSYNC_LIB="${NSYNC_TARGET}"
         if [ $? -ne 0 ]
@@ -140,7 +115,7 @@ case "$1" in
         ;;
     x86_64)
         make -j"${JOB_COUNT}" -f tensorflow/contrib/makefile/Makefile \
-        TARGET=IOS IOS_ARCH=X86_64 LIB_NAME=${LIB_PREFIX}-x86_64.a \
+        TARGET=WATCHOS WATCHOS_ARCH=X86_64 LIB_NAME=${LIB_PREFIX}-x86_64.a \
         OPTFLAGS="${BUILD_OPT}" HOST_NSYNC_LIB="${NSYNC_HOST}" \
         TARGET_NSYNC_LIB="${NSYNC_TARGET}"
         if [ $? -ne 0 ]

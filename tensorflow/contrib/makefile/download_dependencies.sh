@@ -94,6 +94,8 @@ download_and_extract "${DOUBLE_CONVERSION_URL}" "${DOWNLOADS_DIR}/double_convers
 download_and_extract "${ABSL_URL}" "${DOWNLOADS_DIR}/absl"
 download_and_extract "${CUB_URL}" "${DOWNLOADS_DIR}/cub/external/cub_archive"
 
+cp tensorflow/contrib/makefile/subprocess_mod.cc "${DOWNLOADS_DIR}/protobuf/src/google/protobuf/compiler/subprocess.cc"
+
 replace_by_sed 's#static uint32x4_t p4ui_CONJ_XOR = vld1q_u32( conj_XOR_DATA );#static uint32x4_t p4ui_CONJ_XOR; // = vld1q_u32( conj_XOR_DATA ); - Removed by script#' \
   "${DOWNLOADS_DIR}/eigen/Eigen/src/Core/arch/NEON/Complex.h"
 replace_by_sed 's#static uint32x2_t p2ui_CONJ_XOR = vld1_u32( conj_XOR_DATA );#static uint32x2_t p2ui_CONJ_XOR;// = vld1_u32( conj_XOR_DATA ); - Removed by scripts#' \
