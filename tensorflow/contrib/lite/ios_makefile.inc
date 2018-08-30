@@ -24,6 +24,10 @@ ifeq ($(TARGET), IOS)
 		-DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK \
 		-DTFLITE_USE_APPLE_ACCELERATE_FOR_CONV \
 		-fembed-bitcode \
+		-fno-gnu-inline-asm \
+		-DEIGEN_DONT_VECTORIZE \
+		-D'EIGEN_ASM_COMMENT(x)=' \
+		-DEIGEN_NO_CPUID \
 		-Wno-c++11-narrowing \
 		-mno-thumb \
 		-fno-exceptions \
@@ -33,6 +37,7 @@ ifeq ($(TARGET), IOS)
 		-O3
 	CCFLAGS += -mwatchos-version-min=$(MIN_SDK_VERSION) \
 		-fembed-bitcode \
+		-fno-gnu-inline-asm \
 		-mno-thumb \
 		-isysroot \
 		${IPHONEOS_SYSROOT} \

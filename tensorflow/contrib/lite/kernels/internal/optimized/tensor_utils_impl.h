@@ -19,12 +19,6 @@ limitations under the License.
 // structure.
 #include "tensorflow/contrib/lite/builtin_op_data.h"
 
-#ifndef USE_NEON
-#if defined(__ARM_NEON__) || defined(__ARM_NEON)
-#define USE_NEON
-#endif  //  defined(__ARM_NEON__) || defined(__ARM_NEON)
-#endif  //  USE_NEON
-
 namespace tflite {
 namespace tensor_utils {
 
