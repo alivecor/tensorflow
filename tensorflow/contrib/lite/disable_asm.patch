@@ -1,0 +1,32 @@
+diff -ruN downloads/gemmlowp/internal/common.h downloads_modified/gemmlowp/internal/common.h
+--- downloads/gemmlowp/internal/common.h	2018-09-10 16:24:23.000000000 -0700
++++ downloads_modified/gemmlowp/internal/common.h	2018-08-28 19:04:19.000000000 -0700
+@@ -31,7 +31,7 @@
+ // Our inline assembly path assume GCC/Clang syntax.
+ // Native Client doesn't seem to support inline assembly(?).
+ #if defined(__GNUC__) && !defined(__native_client__)
+-#define GEMMLOWP_ALLOW_INLINE_ASM
++//#define GEMMLOWP_ALLOW_INLINE_ASM
+ #endif
+ 
+ // Define macro statement that avoids inlining for GCC.
+@@ -88,16 +88,16 @@
+ 
+ // Detect NEON. It's important to check for both tokens.
+ #if (defined __ARM_NEON) || (defined __ARM_NEON__)
+-#define GEMMLOWP_NEON
++//#define GEMMLOWP_NEON
+ #endif
+ 
+ // Convenience NEON tokens for 32-bit or 64-bit
+ #if defined(GEMMLOWP_NEON) && defined(GEMMLOWP_ARM_32)
+-#define GEMMLOWP_NEON_32
++//#define GEMMLOWP_NEON_32
+ #endif
+ 
+ #if defined(GEMMLOWP_NEON) && defined(GEMMLOWP_ARM_64)
+-#define GEMMLOWP_NEON_64
++//#define GEMMLOWP_NEON_64
+ #endif
+ 
+ // Detect MIPS MSA.

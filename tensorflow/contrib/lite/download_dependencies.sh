@@ -103,4 +103,6 @@ replace_by_sed 's#static uint32x2_t p2ui_CONJ_XOR = vld1_u32( conj_XOR_DATA );#s
 replace_by_sed 's#static uint64x2_t p2ul_CONJ_XOR = vld1q_u64( p2ul_conj_XOR_DATA );#static uint64x2_t p2ul_CONJ_XOR;// = vld1q_u64( p2ul_conj_XOR_DATA ); - Removed by script#' \
   "${DOWNLOADS_DIR}/eigen/Eigen/src/Core/arch/NEON/Complex.h"
 
+patch -d $SCRIPT_DIR -s -p0 < $SCRIPT_DIR/disable_asm.patch
+
 echo "download_dependencies.sh completed successfully." >&2
