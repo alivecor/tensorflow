@@ -1,6 +1,6 @@
-diff -ruN downloads/gemmlowp/internal/common.h downloads_modified/gemmlowp/internal/common.h
---- downloads/gemmlowp/internal/common.h	2018-09-10 16:24:23.000000000 -0700
-+++ downloads_modified/gemmlowp/internal/common.h	2018-08-28 19:04:19.000000000 -0700
+diff -ur downloads/gemmlowp/internal/common.h downloads_modified/gemmlowp/internal/common.h
+--- downloads/gemmlowp/internal/common.h	2018-09-18 15:38:47.000000000 -0700
++++ downloads_modified/gemmlowp/internal/common.h	2018-09-18 15:35:41.000000000 -0700
 @@ -31,7 +31,7 @@
  // Our inline assembly path assume GCC/Clang syntax.
  // Native Client doesn't seem to support inline assembly(?).
@@ -10,6 +10,15 @@ diff -ruN downloads/gemmlowp/internal/common.h downloads_modified/gemmlowp/inter
  #endif
  
  // Define macro statement that avoids inlining for GCC.
+@@ -48,7 +48,7 @@
+ #endif
+ 
+ #ifdef __aarch64__
+-#define GEMMLOWP_ARM_64
++//#define GEMMLOWP_ARM_64
+ #endif
+ 
+ #if defined(GEMMLOWP_ARM_32) || defined(GEMMLOWP_ARM_64)
 @@ -88,16 +88,16 @@
  
  // Detect NEON. It's important to check for both tokens.
