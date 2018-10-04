@@ -1,3 +1,5 @@
+tensorflow/core/kernels/cwise_op_erf.cc
+tensorflow/core/kernels/cwise_op_erfc.cc
 tensorflow/core/kernels/xent_op.cc
 tensorflow/core/kernels/where_op.cc
 tensorflow/core/kernels/variable_ops.cc
@@ -13,7 +15,6 @@ tensorflow/core/kernels/tile_ops_cpu_impl_3.cc
 tensorflow/core/kernels/tile_ops_cpu_impl_4.cc
 tensorflow/core/kernels/tile_ops_cpu_impl_5.cc
 tensorflow/core/kernels/tile_ops_cpu_impl_6.cc
-tensorflow/core/kernels/tensor_array_ops.cc
 tensorflow/core/kernels/tensor_array.cc
 tensorflow/core/kernels/strided_slice_op_inst_6.cc
 tensorflow/core/kernels/strided_slice_op_inst_5.cc

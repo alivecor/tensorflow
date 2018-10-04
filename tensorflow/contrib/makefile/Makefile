@@ -62,7 +62,7 @@ HOST_GENDIR := $(MAKEFILE_DIR)/gen/host_obj/
 
 # Settings for the host compiler.
 HOST_CXX := $(CC_PREFIX) gcc
-HOST_CXXFLAGS := --std=c++11
+HOST_CXXFLAGS := --std=c++11 -Wno-invalid-partial-specialization
 HOST_LDOPTS :=
 ifeq ($(HAS_GEN_HOST_PROTOC),true)
 	HOST_LDOPTS += -L$(MAKEFILE_DIR)/gen/protobuf-host/lib
@@ -138,7 +138,7 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 # Settings for the target compiler.
 CXX := $(CC_PREFIX) gcc
 OPTFLAGS := -O2
-CXXFLAGS := --std=c++11 -DIS_SLIM_BUILD -fno-exceptions -DNDEBUG -DNOTFDBG $(OPTFLAGS)
+CXXFLAGS := --std=c++11 -DIS_SLIM_BUILD -fno-exceptions -Wno-invalid-partial-specialization -DNDEBUG -DNOTFDBG $(OPTFLAGS)
 LDFLAGS := \
 -L/usr/local/lib
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
