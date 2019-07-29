@@ -70,11 +70,18 @@ LINKER_SCRIPT = "//tensorflow/contrib/android:jni/version_script.lds"
 
 cc_binary(
     name = "libtensorflow_inference.so",
-    srcs = [],
+    srcs = [
+        "com_alivecor_neuralsuite_NeuralSuite.cpp", 
+        "identity_model.cpp", 
+        "inversion_model.cpp", 
+        "tensorflow_model.cpp"
+        ],
     copts = tf_copts(),
     linkopts = [
         "-landroid",
         "-z defs",
+        "-lm",
+        "-llog",
         "-s",
         "-Wl,--version-script",  # This line must be directly followed by LINKER_SCRIPT.
         LINKER_SCRIPT,
