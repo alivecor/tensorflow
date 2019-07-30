@@ -2,7 +2,7 @@
 // Created by Alexander Valys on 10/28/16.
 //
 
-#include "inversion_model.h"
+#include "tensorflow/contrib/android/inversion_model.h"
 #include <cstring>
 
 namespace ac {

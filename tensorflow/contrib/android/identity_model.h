@@ -5,7 +5,7 @@
 #ifndef NEURAL_SUITE_IDENTITY_MODEL_H
 #define NEURAL_SUITE_IDENTITY_MODEL_H
 
-#include "tensorflow_model.h"
+#include "tensorflow/contrib/android/tensorflow_model.h"
 #include <vector>
 
 namespace ac {
