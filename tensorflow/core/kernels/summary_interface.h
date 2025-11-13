@@ -15,10 +15,16 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_SUMMARY_INTERFACE_H_
 #define TENSORFLOW_CORE_KERNELS_SUMMARY_INTERFACE_H_
 
+#include <memory>
 
 #include "tensorflow/core/framework/resource_mgr.h"
+#include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
+
+class Event;
+class GraphDef;
 
 // Main interface for the summary writer resource.
 class SummaryWriterInterface : public ResourceBase {
@@ -26,33 +32,32 @@ class SummaryWriterInterface : public ResourceBase {
   virtual ~SummaryWriterInterface() override {}
 
   // Flushes all unwritten messages in the queue.
-  virtual Status Flush() = 0;
+  virtual absl::Status Flush() = 0;
 
   // These are called in the OpKernel::Compute methods for the summary ops.
-  virtual Status WriteTensor(int64 global_step, Tensor t, const string& tag,
-                             const string& serialized_metadata) = 0;
+  virtual absl::Status WriteTensor(int64_t global_step, Tensor t,
+                                   const std::string& tag,
+                                   const std::string& serialized_metadata) = 0;
 
-  virtual Status WriteScalar(int64 global_step, Tensor t,
-                             const string& tag) = 0;
+  virtual absl::Status WriteScalar(int64_t global_step, Tensor t,
+                                   const std::string& tag) = 0;
 
-  virtual Status WriteHistogram(int64 global_step, Tensor t,
-                                const string& tag) = 0;
+  virtual absl::Status WriteHistogram(int64_t global_step, Tensor t,
+                                      const std::string& tag) = 0;
 
-  virtual Status WriteImage(int64 global_step, Tensor t, const string& tag,
-                            int max_images, Tensor bad_color) = 0;
+  virtual absl::Status WriteImage(int64_t global_step, Tensor t,
+                                  const std::string& tag, int max_images,
+                                  Tensor bad_color) = 0;
 
-  virtual Status WriteAudio(int64 global_step, Tensor t, const string& tag,
-                            int max_outputs_, float sample_rate) = 0;
+  virtual absl::Status WriteAudio(int64_t global_step, Tensor t,
+                                  const std::string& tag, int max_outputs_,
+                                  float sample_rate) = 0;
+
+  virtual absl::Status WriteGraph(int64_t global_step,
+                                  std::unique_ptr<GraphDef> graph) = 0;
+
+  virtual absl::Status WriteEvent(std::unique_ptr<Event> e) = 0;
 };
-
-// Creates a SummaryWriterInterface instance which writes to a file. It will
-// enqueue up to max_queue summaries, and flush at least every flush_millis
-// milliseconds. The summaries will be written to the directory specified by
-// logdir and with the filename suffixed by filename_suffix. The caller owns a
-// reference to result if the returned status is ok.
-Status CreateSummaryWriter(int max_queue, int flush_millis,
-                           const string& logdir, const string& filename_suffix,
-                           Env* env, SummaryWriterInterface** result);
 
 }  // namespace tensorflow
 

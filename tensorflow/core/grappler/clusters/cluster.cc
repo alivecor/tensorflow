@@ -14,6 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/grappler/clusters/cluster.h"
+
+#include <algorithm>
+#include <vector>
+
+#include "tensorflow/core/protobuf/config.pb.h"
 #include "tensorflow/core/protobuf/rewriter_config.pb.h"
 
 namespace tensorflow {
@@ -23,16 +28,32 @@ Cluster::Cluster(int timeout_s) : timeout_s_(timeout_s) {
   DisableDetailedStats(false);
 }
 
-Cluster::~Cluster() {
-}
+Cluster::~Cluster() {}
 
 void Cluster::AllowSoftPlacement(bool soft_placement_state) {
   options_.config.set_allow_soft_placement(soft_placement_state);
 }
 
+void Cluster::SetNumInterOpThreads(int num_threads) {
+  for (int i = 0; i < options_.config.session_inter_op_thread_pool_size();
+       ++i) {
+    options_.config.mutable_session_inter_op_thread_pool(i)->set_num_threads(
+        num_threads);
+  }
+}
+
 void Cluster::SetNumWarmupSteps(int num_steps) {
   options_.config.mutable_graph_options()->set_build_cost_model_after(
       num_steps);
+}
+
+// Set executor type to instantiate
+void Cluster::SetExecutorType(const std::string* executor_type) {
+  options_.config.mutable_experimental()->set_executor_type(*executor_type);
+}
+
+int Cluster::NumWarmupSteps() const {
+  return options_.config.graph_options().build_cost_model_after();
 }
 
 void Cluster::DisableDetailedStats(bool disable) {
@@ -45,6 +66,10 @@ void Cluster::DisableDetailedStats(bool disable) {
   }
 }
 
+bool Cluster::DetailedStatsEnabled() const {
+  return options_.config.graph_options().build_cost_model() != 0;
+}
+
 void Cluster::DisableOptimizer(bool disable) {
   OptimizerOptions* options =
       options_.config.mutable_graph_options()->mutable_optimizer_options();
@@ -53,10 +78,17 @@ void Cluster::DisableOptimizer(bool disable) {
     // Disable Grappler optimizations.
     auto rewriter_config =
         options_.config.mutable_graph_options()->mutable_rewrite_options();
-    rewriter_config->set_optimize_tensor_layout(false);
+    rewriter_config->set_layout_optimizer(RewriterConfig::OFF);
     rewriter_config->set_disable_model_pruning(true);
+    rewriter_config->set_function_optimization(RewriterConfig::OFF);
+    rewriter_config->set_arithmetic_optimization(RewriterConfig::OFF);
+    rewriter_config->set_loop_optimization(RewriterConfig::OFF);
+    rewriter_config->set_dependency_optimization(RewriterConfig::OFF);
     rewriter_config->set_constant_folding(RewriterConfig::OFF);
     rewriter_config->set_memory_optimization(RewriterConfig::NO_MEM_OPT);
+    rewriter_config->set_shape_optimization(RewriterConfig::OFF);
+    rewriter_config->set_remapping(RewriterConfig::OFF);
+    rewriter_config->set_pin_to_host_optimization(RewriterConfig::OFF);
     rewriter_config->mutable_auto_parallel()->set_enable(false);
     rewriter_config->clear_optimizers();
   } else {
@@ -68,8 +100,8 @@ void Cluster::DisableOptimizer(bool disable) {
   }
 }
 
-const std::vector<string> Cluster::GetDeviceNames() const {
-  std::vector<string> device_names;
+const std::vector<std::string> Cluster::GetDeviceNames() const {
+  std::vector<std::string> device_names;
   device_names.reserve(devices_.size());
   for (const auto& device : devices_) {
     device_names.push_back(device.first);

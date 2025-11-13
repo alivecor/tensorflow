@@ -15,8 +15,8 @@ limitations under the License.
 
 // DEPRECATED: Use the C++ API defined in tensorflow/cc instead.
 
-#ifndef TENSORFLOW_GRAPH_TESTLIB_H_
-#define TENSORFLOW_GRAPH_TESTLIB_H_
+#ifndef TENSORFLOW_CORE_GRAPH_TESTLIB_H_
+#define TENSORFLOW_CORE_GRAPH_TESTLIB_H_
 
 #include <string>
 #include <vector>
@@ -32,7 +32,7 @@ namespace test {
 namespace graph {
 
 // Converts "g" into its corresponding GraphDef "def".
-// DEPRECATED: call g->ToGraphDef(def) instead.
+ABSL_DEPRECATED("Call g->ToGraphDef(def) instead.")
 void ToGraphDef(Graph* g, GraphDef* def);
 
 // A few helpers to construct a graph.
@@ -50,8 +50,8 @@ Node* HostConstant(Graph* g, const Tensor& tensor);
 Node* HostConstant(Graph* g, const Tensor& tensor, const string& name);
 
 // Adds a variable in "g" of the given "shape" and "dtype".
-Node* Var(Graph* g, const DataType dtype, const TensorShape& shape);
-Node* Var(Graph* g, const DataType dtype, const TensorShape& shape,
+Node* Var(Graph* g, DataType dtype, const TensorShape& shape);
+Node* Var(Graph* g, DataType dtype, const TensorShape& shape,
           const string& name);
 
 // Adds an assign node in "g" which assigns "val" into "var".
@@ -60,13 +60,17 @@ Node* Assign(Graph* g, Node* var, Node* val);
 // Adds a send node "g" sending "input" as a named "tensor" from
 // "sender" to "receiver".
 Node* Send(Graph* g, Node* input, const string& tensor, const string& sender,
-           const uint64 sender_incarnation, const string& receiver);
+           uint64 sender_incarnation, const string& receiver);
 
 // Adds a recv node in "g" receiving a named "tensor" from "sender"
 // to "receiver".
 Node* Recv(Graph* g, const string& tensor, const string& type,
-           const string& sender, const uint64 sender_incarnation,
+           const string& sender, uint64 sender_incarnation,
            const string& receiver);
+
+// Adds a cumsum "node" in "g" doing cumsum(data, axes).
+Node* Cumsum(Graph* g, Node* data, Node* axes, bool exclusive = false,
+             bool reverse = false);
 
 // Adds a reduction "node" in "g" doing sum(data, axes).  "reduce" is
 // a reduction, e.g., Sum, Max, Min, Mean, etc.
@@ -95,7 +99,7 @@ Node* Identity(Graph* g, Node* input, int index = 0);
 Node* Binary(Graph* g, const string& func, Node* in0, Node* in1);
 
 // Adds a function "func" node in "g" taking inputs "ins".
-Node* Multi(Graph* g, const string& func, gtl::ArraySlice<Node*> ins);
+Node* Multi(Graph* g, const string& func, absl::Span<Node* const> ins);
 
 // Adds a binary add node in "g" doing in0 + in1.
 Node* Add(Graph* g, Node* in0, Node* in1);
@@ -117,13 +121,18 @@ Node* RandomGamma(Graph* g, Node* shape, Node* alpha);
 // Output dtype determined by lam.
 Node* RandomPoisson(Graph* g, Node* shape, Node* lam);
 
+// Rolls tensor by an offset of <shift> along the corresponding
+// <axis> dimensions.
+Node* Roll(Graph* g, Node* input, Node* shift, Node* axis);
+
 // Generates random parameters from the truncated standard normal distribution
-// of the nput shape
+// of the input shape
 Node* TruncatedNormal(Graph* g, Node* input, DataType dtype);
 
 // Adds an error node in "g". The node's computation always
 // generates an error with the given error message "errmsg".
-Node* Error(Graph* g, Node* input, const string& errmsg);
+Node* Error(Graph* g, Node* input, const string& errmsg,
+            bool log_error = false);
 
 // Adds a node that generates a invalid ref output.
 Node* InvalidRefType(Graph* g, DataType out_type, DataType invalid_type);
@@ -151,7 +160,7 @@ Node* Merge(Graph* g, Node* in0, Node* in1);
 
 // Adds a Merge node in "g". The first input is "in0", the remaining
 // inputs are only given by their names in remaining_in.
-Node* Merge(Graph* g, Node* in0, gtl::ArraySlice<string> remaining_in);
+Node* Merge(Graph* g, Node* in0, absl::Span<const string> remaining_in);
 
 // Adds a NextIteration node in "g", which makes its input available
 // to the next iteration.
@@ -180,12 +189,12 @@ Node* GetSessionTensor(Graph* g, Node* in);
 // Adds a Concat node in "g". The first input is "concat_dim", the
 // dimension to concatenate on, and the tensors to concatenate are
 // given in "tensors".
-Node* Concat(Graph* g, Node* concat_dim, gtl::ArraySlice<Node*> tensors);
+Node* Concat(Graph* g, Node* concat_dim, absl::Span<Node* const> tensors);
 
 // Adds a ConcatV2 node in "g". The last input is "concat_dim", the
 // dimension to concatenate on, and the tensors to concatenate are
 // given in "tensors".
-Node* ConcatV2(Graph* g, gtl::ArraySlice<Node*> tensors, Node* concat_dim);
+Node* ConcatV2(Graph* g, absl::Span<Node* const> tensors, Node* concat_dim);
 
 // Add a Relu node in "g".
 Node* Relu(Graph* g, Node* in);
@@ -199,8 +208,23 @@ Node* BiasAdd(Graph* g, Node* value, Node* bias);
 // Add a Conv2D node in "g".
 Node* Conv2D(Graph* g, Node* in0, Node* in1);
 
+// Add a Diag node in "g".
+Node* Diag(Graph* g, Node* in, DataType type);
+
+// Add a DiagPart node in "g".
+Node* DiagPart(Graph* g, Node* in, DataType type);
+
+// Add a CheckNumerics node in "g".
+Node* CheckNumerics(Graph* g, Node* in, const string& message);
+
+// Add an _Arg node in "g".
+Node* Arg(Graph* g, int64_t index, DataType type);
+
+// Add a _Retval node in "g".
+Node* Retval(Graph* g, int64_t index, Node* in, int64_t in_index = 0);
+
 }  // end namespace graph
 }  // end namespace test
 }  // end namespace tensorflow
 
-#endif  // TENSORFLOW_GRAPH_TESTLIB_H_
+#endif  // TENSORFLOW_CORE_GRAPH_TESTLIB_H_

@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/io/path.h"
+#include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/platform/test_benchmark.h"
 #include "tensorflow/core/public/session.h"
@@ -31,15 +32,15 @@ namespace tensorflow {
 namespace graph_transforms {
 
 // Declared here so we don't have to expose it in the public header.
-Status ShouldIgnoreErrors(const TransformFuncParameters& transform_params,
-                          bool* ignore_errors);
+absl::Status ShouldIgnoreErrors(const TransformFuncParameters& transform_params,
+                                bool* ignore_errors);
 
 namespace {
-Status test_empty_graph_transform(const GraphDef& graph_def,
-                                  const TransformFuncContext& context,
-                                  GraphDef* result) {
+absl::Status test_empty_graph_transform(const GraphDef& graph_def,
+                                        const TransformFuncContext& context,
+                                        GraphDef* result) {
   result->Clear();
-  return Status::OK();
+  return absl::OkStatus();
 }
 }  // namespace
 
@@ -112,12 +113,11 @@ class TransformGraphTest : public ::testing::Test {
     graph_transforms::MapNamesToNodes(out_graph_def, &out_node_map);
 
     for (const NodeDef& node : out_graph_def.node()) {
-      const StringPiece name(node.name());
       const int occurrence_count = out_node_map.count(node.name());
-      if (name.ends_with("expect_removed")) {
+      if (absl::EndsWith(node.name(), "expect_removed")) {
         EXPECT_EQ(0, occurrence_count) << "node.name()=" << node.name();
       }
-      if (name.ends_with("expect_remains")) {
+      if (absl::EndsWith(node.name(), "expect_remains")) {
         EXPECT_EQ(1, occurrence_count) << "node.name()=" << node.name();
       }
     }
@@ -136,10 +136,9 @@ class TransformGraphTest : public ::testing::Test {
     EXPECT_EQ(0, graph_def.node().size());
 
     TF_ASSERT_OK(root.ToGraphDef(&graph_def));
-    Status no_such_status =
+    absl::Status no_such_status =
         TransformGraph({}, {}, {{"test_no_such_transform", {}}}, &graph_def);
-    EXPECT_TRUE(
-        StringPiece(no_such_status.ToString()).contains("not recognized"));
+    EXPECT_TRUE(absl::StrContains(no_such_status.ToString(), "not recognized"));
   }
 
   void TestParseTransformParameters() {

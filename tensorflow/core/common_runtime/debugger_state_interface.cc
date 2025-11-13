@@ -31,7 +31,7 @@ const string SummarizeDebugTensorWatches(
 
   for (const DebugTensorWatch& watch : watches) {
     string tensor_name =
-        strings::StrCat(watch.node_name(), ":", watch.output_slot());
+        absl::StrCat(watch.node_name(), ":", watch.output_slot());
     if (watch.tolerate_debug_op_creation_failures()) {
       oss << "(TOL)";  // Shorthand for "tolerate".
     }
@@ -60,7 +60,7 @@ void DebuggerStateRegistry::RegisterFactory(
 }
 
 // static
-Status DebuggerStateRegistry::CreateState(
+absl::Status DebuggerStateRegistry::CreateState(
     const DebugOptions& debug_options,
     std::unique_ptr<DebuggerStateInterface>* state) {
   if (factory_ == nullptr || *factory_ == nullptr) {
@@ -69,7 +69,7 @@ Status DebuggerStateRegistry::CreateState(
         "It appears that TFDBG is not linked in this TensorFlow build.");
   } else {
     *state = (*factory_)(debug_options);
-    return Status::OK();
+    return absl::OkStatus();
   }
 }
 
@@ -81,7 +81,7 @@ void DebugGraphDecoratorRegistry::RegisterFactory(
 }
 
 // static
-Status DebugGraphDecoratorRegistry::CreateDecorator(
+absl::Status DebugGraphDecoratorRegistry::CreateDecorator(
     const DebugOptions& options,
     std::unique_ptr<DebugGraphDecoratorInterface>* decorator) {
   if (factory_ == nullptr || *factory_ == nullptr) {
@@ -90,7 +90,7 @@ Status DebugGraphDecoratorRegistry::CreateDecorator(
         "It appears that TFDBG is not linked in this TensorFlow build.");
   } else {
     *decorator = (*factory_)(options);
-    return Status::OK();
+    return absl::OkStatus();
   }
 }
 

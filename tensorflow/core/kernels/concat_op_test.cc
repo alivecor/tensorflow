@@ -17,29 +17,56 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include <gtest/gtest.h>
+#include "absl/base/prefetch.h"
+#include "tensorflow/cc/client/client_session.h"
+#include "tensorflow/cc/framework/ops.h"
+#include "tensorflow/cc/framework/scope.h"
+#include "tensorflow/cc/ops/array_ops.h"
+#include "tensorflow/cc/ops/const_op.h"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/graph/node_builder.h"
 #include "tensorflow/core/graph/testlib.h"
-#include "tensorflow/core/kernels/ops_testutil.h"
-#include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
-#include "tensorflow/core/platform/prefetch.h"
 #include "tensorflow/core/platform/test.h"
-#include "tensorflow/core/platform/test_benchmark.h"
+#include "tensorflow/core/platform/tstring.h"
 
 namespace tensorflow {
 namespace {
 
-// For the benchmark, we set up two 2-dimensional tensors, each kDim1 x 'dim'
-// in size, and concat them together along "concat_dimension"
+using tensorflow::tstring;
+
 template <typename T>
-static void ConcatHelper(int iters, int concat_dimension, int dim2) {
-  testing::StopTiming();
+void FillTensorWithRandomValues(Tensor* t, int string_length, int64_t* bytes) {
+  t->flat<T>().setRandom();
+  *bytes = t->flat<T>().size() * sizeof(T);
+}
+
+template <>
+void FillTensorWithRandomValues<tstring>(Tensor* t, int string_length,
+                                         int64_t* bytes) {
+  auto ts = t->flat<tstring>();
+  *bytes = 0;
+  for (int i = 0; i < ts.size(); i++) {
+    ts(i) = tstring(string_length, 'x');
+    *bytes += sizeof(ts(i)) + ts(i).size();
+  }
+}
+
+// For the benchmark, we set up two 2-dimensional tensors, each kDim1 x 'dim'
+// in size, and concat them together along "concat_dimension".  If T is
+// std::string, then the length of individual strings in the tensors will be
+// of length "string_length".
+template <typename T>
+static void ConcatHelper(::testing::benchmark::State& state,
+                         int concat_dimension, int dim2,
+                         int string_length = 0) {
   Graph* g = new Graph(OpRegistry::Global());
 
   DataType dt = DataTypeToEnum<T>::v();
@@ -47,9 +74,10 @@ static void ConcatHelper(int iters, int concat_dimension, int dim2) {
   Tensor concat_dim(DT_INT32, TensorShape({}));
   concat_dim.scalar<int32>()() = concat_dimension;
   Tensor in0(dt, TensorShape({kDim1, dim2}));
-  in0.flat<T>().setRandom();
   Tensor in1(dt, TensorShape({kDim1, dim2}));
-  in1.flat<T>().setRandom();
+  int64_t in0_bytes, in1_bytes;
+  FillTensorWithRandomValues<T>(&in0, string_length, &in0_bytes);
+  FillTensorWithRandomValues<T>(&in1, string_length, &in1_bytes);
 
   Node* node;
   TF_CHECK_OK(
@@ -60,37 +88,82 @@ static void ConcatHelper(int iters, int concat_dimension, int dim2) {
           .Attr("T", dt)
           .Finalize(g, &node));
 
-  testing::BytesProcessed(static_cast<int64>(iters) *
-                          ((kDim1 * dim2) + (kDim1 * dim2)) * sizeof(T));
-  testing::StartTiming();
-  test::Benchmark("cpu", g).Run(iters);
-  testing::UseRealTime();
+  test::Benchmark("cpu", g, /*old_benchmark_api=*/false).Run(state);
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) *
+                          (in0_bytes + in1_bytes));
 }
 
-static void BM_ConcatDim0Float(int iters, int dim2) {
-  ConcatHelper<float>(iters, 0, dim2);
+void BM_ConcatDim0Float(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  ConcatHelper<float>(state, 0, dim2);
 }
 
-static void BM_ConcatDim1Float(int iters, int dim2) {
-  ConcatHelper<float>(iters, 1, dim2);
+void BM_ConcatDim1Float(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  ConcatHelper<float>(state, 1, dim2);
 }
 
-BENCHMARK(BM_ConcatDim0Float)->Arg(1000)->Arg(100000)->Arg(1000000);
-BENCHMARK(BM_ConcatDim1Float)->Arg(1000)->Arg(100000)->Arg(1000000);
+BENCHMARK(BM_ConcatDim0Float)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
+BENCHMARK(BM_ConcatDim1Float)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
 
-static void BM_ConcatDim1int16(int iters, int dim2) {
-  ConcatHelper<int16>(iters, 1, dim2);
-}
-static void BM_ConcatDim1bfloat16(int iters, int dim2) {
-  ConcatHelper<bfloat16>(iters, 1, dim2);
+void BM_ConcatDim0String(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+  const int string_length = state.range(1);
+
+  ConcatHelper<tstring>(state, 0, dim2, string_length);
 }
 
-BENCHMARK(BM_ConcatDim1int16)->Arg(1000)->Arg(100000)->Arg(1000000);
-BENCHMARK(BM_ConcatDim1bfloat16)->Arg(1000)->Arg(100000)->Arg(1000000);
+BENCHMARK(BM_ConcatDim0String)
+    ->UseRealTime()
+    ->ArgPair(1, 16)
+    ->ArgPair(1, 10000)
+    ->ArgPair(100, 16);
+
+void BM_ConcatDim1uint8(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  ConcatHelper<uint8>(state, 1, dim2);
+}
+void BM_ConcatDim1int16(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  ConcatHelper<int16>(state, 1, dim2);
+}
+void BM_ConcatDim1bfloat16(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  ConcatHelper<bfloat16>(state, 1, dim2);
+}
+
+BENCHMARK(BM_ConcatDim1uint8)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
+BENCHMARK(BM_ConcatDim1int16)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
+BENCHMARK(BM_ConcatDim1bfloat16)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
 
 template <typename T>
-static void ConcatManyHelper(int iters, int concat_dimension, int dim2) {
-  testing::StopTiming();
+static void ConcatManyHelper(::testing::benchmark::State& state,
+                             int concat_dimension, int dim2) {
   Graph* g = new Graph(OpRegistry::Global());
 
   DataType dt = DataTypeToEnum<T>::v();
@@ -113,30 +186,106 @@ static void ConcatManyHelper(int iters, int concat_dimension, int dim2) {
                   .Attr("N", 64)
                   .Attr("T", dt)
                   .Finalize(g, &node));
-  testing::BytesProcessed(static_cast<int64>(iters) * kDim1 * dim2 *
-                          kNumInputs * sizeof(T));
-  testing::StartTiming();
-  test::Benchmark("cpu", g).Run(iters);
-  testing::UseRealTime();
+  test::Benchmark("cpu", g, /*old_benchmark_api*/ false).Run(state);
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * kDim1 *
+                          dim2 * kNumInputs * sizeof(T));
 }
 
-static void BM_ConcatManyDim1bfloat16(int iters, int dim2) {
-  ConcatManyHelper<bfloat16>(iters, 1, dim2);
+TEST(ConcatOnTStringTest, TestTStringsAreDeepCopied) {
+  // 1. Create a new graph scope.
+  tensorflow::Scope root = tensorflow::Scope::NewRootScope();
+
+  // 2. Define input placeholders.
+  auto input1 =
+      tensorflow::ops::Placeholder(root.WithOpName("input1"), DT_STRING,
+                                   ops::Placeholder::Shape({
+                                       2,
+                                   }));
+  auto input2 =
+      tensorflow::ops::Placeholder(root.WithOpName("input2"), DT_STRING,
+                                   ops::Placeholder::Shape({
+                                       2,
+                                   }));
+
+  // 3. Define the axis for concatenation. Concatenates over the first dimension
+  auto axis = ops::Const(root.WithOpName("axis"), {0});
+
+  // 4. Add the ConcatV2 operation.
+  std::vector<Output> inputs = {input1, input2};
+  auto concat_op =
+      tensorflow::ops::Concat(root.WithOpName("my_concat"), inputs, axis);
+
+  // 5. Create a session and run the graph (example)
+  ClientSession session(root);
+  std::vector<tstring> owned_tstrings = {"abc", "def", "ghi", "jkl"};
+
+  // 6. Create view-typed `tstring` for checking data content are deep-copied.
+  tstring first_element;
+  first_element.assign_as_view(owned_tstrings[0]);
+
+  tstring second_element;
+  second_element.assign_as_view(owned_tstrings[1]);
+
+  tstring third_element;
+  third_element.assign_as_view(owned_tstrings[2]);
+
+  tstring fourth_element;
+  fourth_element.assign_as_view(owned_tstrings[3]);
+
+  Tensor t1(DT_STRING, TensorShape({
+                           2,
+                       }));
+
+  t1.flat<tstring>().setValues({first_element, second_element});
+  Tensor t2(DT_STRING, TensorShape({
+                           2,
+                       }));
+  t2.flat<tstring>().setValues({third_element, fourth_element});
+
+  std::vector<Tensor> outputs;
+
+  TF_ASSERT_OK(
+      session.Run({{input1, t1}, {input2, t2}}, {concat_op.output}, &outputs));
+
+  ASSERT_EQ(outputs.size(), 1);
+
+  Tensor& output = outputs[0];
+
+  EXPECT_EQ(output.flat<tstring>()(0), tstring("abc"));
+  EXPECT_EQ(output.flat<tstring>()(1), tstring("def"));
+  EXPECT_EQ(output.flat<tstring>()(2), tstring("ghi"));
+  EXPECT_EQ(output.flat<tstring>()(3), tstring("jkl"));
+
+  // 7. Mutates the upstream `owned_tstrings` should not change the output
+  //    because Concat should always deep copy the data content even when
+  //    the input `tstring` are of view type. This is served as a guardrail to
+  //    simulate use-after-free scenario when upstream `tstring` is freed but we
+  //    still want to manipulate downstream output.
+  owned_tstrings[0].mdata()[0] = 'q';
+  owned_tstrings[1].mdata()[0] = 'z';
+  owned_tstrings[2].mdata()[0] = 'x';
+  owned_tstrings[3].mdata()[0] = 'y';
+
+  EXPECT_EQ(output.flat<tstring>()(0), tstring("abc"));
+  EXPECT_EQ(output.flat<tstring>()(1), tstring("def"));
+  EXPECT_EQ(output.flat<tstring>()(2), tstring("ghi"));
+  EXPECT_EQ(output.flat<tstring>()(3), tstring("jkl"));
 }
 
-BENCHMARK(BM_ConcatManyDim1bfloat16)->Arg(18)->Arg(34)->Arg(60);
+void BM_ConcatManyDim1bfloat16(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
 
-static void MemcpyAlternativeHelper(int iters, int concat_dimension, int dim2) {
-  testing::StopTiming();
+  ConcatManyHelper<bfloat16>(state, 1, dim2);
+}
 
+BENCHMARK(BM_ConcatManyDim1bfloat16)->UseRealTime()->Arg(18)->Arg(34)->Arg(60);
+
+void MemcpyAlternativeHelper(::testing::benchmark::State& state, int dim2) {
   const int kDim1 = 100;
   std::vector<float> data1(kDim1 * dim2, 1.0f);
   std::vector<float> data2(kDim1 * dim2, 2.0f);
 
-  testing::BytesProcessed(static_cast<int64>(iters) *
-                          ((kDim1 * dim2) + (kDim1 * dim2)) * sizeof(float));
-  testing::StartTiming();
-  while (--iters > 0) {
+  for (auto s : state) {
     const size_t n0 = data1.size();
     const size_t n1 = data2.size();
     float* result = new float[n0 + n1];
@@ -144,23 +293,37 @@ static void MemcpyAlternativeHelper(int iters, int concat_dimension, int dim2) {
     memcpy(&result[n0], &data2[0], n1 * sizeof(float));
     delete[] result;
   }
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) *
+                          ((kDim1 * dim2) + (kDim1 * dim2)) * sizeof(float));
 }
 
-static void BM_MemcpyAlternativeDim0(int iters, int dim2) {
-  MemcpyAlternativeHelper(iters, 0, dim2);
+void BM_MemcpyAlternativeDim0(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  MemcpyAlternativeHelper(state, dim2);
 }
-static void BM_MemcpyAlternativeDim1(int iters, int dim2) {
-  MemcpyAlternativeHelper(iters, 1, dim2);
+void BM_MemcpyAlternativeDim1(::testing::benchmark::State& state) {
+  const int dim2 = state.range(0);
+
+  MemcpyAlternativeHelper(state, dim2);
 }
 
-BENCHMARK(BM_MemcpyAlternativeDim0)->Arg(1000)->Arg(100000)->Arg(1000000);
-BENCHMARK(BM_MemcpyAlternativeDim1)->Arg(1000)->Arg(100000)->Arg(1000000);
+BENCHMARK(BM_MemcpyAlternativeDim0)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
+BENCHMARK(BM_MemcpyAlternativeDim1)
+    ->UseRealTime()
+    ->Arg(1000)
+    ->Arg(100000)
+    ->Arg(1000000);
 
 typedef Eigen::TensorMap<Eigen::Tensor<bfloat16, 1, Eigen::RowMajor>,
-                         Eigen::Unaligned> EigenMap;
-static void MemcpyManyAlternative1(int iters, int dim2) {
-  testing::StopTiming();
-
+                         Eigen::Unaligned>
+    EigenMap;
+void MemcpyManyAlternative1(::testing::benchmark::State& state) {
+  int dim2 = state.range(0);
   const int kDim1 = 40000;
   const int kNumCopies = 64;
   const int size = kDim1 * dim2 * kNumCopies;
@@ -168,10 +331,7 @@ static void MemcpyManyAlternative1(int iters, int dim2) {
   EigenMap map(data, size);
   map.setRandom();
 
-  testing::BytesProcessed(static_cast<int64>(iters) * kDim1 * dim2 *
-                          kNumCopies * sizeof(bfloat16));
-  testing::StartTiming();
-  while (iters-- > 0) {
+  for (auto s : state) {
     std::vector<bfloat16*> inputs(kNumCopies);
     for (int i = 0; i < kNumCopies; ++i) {
       inputs[i] = &data[i * kDim1 * dim2];
@@ -181,7 +341,7 @@ static void MemcpyManyAlternative1(int iters, int dim2) {
       bfloat16* output = &result[j * dim2];
       for (int i = 0; i < kDim1; ++i) {
         if (i + 1 < kDim1) {
-          port::prefetch<port::PREFETCH_HINT_T0>(inputs[j] + dim2);
+          absl::PrefetchToLocalCache(inputs[j] + dim2);
         }
         memcpy(output, inputs[j], dim2 * sizeof(bfloat16));
         inputs[j] += dim2;
@@ -191,11 +351,12 @@ static void MemcpyManyAlternative1(int iters, int dim2) {
     delete[] result;
   }
   delete[] data;
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * kDim1 *
+                          dim2 * kNumCopies * sizeof(bfloat16));
 }
 
-static void MemcpyManyAlternative2(int iters, int dim2) {
-  testing::StopTiming();
-
+void MemcpyManyAlternative2(::testing::benchmark::State& state) {
+  int dim2 = state.range(0);
   const int kDim1 = 40000;
   const int kNumCopies = 64;
   const int size = kDim1 * dim2 * kNumCopies;
@@ -203,11 +364,8 @@ static void MemcpyManyAlternative2(int iters, int dim2) {
   EigenMap map(data, size);
   map.setRandom();
 
-  testing::BytesProcessed(static_cast<int64>(iters) * kDim1 * dim2 *
-                          kNumCopies * sizeof(bfloat16));
-  testing::StartTiming();
   std::vector<bfloat16*> inputs(kNumCopies);
-  while (--iters > 0) {
+  for (auto s : state) {
     bfloat16* result = new bfloat16[size];
     for (int i = 0; i < kNumCopies; ++i) {
       inputs[i] = &data[i * kDim1 * dim2];
@@ -216,7 +374,7 @@ static void MemcpyManyAlternative2(int iters, int dim2) {
     for (int i = 0; i < kDim1; ++i) {
       for (int j = 0; j < kNumCopies; ++j) {
         if (j + 1 < kNumCopies) {
-          port::prefetch<port::PREFETCH_HINT_T0>(inputs[j + 1]);
+          absl::PrefetchToLocalCache(inputs[j + 1]);
         }
         memcpy(output, inputs[j], dim2 * sizeof(bfloat16));
         inputs[j] += dim2;
@@ -226,6 +384,9 @@ static void MemcpyManyAlternative2(int iters, int dim2) {
     delete[] result;
   }
   delete[] data;
+
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * kDim1 *
+                          dim2 * kNumCopies * sizeof(bfloat16));
 }
 
 BENCHMARK(MemcpyManyAlternative1)

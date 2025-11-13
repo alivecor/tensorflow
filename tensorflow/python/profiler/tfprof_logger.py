@@ -16,18 +16,16 @@
 
 OpLogProto is used to add extra model information for offline analysis.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import sys
 
-import six
 from tensorflow.core.profiler import tfprof_log_pb2
+from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.platform import gfile
+from tensorflow.python.profiler.internal import flops_registry  # pylint: disable=unused-import
+from tensorflow.python.util.tf_export import tf_export
 
 TRAINABLE_VARIABLES = '_trainable_variables'
 REGISTERED_FLOP_STATS = 'flops'
@@ -62,6 +60,15 @@ def _fill_missing_graph_shape(graph, run_meta):
   return graph
 
 
+def _str_id(s, str_to_id):
+  """Maps string to id."""
+  num = str_to_id.get(s, None)
+  if num is None:
+    num = len(str_to_id)
+    str_to_id[s] = num
+  return num
+
+
 def _get_logged_ops(graph, run_meta=None, add_trace=True,
                     add_trainable_var=True):
   """Extract trainable model parameters and FLOPs for ops from a Graph.
@@ -70,16 +77,19 @@ def _get_logged_ops(graph, run_meta=None, add_trace=True,
     graph: tf.Graph.
     run_meta: RunMetadata proto used to complete shape information.
     add_trace: Whether to add op trace information.
-    add_trainable_var: Whether to assign tf.trainable_variables() op type
-      '_trainable_variables'.
+    add_trainable_var: Whether to assign tf.compat.v1.trainable_variables() op
+      type '_trainable_variables'.
   Returns:
     logged_ops: dict mapping from op_name to OpLogEntry.
+    string_to_id: dict mapping from string to id.
   """
   if run_meta:
     graph = _fill_missing_graph_shape(graph, run_meta)
 
   op_missing_shape = 0
   logged_ops = {}
+  string_to_id = {}
+  string_to_id['none'] = len(string_to_id)
   # TODO(xpan): Work with Profiler more efficiently.
   for op in graph.get_operations():
     try:
@@ -98,13 +108,15 @@ def _get_logged_ops(graph, run_meta=None, add_trace=True,
       add_entry = True
 
     if add_trace:
-      for tb in op.traceback_with_start_lines:
-        trace = entry.code_def.traces.add()
-        trace.file = tb[0] if tb[0] else 'none'
-        trace.lineno = tb[1] if tb[1] else -1
-        trace.function = tb[2] if tb[2] else 'none'
-        trace.line = tb[3] if tb[3] else 'none'
-        trace.func_start_line = tb[4] if tb[4] else -1
+      if op.traceback:
+        for filename, lineno, funcname, line in op.traceback:
+          trace = entry.code_def.traces.add()
+          trace.file_id = _str_id(filename, string_to_id) if filename else 0
+          trace.lineno = lineno if lineno else -1
+          trace.function_id = _str_id(funcname, string_to_id) if funcname else 0
+          trace.line_id = _str_id(line, string_to_id) if line else 0
+          # TODO(slebedev): remove this unused field from the proto.
+          trace.func_start_line = -1
       add_entry = True
 
     if add_entry:
@@ -123,34 +135,41 @@ def _get_logged_ops(graph, run_meta=None, add_trace=True,
   if op_missing_shape > 0 and not run_meta:
     sys.stderr.write('%d ops no flops stats due to incomplete shapes.\n' %
                      op_missing_shape)
-  return logged_ops
+  return logged_ops, string_to_id
 
 
-def _merge_default_with_oplog(graph, op_log=None, run_meta=None,
-                              add_trace=True, add_trainable_var=True):
+def merge_default_with_oplog(graph, op_log=None, run_meta=None,
+                             add_trace=True, add_trainable_var=True):
   """Merge the tfprof default extra info with caller's op_log.
 
   Args:
-    graph: tf.Graph.
+    graph: tf.Graph. If None and eager execution is not enabled, use
+        default graph.
     op_log: OpLogProto proto.
     run_meta: RunMetadata proto used to complete shape information.
     add_trace: Whether to add op trace information.
-    add_trainable_var: Whether to assign tf.trainable_variables() op type
-      '_trainable_variables'.
+    add_trainable_var: Whether to assign tf.compat.v1.trainable_variables() op
+      type '_trainable_variables'.
   Returns:
     tmp_op_log: Merged OpLogProto proto.
   """
+  if not graph and not context.executing_eagerly():
+    graph = ops.get_default_graph()
+
   tmp_op_log = tfprof_log_pb2.OpLogProto()
-  logged_ops = _get_logged_ops(
+  if not graph:
+    return tmp_op_log
+
+  logged_ops, string_to_id = _get_logged_ops(
       graph, run_meta, add_trace=add_trace, add_trainable_var=add_trainable_var)
 
   if not op_log:
     tmp_op_log.log_entries.extend(logged_ops.values())
   else:
-    all_ops = dict()
+    all_ops = {}
     for entry in op_log.log_entries:
       all_ops[entry.name] = entry
-    for op_name, entry in six.iteritems(logged_ops):
+    for op_name, entry in logged_ops.items():
       if op_name in all_ops:
         all_ops[op_name].types.extend(entry.types)
         if entry.float_ops > 0 and all_ops[op_name].float_ops == 0:
@@ -160,21 +179,26 @@ def _merge_default_with_oplog(graph, op_log=None, run_meta=None,
       else:
         all_ops[op_name] = entry
     tmp_op_log.log_entries.extend(all_ops.values())
+
+  for s, i in string_to_id.items():
+    tmp_op_log.id_to_string[i] = s
   return tmp_op_log
 
 
+@tf_export(v1=['profiler.write_op_log'])
 def write_op_log(graph, log_dir, op_log=None, run_meta=None, add_trace=True):
   """Log provided 'op_log', and add additional model information below.
 
-    The API also assigns ops in tf.trainable_variables() an op type called
-    '_trainable_variables'.
+    The API also assigns ops in tf.compat.v1.trainable_variables() an op type
+    called '_trainable_variables'.
     The API also logs 'flops' statistics for ops with op.RegisterStatistics()
     defined. flops calculation depends on Tensor shapes defined in 'graph',
     which might not be complete. 'run_meta', if provided, completes the shape
     information with best effort.
 
   Args:
-    graph: tf.Graph.
+    graph: tf.Graph. If None and eager execution is not enabled, use
+        default graph.
     log_dir: directory to write the log file.
     op_log: (Optional) OpLogProto proto to be written. If not provided, an new
         one is created.
@@ -183,7 +207,9 @@ def write_op_log(graph, log_dir, op_log=None, run_meta=None, add_trace=True):
     add_trace: Whether to add python code trace information.
         Used to support "code" view.
   """
-  op_log = _merge_default_with_oplog(graph, op_log, run_meta, add_trace)
+  if not graph and not context.executing_eagerly():
+    graph = ops.get_default_graph()
+  op_log = merge_default_with_oplog(graph, op_log, run_meta, add_trace)
 
   with gfile.Open(os.path.join(log_dir, 'tfprof_log'), 'w') as log:
     log.write(op_log.SerializeToString())

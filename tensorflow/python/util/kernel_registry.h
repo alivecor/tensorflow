@@ -14,8 +14,8 @@ limitations under the License.
 ==============================================================================*/
 
 // Functions for getting information about kernels registered in the binary.
-#ifndef THIRD_PARTY_TENSORFLOW_PYTHON_UTIL_KERNEL_REGISTRY_H_
-#define THIRD_PARTY_TENSORFLOW_PYTHON_UTIL_KERNEL_REGISTRY_H_
+#ifndef TENSORFLOW_PYTHON_UTIL_KERNEL_REGISTRY_H_
+#define TENSORFLOW_PYTHON_UTIL_KERNEL_REGISTRY_H_
 
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/platform/types.h"
@@ -26,9 +26,9 @@ namespace swig {
 // Returns the kernel class name required to execute <node_def> on the device
 // type of <node_def.device>, or an empty string if the kernel class is not
 // found or the device name is invalid.
-string TryFindKernelClass(const string& serialized_node_def);
+std::string TryFindKernelClass(const std::string& serialized_node_def);
 
 }  // namespace swig
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_PYTHON_UTIL_KERNEL_REGISTRY_H_
+#endif  // TENSORFLOW_PYTHON_UTIL_KERNEL_REGISTRY_H_

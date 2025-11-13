@@ -15,14 +15,18 @@ limitations under the License.
 
 #include "tensorflow/examples/wav_to_spectrogram/wav_to_spectrogram.h"
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "tensorflow/cc/ops/audio_ops.h"
 #include "tensorflow/cc/ops/const_op.h"
 #include "tensorflow/cc/ops/image_ops.h"
 #include "tensorflow/cc/ops/standard_ops.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/graph/default_device.h"
 #include "tensorflow/core/graph/graph_def_builder.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -33,7 +37,6 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session.h"
-#include "tensorflow/core/util/command_line_flags.h"
 
 using tensorflow::DT_FLOAT;
 using tensorflow::DT_UINT8;
@@ -41,10 +44,9 @@ using tensorflow::Output;
 using tensorflow::TensorShape;
 
 // Runs a TensorFlow graph to convert an audio file into a visualization.
-tensorflow::Status WavToSpectrogram(const tensorflow::string& input_wav,
-                                    tensorflow::int32 window_size,
-                                    tensorflow::int32 stride, float brightness,
-                                    const tensorflow::string& output_image) {
+absl::Status WavToSpectrogram(const std::string& input_wav, int32_t window_size,
+                              int32_t stride, float brightness,
+                              const std::string& output_image) {
   auto root = tensorflow::Scope::NewRootScope();
   using namespace tensorflow::ops;  // NOLINT(build/namespaces)
   // The following block creates a TensorFlow graph that:
@@ -53,7 +55,8 @@ tensorflow::Status WavToSpectrogram(const tensorflow::string& input_wav,
   //  - Scales, clamps, and converts that spectrogram to 0 to 255 uint8's.
   //  - Reshapes the tensor so that it's [height, width, 1] for imaging.
   //  - Encodes it as a PNG stream and saves it out to a file.
-  Output file_reader = ReadFile(root.WithOpName("input_wav"), input_wav);
+  Output file_reader =
+      tensorflow::ops::ReadFile(root.WithOpName("input_wav"), input_wav);
   DecodeWav wav_decoder =
       DecodeWav(root.WithOpName("wav_decoder"), file_reader);
   Output spectrogram = AudioSpectrogram(root.WithOpName("spectrogram"),
@@ -69,10 +72,10 @@ tensorflow::Status WavToSpectrogram(const tensorflow::string& input_wav,
   Output expand_dims =
       ExpandDims(root.WithOpName("expand_dims"), cast, expand_dims_const);
   Output squeeze = Squeeze(root.WithOpName("squeeze"), expand_dims,
-                           Squeeze::Attrs().SqueezeDims({0}));
+                           Squeeze::Attrs().Axis({0}));
   Output png_encoder = EncodePng(root.WithOpName("png_encoder"), squeeze);
-  WriteFile file_writer =
-      WriteFile(root.WithOpName("output_image"), output_image, png_encoder);
+  tensorflow::ops::WriteFile file_writer = tensorflow::ops::WriteFile(
+      root.WithOpName("output_image"), output_image, png_encoder);
   tensorflow::GraphDef graph;
   TF_RETURN_IF_ERROR(root.ToGraphDef(&graph));
 
@@ -93,5 +96,5 @@ tensorflow::Status WavToSpectrogram(const tensorflow::string& input_wav,
   TF_RETURN_IF_ERROR(
       session->Run({{"brightness_placeholder", brightness_tensor}}, {},
                    {"output_image"}, nullptr));
-  return tensorflow::Status::OK();
+  return absl::OkStatus();
 }

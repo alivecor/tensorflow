@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_UTIL_TRANSFORM_OUTPUT_ITERATOR_H_
-#define TENSORFLOW_UTIL_TRANSFORM_OUTPUT_ITERATOR_H_
+#ifndef TENSORFLOW_CORE_UTIL_TRANSFORM_OUTPUT_ITERATOR_H_
+#define TENSORFLOW_CORE_UTIL_TRANSFORM_OUTPUT_ITERATOR_H_
 
 #include <iostream>
 #include <iterator>
@@ -24,7 +24,7 @@ namespace tensorflow {
 template <typename StoreType, typename InputType, typename ConversionOp,
           typename OffsetT = ptrdiff_t>
 class TransformOutputIterator {
- private:
+ protected:
   // Proxy object
   struct Reference {
     StoreType* ptr;
@@ -146,4 +146,4 @@ class TransformOutputIterator {
 
 }  // end namespace tensorflow
 
-#endif  // TENSORFLOW_UTIL_TRANSFORM_OUTPUT_ITERATOR_H_
+#endif  // TENSORFLOW_CORE_UTIL_TRANSFORM_OUTPUT_ITERATOR_H_

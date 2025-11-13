@@ -16,42 +16,44 @@ limitations under the License.
 #ifndef TENSORFLOW_C_C_API_INTERNAL_H_
 #define TENSORFLOW_C_C_API_INTERNAL_H_
 
-#include "tensorflow/c/c_api.h"
-
+#include <list>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "tensorflow/c/c_api.h"
+
+// clang-format off
+// Required for IS_MOBILE_PLATFORM
+#include "tensorflow/core/platform/platform.h"
+// clang-format on
+
+#include "tensorflow/c/tf_status_internal.h"
+#include "tensorflow/c/tf_tensor_internal.h"
+#if !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+#include "tensorflow/core/framework/op_gen_lib.h"
+#endif  // !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+#include "tensorflow/core/common_runtime/graph_constructor.h"
 #include "tensorflow/core/common_runtime/shape_refiner.h"
+#include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/graph/graph.h"
-#include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/node_builder.h"
-#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/mutex.h"
+#include "tensorflow/core/platform/status.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session.h"
 
 namespace tensorflow {
 class Device;
 class DeviceMgr;
+class ServerInterface;
 }  // namespace tensorflow
 
 // Internal structures used by the C API. These are likely to change and should
 // not be depended on.
-
-struct TF_Status {
-  tensorflow::Status status;
-};
-
-struct TF_Tensor {
-  ~TF_Tensor();
-
-  TF_DataType dtype;
-  tensorflow::TensorShape shape;
-  tensorflow::TensorBuffer* buffer;
-};
 
 struct TF_SessionOptions {
   tensorflow::SessionOptions options;
@@ -69,23 +71,32 @@ struct TF_Library {
 struct TF_Graph {
   TF_Graph();
 
-  tensorflow::mutex mu;
-  tensorflow::Graph graph GUARDED_BY(mu);
+  mutable tensorflow::mutex mu;
+  tensorflow::Graph graph TF_GUARDED_BY(mu);
 
   // Runs shape inference.
-  tensorflow::ShapeRefiner refiner GUARDED_BY(mu);
+  tensorflow::ShapeRefiner refiner TF_GUARDED_BY(mu);
 
   // Maps from name of an operation to the Node* in 'graph'.
   std::unordered_map<tensorflow::string, tensorflow::Node*> name_map
-      GUARDED_BY(mu);
+      TF_GUARDED_BY(mu);
 
-  // TF_Graph may only / must be deleted when
-  //   num_sessions == 0 && delete_requested == true
-
-  // num_sessions incremented by TF_NewSession, and decremented by
+  // The keys of this map are all the active sessions using this graph. Each
+  // value records whether the graph has been mutated since the corresponding
+  // session has been run (this is detected in RecordMutation function). If the
+  // string is empty, no mutation has occurred. Otherwise the string is a
+  // description of the mutation suitable for returning to the user.
+  //
+  // Sessions are added to this map in TF_NewSession, and removed in
   // TF_DeleteSession.
-  int num_sessions GUARDED_BY(mu);
-  bool delete_requested GUARDED_BY(mu);  // set true by TF_DeleteGraph
+  // TF_Graph may only / must be deleted when
+  //   sessions.size() == 0 && delete_requested == true
+  //
+  // TODO(b/74949947): mutations currently trigger a warning instead of a bad
+  // status, this should be reverted when possible.
+  tensorflow::gtl::FlatMap<TF_Session*, tensorflow::string> sessions
+      TF_GUARDED_BY(mu);
+  bool delete_requested TF_GUARDED_BY(mu);  // set true by TF_DeleteGraph
 
   // Used to link graphs contained in TF_WhileParams to the parent graph that
   // will eventually contain the full while loop.
@@ -105,25 +116,43 @@ struct TF_OperationDescription {
 
 struct TF_Operation {
   tensorflow::Node node;
+
+ private:
+  ~TF_Operation() = default;
 };
 
 struct TF_Session {
   TF_Session(tensorflow::Session* s, TF_Graph* g);
 
   tensorflow::Session* session;
-  TF_Graph* graph;
+  TF_Graph* const graph;
 
-  tensorflow::mutex mu;
+  tensorflow::mutex mu TF_ACQUIRED_AFTER(TF_Graph::mu);
   int last_num_graph_nodes;
 
-  // NOTE(ashankar): Experimental fields to help keep the
-  // buffers of a TF_Tensor pinned in device memory.
-  const tensorflow::DeviceMgr* device_mgr;   // Owned by session.
-  std::vector<tensorflow::Device*> devices;  // Owned by device_mgr.
+  // If true, TF_SessionRun and similar methods will call
+  // ExtendSessionGraphHelper before running the graph (this is the default
+  // public behavior). Can be set to false if the caller needs to call
+  // ExtendSessionGraphHelper manually.
+  std::atomic<bool> extend_before_run;
 };
 
 struct TF_ImportGraphDefOptions {
   tensorflow::ImportGraphDefOptions opts;
+
+  // Backing memory for TensorId fields in opts.
+  // TODO(skyewm): it'd be better if ImportGraphDefOptions owned this.
+  std::vector<tensorflow::string> tensor_id_data;
+};
+
+struct TF_ImportGraphDefResults {
+  std::vector<TF_Output> return_tensors;
+  std::vector<TF_Operation*> return_nodes;
+  std::vector<const char*> missing_unused_key_names;
+  std::vector<int> missing_unused_key_indexes;
+
+  // Backing memory for missing_unused_key_names values.
+  std::vector<tensorflow::string> missing_unused_key_names_data;
 };
 
 struct TF_DeviceList {
@@ -131,26 +160,67 @@ struct TF_DeviceList {
 };
 
 struct TF_Function {
-  // Currently contains a single function and no gradients
-  tensorflow::FunctionDefLibrary fdef_lib;
+  tensorflow::FunctionRecord* record;
 };
+
+struct TF_ApiDefMap {
+  explicit TF_ApiDefMap(const tensorflow::OpList& op_list)
+      :
+#if !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+        api_def_map(op_list),
+#endif  // !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+        update_docs_called(false) {
+  }
+
+#if !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+  tensorflow::ApiDefMap api_def_map TF_GUARDED_BY(lock);
+#endif  // !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+  bool update_docs_called TF_GUARDED_BY(lock);
+  tensorflow::mutex lock;
+};
+
+#if !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
+struct TF_Server {
+  TF_Server(std::unique_ptr<tensorflow::ServerInterface> server);
+
+  const tensorflow::string target;
+  std::unique_ptr<tensorflow::ServerInterface> server;
+};
+#endif  // !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)
 
 namespace tensorflow {
 
-class TensorCApi {
- public:
-  static TensorBuffer* Buffer(const Tensor& tensor) { return tensor.buf_; }
-  static Tensor MakeTensor(TF_DataType type, const TensorShape& shape,
-                           TensorBuffer* buf) {
-    return Tensor(static_cast<DataType>(type), shape, buf);
-  }
-};
+// Set the shapes and types of the output's handle.
+//
+// The lengths of the arrays pointed to by `shapes`, `ranks`, and `types` must
+// all be equal to `num_shapes_and_types`. If `ranks[i] != -1`, (i.e., if the
+// rank is known), then it must be equal to the length of `shapes[i]`; if
+// `ranks[i] == 1`, then `shapes[i]` may be nullptr.
+//
+// TODO(akshayka): Implement a corresponding getter method.
+void TF_GraphSetOutputHandleShapesAndTypes(TF_Graph* graph, TF_Output output,
+                                           int num_shapes_and_types,
+                                           const int64_t** shapes,
+                                           const int* ranks,
+                                           const TF_DataType* types,
+                                           TF_Status* status);
 
-Status TF_TensorToTensor(const TF_Tensor* src, Tensor* dst);
+void RecordMutation(TF_Graph* graph, const TF_Operation& op,
+                    const char* mutation_type)
+    TF_EXCLUSIVE_LOCKS_REQUIRED(graph->mu);
 
-TF_Tensor* TF_TensorFromTensor(const Tensor& src, TF_Status* status);
+bool ExtendSessionGraphHelper(TF_Session* session, TF_Status* status)
+    TF_LOCKS_EXCLUDED(session->graph->mu, session->mu);
 
-Status MessageToBuffer(const tensorflow::protobuf::Message& in, TF_Buffer* out);
+std::string getTF_OutputDebugString(TF_Output node);
+
+// Set whether to propagate assigned device information when constructing a new
+// Graph from a GraphDef. By default assigned device information is not copied
+// and is re-computed by the runtime.
+inline void TF_ImportGraphDefOptionsSetPropagateDeviceSpec(
+    TF_ImportGraphDefOptions* opts, unsigned char propagate_device_spec) {
+  opts->opts.propagate_device_spec = propagate_device_spec;
+}
 
 }  // end namespace tensorflow
 

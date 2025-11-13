@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/mfcc_mel_filterbank.h"
 
+#include <limits>
 #include <vector>
 
 #include "tensorflow/core/platform/test.h"
@@ -34,11 +35,9 @@ TEST(MfccMelFilterbankTest, AgreesWithPythonGoldenValues) {
     input.push_back(i + 1);
   }
   const int kChannelCount = 20;
-  filterbank.Initialize(input.size(),
-                        22050 /* sample rate */,
-                        kChannelCount /* channels */,
-                        20.0 /*  lower frequency limit */,
-                        4000.0 /* upper frequency limit */);
+  filterbank.Initialize(
+      input.size(), 22050 /* sample rate */, kChannelCount /* channels */,
+      20.0 /*  lower frequency limit */, 4000.0 /* upper frequency limit */);
 
   std::vector<double> output;
   filterbank.Compute(input, &output);
@@ -65,12 +64,9 @@ TEST(MfccMelFilterbankTest, IgnoresExistingContentOfOutputVector) {
   std::vector<double> input;
   std::vector<double> output;
 
-  filterbank.Initialize(kSampleCount,
-                        22050 /* sample rate */,
-                        20 /* channels */,
-                        20.0 /*  lower frequency limit */,
+  filterbank.Initialize(kSampleCount, 22050 /* sample rate */,
+                        20 /* channels */, 20.0 /*  lower frequency limit */,
                         4000.0 /* upper frequency limit */);
-
 
   // First call with nonzero input value, and an empty output vector,
   // will resize the output and fill it with the correct, nonzero outputs.
@@ -88,6 +84,39 @@ TEST(MfccMelFilterbankTest, IgnoresExistingContentOfOutputVector) {
   for (const double value : output) {
     EXPECT_EQ(0.0, value);
   }
+}
+
+TEST(MfccMelFilterbankTest, FailsWhenChannelsGreaterThanMaxIntValue) {
+  // Test for bug where vector throws a length_error when it suspects the size
+  // to be more than it's max_size. For now, we fail initialization when the
+  // number of requested channels is >= the maximum value int can take (since
+  // num_channels_ is an int).
+  MfccMelFilterbank filterbank;
+
+  const int kSampleCount = 513;
+  std::size_t num_channels = std::numeric_limits<int>::max();
+  bool initialized = filterbank.Initialize(
+      kSampleCount, 2 /* sample rate */, num_channels /* channels */,
+      1.0 /*  lower frequency limit */, 5.0 /* upper frequency limit */);
+
+  EXPECT_FALSE(initialized);
+}
+
+TEST(MfccMelFilterbankTest, FailsWhenChannelsGreaterThanMaxSize) {
+  // Test for bug where vector throws a length_error when it suspects the size
+  // to be more than it's max_size. For now, we fail initialization when the
+  // number of requested channels is > than std::vector<double>::max_size().
+  MfccMelFilterbank filterbank;
+
+  const int kSampleCount = 513;
+  // Set num_channels to exceed the max_size a double vector can
+  // theoretically take.
+  std::size_t num_channels = std::vector<double>().max_size() + 1;
+  bool initialized = filterbank.Initialize(
+      kSampleCount, 2 /* sample rate */, num_channels /* channels */,
+      1.0 /*  lower frequency limit */, 5.0 /* upper frequency limit */);
+
+  EXPECT_FALSE(initialized);
 }
 
 }  // namespace tensorflow

@@ -13,24 +13,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/tools/graph_transforms/fold_constants_lib.h"
-
 #include "tensorflow/core/common_runtime/constant_folding.h"
-#include "tensorflow/core/graph/graph_constructor.h"
+#include "tensorflow/core/common_runtime/graph_constructor.h"
 #include "tensorflow/core/graph/node_builder.h"
 #include "tensorflow/core/graph/subgraph.h"
+#include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/init_main.h"
 #include "tensorflow/core/public/session.h"
-#include "tensorflow/core/util/command_line_flags.h"
+#include "tensorflow/tools/graph_transforms/fold_constants_lib.h"
 #include "tensorflow/tools/graph_transforms/transform_utils.h"
 
 namespace tensorflow {
 namespace graph_transforms {
 
 // Clears the device field of all ops in the graph.
-Status InsertLogging(const GraphDef& input_graph_def,
-                     const TransformFuncContext& context,
-                     GraphDef* output_graph_def) {
+absl::Status InsertLogging(const GraphDef& input_graph_def,
+                           const TransformFuncContext& context,
+                           GraphDef* output_graph_def) {
   std::unordered_set<string> ops;
   bool has_ops;
   if (context.params.count("op")) {
@@ -63,10 +62,10 @@ Status InsertLogging(const GraphDef& input_graph_def,
   bool show_op;
   TF_RETURN_IF_ERROR(context.GetOneBoolParameter("show_op", false, &show_op));
 
-  int32 first_n;
+  int32_t first_n;
   TF_RETURN_IF_ERROR(context.GetOneInt32Parameter("first_n", -1, &first_n));
 
-  int32 summarize;
+  int32_t summarize;
   TF_RETURN_IF_ERROR(
       context.GetOneInt32Parameter("summarize", 1024, &summarize));
 
@@ -79,8 +78,8 @@ Status InsertLogging(const GraphDef& input_graph_def,
       string suffix;
       NodeNamePartsFromInput(canonical_input, &prefix, &name, &suffix);
       const string output_index_string = suffix.substr(1, suffix.size() - 1);
-      int32 output_index;
-      if (!strings::safe_strto32(output_index_string, &output_index)) {
+      int32_t output_index;
+      if (!absl::SimpleAtoi(output_index_string, &output_index)) {
         return errors::InvalidArgument("Couldn't understand output number in ",
                                        input);
       }
@@ -101,7 +100,7 @@ Status InsertLogging(const GraphDef& input_graph_def,
     const bool op_matches = (ops.count(node.op()) > 0);
     bool prefix_matches = false;
     for (const string& prefix : prefixes) {
-      if (StringPiece(node.name()).starts_with(prefix)) {
+      if (absl::StartsWith(node.name(), prefix)) {
         prefix_matches = true;
       }
     }
@@ -114,7 +113,7 @@ Status InsertLogging(const GraphDef& input_graph_def,
       TF_RETURN_IF_ERROR(GetInOutTypes(node, &input_types, &output_types));
       NodeDef* print_node = logged_graph_def.mutable_node()->Add();
       print_node->set_op("Print");
-      print_node->set_name(strings::StrCat(node.name(), name_suffix));
+      print_node->set_name(absl::StrCat(node.name(), name_suffix));
       string node_message;
       if (show_op) {
         node_message += ";" + node.op() + ";";
@@ -129,14 +128,14 @@ Status InsertLogging(const GraphDef& input_graph_def,
       print_node->add_input(node.name() + ":0");
       SetNodeAttr("T", output_types[0], print_node);
       for (int output_index : node_outputs[node.name()]) {
-        print_node->add_input(strings::StrCat(node.name(), ":", output_index));
+        print_node->add_input(absl::StrCat(node.name(), ":", output_index));
       }
       SetNodeAttr("U", output_types, print_node);
       ignore_when_renaming.insert(print_node->name());
       // Rewrite the graph so all references to the first input of the original
       // op now pull from the print op instead, so it's executed.
       inputs_to_rename[node.name() + ":0"] =
-          strings::StrCat(node.name(), name_suffix, ":0");
+          absl::StrCat(node.name(), name_suffix, ":0");
     }
   }
 

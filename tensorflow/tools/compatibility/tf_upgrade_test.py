@@ -14,12 +14,10 @@
 # ==============================================================================
 """Tests for tf upgrader."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+import io
 import os
 import tempfile
-import six
+
 from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test as test_lib
 from tensorflow.tools.compatibility import ast_edits
@@ -35,8 +33,8 @@ class TestUpgrade(test_util.TensorFlowTestCase):
   """
 
   def _upgrade(self, old_file_text):
-    in_file = six.StringIO(old_file_text)
-    out_file = six.StringIO()
+    in_file = io.StringIO(old_file_text)
+    out_file = io.StringIO()
     upgrader = ast_edits.ASTCodeUpgrader(tf_upgrade.TFAPIChangeSpec())
     count, report, errors = (
         upgrader.process_opened_file("test.py", in_file,
@@ -46,7 +44,7 @@ class TestUpgrade(test_util.TensorFlowTestCase):
   def testParseError(self):
     _, report, unused_errors, unused_new_text = self._upgrade(
         "import tensorflow as tf\na + \n")
-    self.assertTrue(report.find("Failed to parse") != -1)
+    self.assertNotEqual(report.find("Failed to parse"), -1)
 
   def testReport(self):
     text = "tf.mul(a, b)\n"
@@ -112,10 +110,10 @@ class TestUpgrade(test_util.TensorFlowTestCase):
     text = "tf.reverse(a, b)\n"
     _, unused_report, errors, new_text = self._upgrade(text)
     self.assertEqual(new_text, new_text)
-    self.assertEqual(errors, ["test.py:1: tf.reverse requires manual check."])
+    self.assertIn("tf.reverse requires manual check", errors[0])
 
   def testListComprehension(self):
-    def _test(input, output):
+    def _test(input, output):  # pylint: disable=redefined-builtin
       _, unused_report, errors, new_text = self._upgrade(input)
       self.assertEqual(new_text, output)
     _test("tf.concat(0,  \t[x for x in y])\n",

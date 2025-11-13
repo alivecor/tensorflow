@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/util/memmapped_file_system.h"
 
+#include <memory>
+
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/graph/graph_def_builder.h"
@@ -21,6 +23,10 @@ limitations under the License.
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/util/memmapped_file_system_writer.h"
+
+#ifdef PLATFORM_WINDOWS
+#undef DeleteFile
+#endif
 
 namespace tensorflow {
 
@@ -32,8 +38,9 @@ constexpr char kTensor2FileName[] = "memmapped_package://t2";
 constexpr char kProtoFileName[] = "memmapped_package://b";
 constexpr int kTestGraphDefVersion = 666;
 
-Status CreateMemmappedFileSystemFile(const string& filename, bool corrupted,
-                                     Tensor* test_tensor) {
+absl::Status CreateMemmappedFileSystemFile(const std::string& filename,
+                                           bool corrupted,
+                                           Tensor* test_tensor) {
   Env* env = Env::Default();
   MemmappedFileSystemWriter writer;
   TF_RETURN_IF_ERROR(writer.InitializeToFile(env, filename));
@@ -59,14 +66,14 @@ Status CreateMemmappedFileSystemFile(const string& filename, bool corrupted,
     // Flush and close the file.
     TF_RETURN_IF_ERROR(writer.FlushAndClose());
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 TEST(MemmappedFileSystemTest, SimpleTest) {
   const TensorShape test_tensor_shape = {10, 200};
   Tensor test_tensor(DT_FLOAT, test_tensor_shape);
-  const string dir = testing::TmpDir();
-  const string filename = io::JoinPath(dir, "memmapped_env_test");
+  const std::string dir = testing::TmpDir();
+  const std::string filename = io::JoinPath(dir, "memmapped_env_test");
   TF_ASSERT_OK(CreateMemmappedFileSystemFile(filename, false, &test_tensor));
 
   // Check that we can memmap the created file.
@@ -86,10 +93,10 @@ TEST(MemmappedFileSystemTest, SimpleTest) {
   // The memory region can be bigger but not less than Tensor size.
   ASSERT_GE(memory_region->length(), test_tensor.TotalBytes());
   EXPECT_EQ(test_tensor.tensor_data(),
-            StringPiece(static_cast<const char*>(memory_region->data()),
-                        test_tensor.TotalBytes()));
+            absl::string_view(static_cast<const char*>(memory_region->data()),
+                              test_tensor.TotalBytes()));
   // Check that GetFileSize works.
-  uint64 file_size = 0;
+  uint64_t file_size = 0;
   TF_ASSERT_OK(memmapped_env.GetFileSize(kTensor2FileName, &file_size));
   EXPECT_EQ(test_tensor.TotalBytes(), file_size);
 
@@ -127,32 +134,33 @@ TEST(MemmappedFileSystemTest, Corrupted) {
   // Create a corrupted file (it is not closed it properly).
   const TensorShape test_tensor_shape = {100, 200};
   Tensor test_tensor(DT_FLOAT, test_tensor_shape);
-  const string dir = testing::TmpDir();
-  const string filename = io::JoinPath(dir, "memmapped_env_corrupted_test");
+  const std::string dir = testing::TmpDir();
+  const std::string filename =
+      io::JoinPath(dir, "memmapped_env_corrupted_test");
   TF_ASSERT_OK(CreateMemmappedFileSystemFile(filename, true, &test_tensor));
   MemmappedFileSystem memmapped_env;
   ASSERT_NE(memmapped_env.InitializeFromFile(Env::Default(), filename),
-            Status::OK());
+            absl::OkStatus());
 }
 
 TEST(MemmappedFileSystemTest, ProxyToDefault) {
   MemmappedEnv memmapped_env(Env::Default());
-  const string dir = testing::TmpDir();
-  const string filename = io::JoinPath(dir, "test_file");
+  const std::string dir = testing::TmpDir();
+  const std::string filename = io::JoinPath(dir, "test_file");
   // Check that we can create write and read ordinary file.
   std::unique_ptr<WritableFile> writable_file_temp;
   TF_ASSERT_OK(memmapped_env.NewAppendableFile(filename, &writable_file_temp));
   // Making sure to clean up after the test finishes.
   const auto adh = [&memmapped_env, &filename](WritableFile* f) {
-      delete f;
-      TF_CHECK_OK(memmapped_env.DeleteFile(filename));
+    delete f;
+    TF_CHECK_OK(memmapped_env.DeleteFile(filename));
   };
   std::unique_ptr<WritableFile, decltype(adh)> writable_file(
       writable_file_temp.release(), adh);
-  const string test_string = "bla-bla-bla";
+  const std::string test_string = "bla-bla-bla";
   TF_ASSERT_OK(writable_file->Append(test_string));
   TF_ASSERT_OK(writable_file->Close());
-  uint64 file_length = 0;
+  uint64_t file_length = 0;
   TF_EXPECT_OK(memmapped_env.GetFileSize(filename, &file_length));
   EXPECT_EQ(test_string.length(), file_length);
   FileStatistics stat;

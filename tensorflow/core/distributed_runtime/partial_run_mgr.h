@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_PARTIAL_RUN_MGR_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_PARTIAL_RUN_MGR_H_
+#ifndef TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_PARTIAL_RUN_MGR_H_
+#define TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_PARTIAL_RUN_MGR_H_
 
 #include <unordered_map>
 
@@ -55,7 +55,7 @@ class PartialRunMgr {
   // Calls the final callback if the PartialRunRequest has already completed.
   // Otherwise stores the executor_status to be propagated when the
   // PartialRunRequest completes (PartialRunDone has been called).
-  void ExecutorDone(int step_id, const Status& executor_status);
+  void ExecutorDone(int step_id, const absl::Status& executor_status);
 
   // Calls done if the executor has already completed (ExecutorDone has been
   // called). Otherwise, stores the status and done callback, calling them when
@@ -63,7 +63,8 @@ class PartialRunMgr {
   // thread of either PartialRunDone or ExecutorDone.
   // If executor_status in ExecutorDone is not OK, it takes precedence over
   // status and is passed to the done callback.
-  void PartialRunDone(int step_id, StatusCallback done, const Status& status);
+  void PartialRunDone(int step_id, StatusCallback done,
+                      const absl::Status& status);
 
  private:
   // PartialRunState stores state associated with a pending partial run request.
@@ -73,15 +74,15 @@ class PartialRunMgr {
 
     bool executor_done = false;
     StatusCallback final_callback = nullptr;
-    Status final_status;
+    absl::Status final_status;
   };
 
   mutex mu_;
 
   std::unordered_map<int, std::unique_ptr<PartialRunState>>
-      step_id_to_partial_run_ GUARDED_BY(mu_);
+      step_id_to_partial_run_ TF_GUARDED_BY(mu_);
 };
 
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_PARTIAL_RUN_MGR_H_
+#endif  // TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_PARTIAL_RUN_MGR_H_

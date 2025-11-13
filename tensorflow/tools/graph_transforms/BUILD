@@ -1,19 +1,22 @@
 # Description:
 #   Utilities that perform useful transformations on graphs
 
-package(default_visibility = ["//visibility:public"])
-
-licenses(["notice"])  # Apache 2.0
-
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//tensorflow:strict.default.bzl", "py_strict_library")
 load(
     "//tensorflow:tensorflow.bzl",
     "if_not_windows",
-    "tf_copts",
+    "tf_cc_binary",
     "tf_cc_test",
-    "tf_py_test",
+    "tf_copts",
 )
+load("//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "tf_py_strict_test")
 
-exports_files(["LICENSE"])
+package(
+    # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
 
 cc_library(
     name = "transform_utils",
@@ -23,10 +26,10 @@ cc_library(
     hdrs = [
         "transform_utils.h",
     ],
+    compatible_with = get_compatible_with_portable(),
     copts = tf_copts(),
     visibility = ["//visibility:public"],
     deps = [
-        "//tensorflow/core:core_cpu_base",
         "//tensorflow/core:framework",
         "//tensorflow/core:framework_internal",
         "//tensorflow/core:lib",
@@ -65,10 +68,8 @@ cc_library(
     copts = tf_copts(),
     visibility = ["//visibility:public"],
     deps = [
-        "//tensorflow/core:core_cpu",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
-        "//tensorflow/core:tensorflow",
     ],
 )
 
@@ -93,29 +94,30 @@ cc_library(
     srcs = [
         "add_default_attributes.cc",
         "backports.cc",
-        "fake_quantize_training.cc",
+        "flatten_atrous.cc",
         "fold_batch_norms.cc",
         "fold_constants_lib.cc",
         "fold_old_batch_norms.cc",
         "freeze_requantization_ranges.cc",
         "fuse_convolutions.cc",
+        "inline_partitionedcall.cc",
         "insert_logging.cc",
-        "remove_ema.cc",
         "obfuscate_names.cc",
+        "quantize_nodes.cc",
+        "quantize_weights.cc",
         "remove_attribute.cc",
+        "remove_control_dependencies.cc",
         "remove_device.cc",
         "remove_nodes.cc",
         "rename_attribute.cc",
+        "rename_node.cc",
         "rename_op.cc",
+        "round_weights.cc",
         "set_device.cc",
         "sort_by_execution_order.cc",
         "sparsify_gather.cc",
         "strip_unused_nodes.cc",
-    ] + if_not_windows([
-        "quantize_nodes.cc",
-        "quantize_weights.cc",
-        "round_weights.cc",
-    ]),
+    ],
     hdrs = [
         "fold_constants_lib.h",
     ],
@@ -123,17 +125,43 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":transform_utils",
+        "//tensorflow/c:checkpoint_reader",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
         "//tensorflow/core:framework_internal",
+        "//tensorflow/core:graph",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:tensorflow",
+        "//tensorflow/core/kernels:quantization_utils",
+        "//tensorflow/core/util/tensor_bundle",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
     ] + if_not_windows([
-        "//tensorflow/core/kernels:quantized_ops",
-        "//tensorflow/core/kernels:remote_fused_graph_rewriter_transform",
-        "//tensorflow/core/kernels/hexagon:hexagon_rewriter_transform",
+        "//tensorflow/core:sparse_ops_op_lib",
+        "//tensorflow/core:parsing_ops_op_lib",
+        "//tensorflow/core:sendrecv_ops_op_lib",
+        "//tensorflow/core:io_ops_op_lib",
+        "//tensorflow/core:logging_ops_op_lib",
+        "//tensorflow/core:lookup_ops_op_lib",
+        "//tensorflow/core:data_flow_ops_op_lib",
+        "//tensorflow/core:no_op_op_lib",
+        "//tensorflow/core:state_ops_op_lib",
+        "//tensorflow/core:user_ops_op_lib",
+        "//tensorflow/core:training_ops_op_lib",
+        "//tensorflow/core:string_ops_op_lib",
+        "//tensorflow/core:random_ops_op_lib",
+        "//tensorflow/core:rnn_ops_op_lib",
+        "//tensorflow/core:nn_ops_op_lib",
+        "//tensorflow/core:math_ops_op_lib",
+        "//tensorflow/core:manip_ops_op_lib",
+        "//tensorflow/core:list_ops_op_lib",
+        "//tensorflow/core:functional_ops_op_lib",
+        "//tensorflow/core:control_flow_ops_op_lib",
+        "//tensorflow/core:candidate_sampling_ops_op_lib",
+        "//tensorflow/core:array_ops_op_lib",
     ]),
     alwayslink = 1,
 )
@@ -144,21 +172,22 @@ tf_cc_test(
     srcs = [
         "add_default_attributes_test.cc",
         "backports_test.cc",
-        "fake_quantize_training_test.cc",
+        "flatten_atrous_test.cc",
         "fold_batch_norms_test.cc",
         "fold_constants_test.cc",
         "fold_old_batch_norms_test.cc",
         "freeze_requantization_ranges_test.cc",
         "fuse_convolutions_test.cc",
+        "inline_partitionedcall_test.cc",
         "insert_logging_test.cc",
         "obfuscate_names_test.cc",
         "quantize_nodes_test.cc",
         "quantize_weights_test.cc",
         "remove_attribute_test.cc",
         "remove_device_test.cc",
-        "remove_ema_test.cc",
         "remove_nodes_test.cc",
         "rename_attribute_test.cc",
+        "rename_node_test.cc",
         "rename_op_test.cc",
         "round_weights_test.cc",
         "set_device_test.cc",
@@ -171,15 +200,26 @@ tf_cc_test(
         ":transforms_lib",
         "//tensorflow/cc:cc_ops",
         "//tensorflow/cc:sendrecv_ops",
+        "//tensorflow/core:bitwise_ops_op_lib",
         "//tensorflow/core:core_cpu",
-        "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
+        "//tensorflow/core/kernels:quantization_utils",
         "//tensorflow/core/kernels:quantized_ops",
+        "//tensorflow/core/util/tensor_bundle",
     ],
+)
+
+filegroup(
+    name = "transform_graph_hdrs",
+    srcs = [
+        "transform_graph.h",
+        "transform_utils.h",
+    ],
+    visibility = ["//tensorflow/python/util:__pkg__"],
 )
 
 cc_library(
@@ -197,6 +237,7 @@ cc_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
     ],
+    alwayslink = 1,
 )
 
 # This library includes a main function, to make it easy to create other
@@ -214,7 +255,7 @@ cc_library(
     ],
 )
 
-cc_binary(
+tf_cc_binary(
     name = "transform_graph",
     copts = tf_copts(),
     linkstatic = 1,
@@ -260,7 +301,7 @@ cc_library(
     ],
 )
 
-cc_binary(
+tf_cc_binary(
     name = "summarize_graph",
     copts = tf_copts(),
     linkstatic = 1,
@@ -270,7 +311,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+tf_cc_binary(
     name = "compare_graphs",
     srcs = ["compare_graphs.cc"],
     copts = tf_copts(),
@@ -285,29 +326,27 @@ cc_binary(
     ],
 )
 
-py_library(
+py_strict_library(
     name = "transform_graph_py",
     srcs = ["__init__.py"],
-    srcs_version = "PY2AND3",
     deps = [
         "//tensorflow/core:protos_all_py",
-        "//tensorflow/python:errors",
-        "//tensorflow/python:pywrap_tensorflow",
-        "//tensorflow/python:util",
+        "//tensorflow/python/util:_pywrap_transform_graph",
+        "//tensorflow/python/util:compat",
     ],
 )
 
-tf_py_test(
+tf_py_strict_test(
     name = "transform_graph_py_test",
     size = "small",
     srcs = ["python/transform_graph_test.py"],
-    additional_deps = [
+    main = "python/transform_graph_test.py",
+    tags = ["v1only"],
+    deps = [
         ":transform_graph_py",
         "//tensorflow/core:protos_all_py",
-        "//tensorflow/python:client_testlib",
-        "//tensorflow/python:framework_for_generated_wrappers",
-        "//tensorflow/python:math_ops",
-        "//tensorflow/python:variables",
+        "//tensorflow/python/framework:dtypes",
+        "//tensorflow/python/framework:tensor_util",
+        "//tensorflow/python/platform:client_testlib",
     ],
-    main = "python/transform_graph_test.py",
 )

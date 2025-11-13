@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/record_yielder.h"
 
+#include "absl/synchronization/notification.h"
 #include "tensorflow/core/lib/io/record_reader.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/env.h"
@@ -44,7 +45,7 @@ RecordYielder::~RecordYielder() {
   delete thread_;
 }
 
-Status RecordYielder::YieldOne(string* value) {
+absl::Status RecordYielder::YieldOne(tstring* value) {
   mutex_lock l(mu_);
   while (!BufEnough() && status_.ok()) {
     buf_enough_.wait(l);
@@ -70,19 +71,19 @@ Status RecordYielder::YieldOne(string* value) {
 
 struct RecordYielder::Shard {
   int index;                      // Shard index.
-  std::vector<string> filenames;  // File names given to this shard.
-  Notification done;              // Notified when this shard is done.
-  Status status;                  // Shard status.
+  std::vector<tstring> filenames;  // File names given to this shard.
+  absl::Notification done;         // Notified when this shard is done.
+  absl::Status status;            // Shard status.
 };
 
-bool RecordYielder::ShouldFinish(const Status& s) {
+bool RecordYielder::ShouldFinish(const absl::Status& s) {
   mutex_lock l(mu_);
   status_.Update(s);
   return stop_ || !status_.ok();
 }
 
-static Status MatchFiles(const string& patterns,
-                         std::vector<string>* filenames) {
+static absl::Status MatchFiles(const string& patterns,
+                               std::vector<string>* filenames) {
   for (const auto& file_pattern : str_util::Split(patterns, ',')) {
     std::vector<string> tmp_filenames;
     TF_RETURN_IF_ERROR(
@@ -91,7 +92,7 @@ static Status MatchFiles(const string& patterns,
                       std::make_move_iterator(tmp_filenames.begin()),
                       std::make_move_iterator(tmp_filenames.end()));
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 void RecordYielder::MainLoop() {
@@ -102,7 +103,7 @@ void RecordYielder::MainLoop() {
 
     // Finds all files.
     std::vector<string> filenames;
-    Status s = MatchFiles(opts_.file_pattern, &filenames);
+    absl::Status s = MatchFiles(opts_.file_pattern, &filenames);
 
     if (filenames.empty()) {
       s = errors::NotFound("Found no files at ", opts_.file_pattern);
@@ -121,7 +122,7 @@ void RecordYielder::MainLoop() {
 
     // Left-shift the filename list.
     const std::vector<string>::size_type num = filenames.size();
-    int64 shift;
+    int64_t shift;
     if (0 <= opts_.file_shuffle_shift_ratio &&
         opts_.file_shuffle_shift_ratio < 1) {
       shift = opts_.file_shuffle_shift_ratio * num;
@@ -197,27 +198,30 @@ bool RecordYielder::Add(std::vector<string>* values) {
 
 void RecordYielder::ShardLoop(Shard* shard) {
   std::vector<string> values;
-  const int64 kRecords = 16;
+  const int64_t kRecords = 16;
   for (const string& filename : shard->filenames) {
     std::unique_ptr<RandomAccessFile> file;
-    if (ShouldFinish(Status::OK())) break;
-    Status s = Env::Default()->NewRandomAccessFile(filename, &file);
+    if (ShouldFinish(absl::OkStatus())) break;
+    absl::Status s = Env::Default()->NewRandomAccessFile(filename, &file);
     if (!s.ok()) {
       shard->status = errors::InvalidArgument("Can't open ", filename);
       break;
     }
-    io::RecordReader rdr(file.get());
+    io::RecordReaderOptions options =
+        io::RecordReaderOptions::CreateRecordReaderOptions(
+            opts_.compression_type);
+    io::RecordReader rdr(file.get(), options);
     uint64 offset = 0;
-    string record;
+    tstring record;
     while (true) {
-      Status s = rdr.ReadRecord(&offset, &record);
+      absl::Status s = rdr.ReadRecord(&offset, &record);
       if (s.ok()) {
         values.emplace_back(std::move(record));
         if (values.size() >= kRecords && Add(&values)) {
           shard->status = errors::Aborted("stopped");
           break;
         }
-      } else if (errors::IsOutOfRange(s)) {
+      } else if (absl::IsOutOfRange(s)) {
         break;
       } else {
         shard->status = s;

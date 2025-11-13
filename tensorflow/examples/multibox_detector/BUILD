@@ -1,15 +1,14 @@
 # Description:
 #   TensorFlow C++ inference example for labeling images.
 
+load("//tensorflow:tensorflow.bzl", "tf_cc_binary")
+
 package(
-    default_visibility = ["//tensorflow:internal"],
+    # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
+    licenses = ["notice"],
 )
 
-licenses(["notice"])  # Apache 2.0
-
-exports_files(["LICENSE"])
-
-cc_binary(
+tf_cc_binary(
     name = "detect_objects",
     srcs = [
         "main.cc",
@@ -17,25 +16,21 @@ cc_binary(
     linkopts = ["-lm"],
     deps = [
         "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:ops",
+        "//tensorflow/cc:scope",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:framework_internal",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:tensorflow",
+        "//tensorflow/core/platform:numbers",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@local_xla//xla/tsl/platform:status",
+        "@local_xla//xla/tsl/platform:types",
+        "@local_xla//xla/tsl/util:command_line_flags",
     ],
-)
-
-filegroup(
-    name = "all_files",
-    srcs = glob(
-        ["**/*"],
-        exclude = [
-            "**/METADATA",
-            "**/OWNERS",
-            "bin/**",
-            "gen/**",
-        ],
-    ),
-    visibility = ["//tensorflow:__subpackages__"],
 )

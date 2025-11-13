@@ -15,35 +15,85 @@ limitations under the License.
 
 #include "tensorflow/compiler/aot/codegen.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
-#include "tensorflow/compiler/xla/shape_util.h"
+#include "absl/memory/memory.h"
+#include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
+#include "llvm/Support/TargetSelect.h"
+#include "tensorflow/compiler/aot/compile.h"
+#include "xla/service/cpu/cpu_aot_compilation_result.h"
+#include "xla/shape_util.h"
+#include "tensorflow/core/framework/tensor_shape.pb.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/platform/resource_loader.h"
 #include "tensorflow/core/platform/test.h"
 
 namespace tensorflow {
 namespace tfcompile {
 namespace {
 
+using ::xla::cpu::BufferAllocationInfo;
+
+void ExpectErrorContains(const absl::Status& status, absl::string_view str) {
+  EXPECT_NE(absl::OkStatus(), status);
+  EXPECT_TRUE(absl::StrContains(status.message(), str))
+      << "expected error: " << status.message() << " to contain: " << str;
+}
+
+TEST(ValidateCppIdent, Simple) {
+  TF_EXPECT_OK(ValidateCppIdent("a", ""));
+  TF_EXPECT_OK(ValidateCppIdent("abc", ""));
+  TF_EXPECT_OK(ValidateCppIdent("_abc", ""));
+  TF_EXPECT_OK(ValidateCppIdent("_abc123", ""));
+  // Make sure we didn't skip a valid letter or digit
+  std::string ident;
+  for (char c = 'a'; c <= 'z'; c++) {
+    ident.append(1, c);
+  }
+  for (char c = 'A'; c <= 'Z'; c++) {
+    ident.append(1, c);
+  }
+  for (char c = '0'; c <= '9'; c++) {
+    ident.append(1, c);
+  }
+  ident += "_";
+  TF_EXPECT_OK(ValidateCppIdent(ident, ""));
+
+  ExpectErrorContains(ValidateCppIdent("", ""), "empty identifier");
+  ExpectErrorContains(ValidateCppIdent(" ", ""), "illegal leading char");
+  ExpectErrorContains(ValidateCppIdent("0", ""), "illegal leading char");
+  ExpectErrorContains(ValidateCppIdent(".", ""), "illegal leading char");
+  ExpectErrorContains(ValidateCppIdent(":", ""), "illegal leading char");
+  ExpectErrorContains(ValidateCppIdent("a.", ""), "illegal char");
+  ExpectErrorContains(ValidateCppIdent("a:", ""), "illegal char");
+  ExpectErrorContains(ValidateCppIdent("a:", ""), "illegal char");
+}
+
 class ParseCppClassTest : public ::testing::Test {
  protected:
-  void ExpectOK(const string& cpp_class, const string& want_class_name,
-                const std::vector<string>& want_namespaces) {
-    string class_name;
-    std::vector<string> namespaces;
+  void ExpectOK(const std::string& cpp_class,
+                const std::string& want_class_name,
+                const std::vector<std::string>& want_namespaces) {
+    std::string class_name;
+    std::vector<std::string> namespaces;
     TF_EXPECT_OK(ParseCppClass(cpp_class, &class_name, &namespaces));
     EXPECT_EQ(class_name, want_class_name);
     EXPECT_EQ(namespaces, want_namespaces);
   }
 
-  void ExpectFail(const string& cpp_class) {
-    string class_name;
-    std::vector<string> namespaces;
-    EXPECT_NE(ParseCppClass(cpp_class, &class_name, &namespaces), Status::OK());
+  void ExpectFail(const std::string& cpp_class) {
+    std::string class_name;
+    std::vector<std::string> namespaces;
+    EXPECT_NE(ParseCppClass(cpp_class, &class_name, &namespaces),
+              absl::OkStatus())
+        << cpp_class;
   }
 };
 
@@ -57,8 +107,11 @@ TEST_F(ParseCppClassTest, ParseOK) {
   ExpectOK("foo::MyClass", "MyClass", {"foo"});
   ExpectOK("_foo::MyClass", "MyClass", {"_foo"});
   ExpectOK("_foo::_MyClass", "_MyClass", {"_foo"});
+  ExpectOK("::foo::bar::MyClass", "MyClass", {"foo", "bar"});
+  ExpectOK("::_foo::MyClass", "MyClass", {"_foo"});
+  ExpectOK("::_foo::_MyClass", "_MyClass", {"_foo"});
   // Make sure we didn't skip a valid letter or digit
-  string ident;
+  std::string ident;
   for (char c = 'a'; c <= 'z'; c++) {
     ident.append(1, c);
   }
@@ -77,59 +130,53 @@ TEST_F(ParseCppClassTest, ParseOK) {
 TEST_F(ParseCppClassTest, ParseFail) {
   ExpectFail("");
   ExpectFail("::");
-  ExpectFail("::MyClass");  // valid C++, but disallowed for simpler code.
   ExpectFail("0");
   ExpectFail("a.b");
   ExpectFail("a:b");
+  ExpectFail(":foo::bar");
   ExpectFail("good::.bad");
   ExpectFail("good:::bad");
+  ExpectFail("good::bad::");
+  ExpectFail("good::::bad");
+  ExpectFail("::::bad");
   ExpectFail("good:: bad");
   ExpectFail("good::0bad");
 }
 
-TEST(GenerateHeader, Golden) {
-  HeaderOpts opts;
-  opts.class_name = "MyClass";
-  opts.namespaces = {"foo", "bar"};
-  Config config;
-  Feed* feed = config.add_feed();
-  feed->mutable_id()->set_node_name("feed0");
-  feed->set_name("myfeed");
-  feed = config.add_feed();
-  feed->mutable_id()->set_node_name("feed1");
-  Fetch* fetch = config.add_fetch();
-  fetch->mutable_id()->set_node_name("fetch0");
-  fetch->set_name("myfetch");
-  CompileResult compile_result;
-  compile_result.aot.reset(
-      new xla::cpu::CpuAotCompilationResult({}, {1, -1, 2, -1, 3, 120}, 5));
-  compile_result.program_shape = xla::ShapeUtil::MakeProgramShape(
-      {
-          xla::ShapeUtil::MakeShape(xla::F32, {1, 2}),
-          xla::ShapeUtil::MakeShape(xla::S64, {3, 4}),
-          xla::ShapeUtil::MakeOpaqueShape(),
-      },
-      xla::ShapeUtil::MakeShape(xla::U32, {5, 6}));
-  compile_result.has_context_arg = true;
-  compile_result.entry_point = "entry_point";
-  compile_result.pointer_size = 8;
-  string header;
-  TF_EXPECT_OK(GenerateHeader(opts, config, compile_result, &header));
+static void CompareWithGoldenFile(
+    const std::string& tensorflow_relative_golden_file_name,
+    const std::string& expected_contents, bool ignore_cr) {
+  // Get rid of all CR characters, we may be running under windows.
+  std::string sanitized_expected_contents(expected_contents);
+  if (ignore_cr) {
+    sanitized_expected_contents.erase(
+        std::remove(sanitized_expected_contents.begin(),
+                    sanitized_expected_contents.end(), '\r'),
+        sanitized_expected_contents.end());
+  }
 
-  // Compare against the golden file.
-  const string golden_name = io::JoinPath(testing::TensorFlowSrcRoot(),
-                                          "compiler/aot/codegen_test_h.golden");
   // To update the golden file, flip update_golden to true and run the
   // following:
-  // bazel test --test_strategy=local \
-  //   third_party/tensorflow/compiler/aot:codegen_test
+  // blaz test --test_strategy=local \
+  //   "third_party/tensorflow/compiler/aot:codegen_test"
   const bool update_golden = false;
+  std::string golden_file_name =
+      GetDataDependencyFilepath(tensorflow_relative_golden_file_name);
+
   if (update_golden) {
-    TF_EXPECT_OK(WriteStringToFile(Env::Default(), golden_name, header));
+    TF_EXPECT_OK(
+        WriteStringToFile(Env::Default(), golden_file_name, expected_contents));
   }
-  string golden_data;
-  TF_EXPECT_OK(ReadFileToString(Env::Default(), golden_name, &golden_data));
-  EXPECT_EQ(header, golden_data);
+
+  std::string golden_file_contents;
+  TF_ASSERT_OK(ReadFileToString(Env::Default(), golden_file_name,
+                                &golden_file_contents));
+  if (ignore_cr) {
+    golden_file_contents.erase(std::remove(golden_file_contents.begin(),
+                                           golden_file_contents.end(), '\r'),
+                               golden_file_contents.end());
+  }
+  EXPECT_EQ(golden_file_contents, expected_contents);
 }
 
 }  // namespace

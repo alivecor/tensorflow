@@ -17,27 +17,37 @@ limitations under the License.
 
 #include <stddef.h>
 #include <string.h>
+
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <utility>
 #include <vector>
 
 #ifndef PLATFORM_WINDOWS
-#include "grpc++/create_channel.h"
+#include "grpcpp/create_channel.h"
 #else
-// winsock2.h is used in grpc, so Ws2_32.lib is needed
-#pragma comment(lib,"Ws2_32.lib")
 #endif  // #ifndef PLATFORM_WINDOWS
 
+#include "absl/strings/ascii.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_replace.h"
+#include "absl/strings/string_view.h"
+#include "tensorflow/core/debug/debug_callback_registry.h"
 #include "tensorflow/core/debug/debugger_event_metadata.pb.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/summary.pb.h"
+#include "tensorflow/core/framework/tensor.pb.h"
+#include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/lib/core/bits.h"
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/platform/protobuf.h"
+#include "tensorflow/core/platform/strcat.h"
 #include "tensorflow/core/util/event.pb.h"
 
 #define GRPC_OSS_WINDOWS_UNIMPLEMENTED_ERROR \
@@ -48,14 +58,16 @@ namespace tensorflow {
 
 namespace {
 
+constexpr absl::string_view kDumpSubDirName = "node-io-dump";
+
 // Creates an Event proto representing a chunk of a Tensor. This method only
 // populates the field of the Event proto that represent the envelope
-// informaion (e.g., timestmap, device_name, num_chunks, chunk_index, dtype,
+// information (e.g., timestamp, device_name, num_chunks, chunk_index, dtype,
 // shape). It does not set the value.tensor field, which should be set by the
 // caller separately.
 Event PrepareChunkEventProto(const DebugNodeKey& debug_node_key,
-                             const uint64 wall_time_us, const size_t num_chunks,
-                             const size_t chunk_index,
+                             const uint64_t wall_time_us,
+                             const size_t num_chunks, const size_t chunk_index,
                              const DataType& tensor_dtype,
                              const TensorShapeProto& tensor_shape) {
   Event event;
@@ -80,9 +92,9 @@ Event PrepareChunkEventProto(const DebugNodeKey& debug_node_key,
   metadata.set_chunk_index(chunk_index);
 
   // Encode the data in JSON.
-  string json_output;
+  std::string json_output;
   tensorflow::protobuf::util::JsonPrintOptions json_options;
-  json_options.always_print_primitive_fields = true;
+  json_options.always_print_fields_with_no_presence = true;
   auto status = tensorflow::protobuf::util::MessageToJsonString(
       metadata, &json_output, json_options);
   if (status.ok()) {
@@ -108,7 +120,7 @@ Event PrepareChunkEventProto(const DebugNodeKey& debug_node_key,
 // (i.e., an estimate that is usually too large, but never too small under the
 // gRPC message size limit) of the Varint-encoded length, to workaround the lack
 // of a portable length function.
-const size_t StringValMaxBytesInProto(const string& str) {
+const size_t StringValMaxBytesInProto(const std::string& str) {
 #if defined(PLATFORM_GOOGLE)
   return str.size() + DebugGrpcIO::kGrpcMaxVarintLengthSize;
 #else
@@ -118,12 +130,13 @@ const size_t StringValMaxBytesInProto(const string& str) {
 
 // Breaks a string Tensor (represented as a TensorProto) as a vector of Event
 // protos.
-Status WrapStringTensorAsEvents(const DebugNodeKey& debug_node_key,
-                                const uint64 wall_time_us,
-                                const size_t chunk_size_limit,
-                                TensorProto* tensor_proto,
-                                std::vector<Event>* events) {
-  const protobuf::RepeatedPtrField<string>& strs = tensor_proto->string_val();
+absl::Status WrapStringTensorAsEvents(const DebugNodeKey& debug_node_key,
+                                      const uint64_t wall_time_us,
+                                      const size_t chunk_size_limit,
+                                      TensorProto* tensor_proto,
+                                      std::vector<Event>* events) {
+  const protobuf::RepeatedPtrField<std::string>& strs =
+      tensor_proto->string_val();
   const size_t num_strs = strs.size();
   const size_t chunk_size_ub = chunk_size_limit > 0
                                    ? chunk_size_limit
@@ -170,7 +183,7 @@ Status WrapStringTensorAsEvents(const DebugNodeKey& debug_node_key,
     events->push_back(std::move(event));
   }
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Encapsulates the tensor value inside a vector of Event protos. Large tensors
@@ -178,10 +191,11 @@ Status WrapStringTensorAsEvents(const DebugNodeKey& debug_node_key,
 // proto the field summary.tensor carries the content of the tensor.
 // If chunk_size_limit <= 0, the tensor will not be broken into chunks, i.e., a
 // length-1 vector will be returned, regardless of the size of the tensor.
-Status WrapTensorAsEvents(const DebugNodeKey& debug_node_key,
-                          const Tensor& tensor, const uint64 wall_time_us,
-                          const size_t chunk_size_limit,
-                          std::vector<Event>* events) {
+absl::Status WrapTensorAsEvents(const DebugNodeKey& debug_node_key,
+                                const Tensor& tensor,
+                                const uint64_t wall_time_us,
+                                const size_t chunk_size_limit,
+                                std::vector<Event>* events) {
   TensorProto tensor_proto;
   if (tensor.dtype() == DT_STRING) {
     // Treat DT_STRING specially, so that tensor_util.MakeNdarray in Python can
@@ -216,7 +230,7 @@ Status WrapTensorAsEvents(const DebugNodeKey& debug_node_key,
     }
   }
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Appends an underscore and a timestamp to a file path. If the path already
@@ -225,10 +239,11 @@ Status WrapTensorAsEvents(const DebugNodeKey& debug_node_key,
 // TOCTOU race condition is not of concern here due to the fact that tfdbg
 // sets parallel_iterations attribute of all while_loops to 1 to prevent
 // the same node from between executed multiple times concurrently.
-string AppendTimestampToFilePath(const string& in, const uint64 timestamp) {
-  string out = strings::StrCat(in, "_", timestamp);
+std::string AppendTimestampToFilePath(const std::string& in,
+                                      const uint64_t timestamp) {
+  std::string out = absl::StrCat(in, "_", timestamp);
 
-  uint64 i = 1;
+  uint64_t i = 1;
   while (Env::Default()->FileExists(out).ok()) {
     out = strings::StrCat(in, "_", timestamp, "-", i);
     ++i;
@@ -239,11 +254,10 @@ string AppendTimestampToFilePath(const string& in, const uint64 timestamp) {
 #ifndef PLATFORM_WINDOWS
 // Publishes encoded GraphDef through a gRPC debugger stream, in chunks,
 // conforming to the gRPC message size limit.
-Status PublishEncodedGraphDefInChunks(const string& encoded_graph_def,
-                                      const string& device_name,
-                                      const int64 wall_time,
-                                      const string& debug_url) {
-  const uint64 hash = ::tensorflow::Hash64(encoded_graph_def);
+absl::Status PublishEncodedGraphDefInChunks(
+    const std::string& encoded_graph_def, const std::string& device_name,
+    const int64_t wall_time, const std::string& debug_url) {
+  const uint64_t hash = ::tensorflow::Hash64(encoded_graph_def);
   const size_t total_length = encoded_graph_def.size();
   const size_t num_chunks =
       static_cast<size_t>(std::ceil(static_cast<float>(total_length) /
@@ -262,62 +276,37 @@ Status PublishEncodedGraphDefInChunks(const string& encoded_graph_def,
     event.set_graph_def(strings::StrCat(hash, ",", device_name, ",", wall_time,
                                         "|", i, "|", num_chunks, "|",
                                         encoded_graph_def.substr(pos, len)));
-    if (!DebugGrpcIO::SendEventProtoThroughGrpcStream(event, debug_url).ok()) {
+    const absl::Status s = DebugGrpcIO::SendEventProtoThroughGrpcStream(
+        event, debug_url, num_chunks - 1 == i);
+    if (!s.ok()) {
       return errors::FailedPrecondition(
           "Failed to send chunk ", i, " of ", num_chunks,
-          " of encoded GraphDef of size ", encoded_graph_def.size(), " bytes");
+          " of encoded GraphDef of size ", encoded_graph_def.size(), " bytes, ",
+          "due to: ", s.message());
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 #endif  // #ifndef PLATFORM_WINDOWS
 
 }  // namespace
 
-// static
 const char* const DebugIO::kDebuggerPluginName = "debugger";
 
-// static
-const char* const DebugIO::kMetadataFilePrefix = "_tfdbg_";
-
-// static
 const char* const DebugIO::kCoreMetadataTag = "core_metadata_";
 
-// static
-const char* const DebugIO::kDeviceTag = "device_";
-
-// static
 const char* const DebugIO::kGraphTag = "graph_";
 
-// static
 const char* const DebugIO::kHashTag = "hash";
 
-DebugNodeKey::DebugNodeKey(const string& device_name, const string& node_name,
-                           const int32 output_slot, const string& debug_op)
-    : device_name(device_name),
-      node_name(node_name),
-      output_slot(output_slot),
-      debug_op(debug_op),
-      debug_node_name(
-          strings::StrCat(node_name, ":", output_slot, ":", debug_op)),
-      device_path(DeviceNameToDevicePath(device_name)) {}
-
-bool DebugNodeKey::operator==(const DebugNodeKey& other) const {
-  return (device_name == other.device_name && node_name == other.node_name &&
-          output_slot == other.output_slot && debug_op == other.debug_op);
-}
-
-bool DebugNodeKey::operator!=(const DebugNodeKey& other) const {
-  return !((*this) == other);
-}
-
-Status ReadEventFromFile(const string& dump_file_path, Event* event) {
+absl::Status ReadEventFromFile(const std::string& dump_file_path,
+                               Event* event) {
   Env* env(Env::Default());
 
-  string content;
-  uint64 file_size = 0;
+  std::string content;
+  uint64_t file_size = 0;
 
-  Status s = env->GetFileSize(dump_file_path, &file_size);
+  absl::Status s = env->GetFileSize(dump_file_path, &file_size);
   if (!s.ok()) {
     return s;
   }
@@ -330,38 +319,28 @@ Status ReadEventFromFile(const string& dump_file_path, Event* event) {
     return s;
   }
 
-  StringPiece result;
-  s = file->Read(0, file_size, &result, &(content)[0]);
+  absl::string_view result;
+  s = file->Read(0, result, absl::MakeSpan(&content[0], file_size));
   if (!s.ok()) {
     return s;
   }
 
   event->ParseFromString(content);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-// static
-const string DebugNodeKey::DeviceNameToDevicePath(const string& device_name) {
-  return strings::StrCat(
-      DebugIO::kMetadataFilePrefix, DebugIO::kDeviceTag,
-      str_util::StringReplace(
-          str_util::StringReplace(device_name, ":", "_", true), "/", ",",
-          true));
-}
-
-// static
 const char* const DebugIO::kFileURLScheme = "file://";
-// static
 const char* const DebugIO::kGrpcURLScheme = "grpc://";
+const char* const DebugIO::kMemoryURLScheme = "memcbk://";
 
 // Publishes debug metadata to a set of debug URLs.
-// static
-Status DebugIO::PublishDebugMetadata(
-    const int64 global_step, const int64 session_run_index,
-    const int64 executor_step_index, const std::vector<string>& input_names,
-    const std::vector<string>& output_names,
-    const std::vector<string>& target_nodes,
-    const std::unordered_set<string>& debug_urls) {
+absl::Status DebugIO::PublishDebugMetadata(
+    const int64_t global_step, const int64_t session_run_index,
+    const int64_t executor_step_index,
+    const std::vector<std::string>& input_names,
+    const std::vector<std::string>& output_names,
+    const std::vector<std::string>& target_nodes,
+    const std::unordered_set<std::string>& debug_urls) {
   std::ostringstream oss;
 
   // Construct a JSON string to carry the metadata.
@@ -395,74 +374,91 @@ Status DebugIO::PublishDebugMetadata(
   oss << "]";
   oss << "}";
 
-  const string json_metadata = oss.str();
+  const std::string json_metadata = oss.str();
   Event event;
   event.set_wall_time(static_cast<double>(Env::Default()->NowMicros()));
   LogMessage* log_message = event.mutable_log_message();
   log_message->set_message(json_metadata);
 
-  Status status;
-  for (const string& url : debug_urls) {
-    if (str_util::Lowercase(url).find(kGrpcURLScheme) == 0) {
+  absl::Status status;
+  for (const std::string& url : debug_urls) {
+    if (absl::StartsWith(absl::AsciiStrToLower(url), kGrpcURLScheme)) {
 #ifndef PLATFORM_WINDOWS
       Event grpc_event;
 
       // Determine the path (if any) in the grpc:// URL, and add it as a field
       // of the JSON string.
-      const string address = url.substr(strlen(DebugIO::kFileURLScheme));
-      const string path = address.find("/") == string::npos
-                              ? ""
-                              : address.substr(address.find("/"));
+      const std::string address = url.substr(strlen(DebugIO::kFileURLScheme));
+      const std::string path = address.find('/') == std::string::npos
+                                   ? ""
+                                   : address.substr(address.find('/'));
       grpc_event.set_wall_time(event.wall_time());
       LogMessage* log_message_grpc = grpc_event.mutable_log_message();
       log_message_grpc->set_message(
-          strings::StrCat(json_metadata.substr(0, json_metadata.size() - 1),
-                          ",\"grpc_path\":\"", path, "\"}"));
+          absl::StrCat(json_metadata.substr(0, json_metadata.size() - 1),
+                       ",\"grpc_path\":\"", path, "\"}"));
 
       status.Update(
-          DebugGrpcIO::SendEventProtoThroughGrpcStream(grpc_event, url));
+          DebugGrpcIO::SendEventProtoThroughGrpcStream(grpc_event, url, true));
 #else
       GRPC_OSS_WINDOWS_UNIMPLEMENTED_ERROR;
 #endif
-    } else if (str_util::Lowercase(url).find(kFileURLScheme) == 0) {
-      const string dump_root_dir = url.substr(strlen(kFileURLScheme));
-      const string core_metadata_path = AppendTimestampToFilePath(
+    } else if (absl::StartsWith(absl::AsciiStrToLower(url), kFileURLScheme)) {
+      const std::string dump_root_dir = url.substr(strlen(kFileURLScheme));
+      const std::string core_metadata_path = AppendTimestampToFilePath(
           io::JoinPath(
               dump_root_dir,
-              strings::StrCat(DebugIO::kMetadataFilePrefix,
-                              DebugIO::kCoreMetadataTag, "sessionrun",
-                              strings::Printf("%.14lld", session_run_index))),
+              absl::StrCat(DebugNodeKey::kMetadataFilePrefix,
+                           DebugIO::kCoreMetadataTag, "sessionrun",
+                           strings::Printf("%.14lld", static_cast<long long>(
+                                                          session_run_index)))),
           Env::Default()->NowMicros());
       status.Update(DebugFileIO::DumpEventProtoToFile(
-          event, io::Dirname(core_metadata_path).ToString(),
-          io::Basename(core_metadata_path).ToString()));
+          event, std::string(io::Dirname(core_metadata_path)),
+          std::string(io::Basename(core_metadata_path))));
     }
   }
 
   return status;
 }
 
-// static
-Status DebugIO::PublishDebugTensor(const DebugNodeKey& debug_node_key,
-                                   const Tensor& tensor,
-                                   const uint64 wall_time_us,
-                                   const gtl::ArraySlice<string>& debug_urls,
-                                   const bool gated_grpc) {
-  int32 num_failed_urls = 0;
-  std::vector<Status> fail_statuses;
-  for (const string& url : debug_urls) {
-    if (str_util::Lowercase(url).find(kFileURLScheme) == 0) {
-      const string dump_root_dir = url.substr(strlen(kFileURLScheme));
+absl::Status DebugIO::PublishDebugTensor(
+    const DebugNodeKey& debug_node_key, const Tensor& tensor,
+    const uint64_t wall_time_us, const absl::Span<const std::string> debug_urls,
+    const bool gated_grpc, const int64_t step_id) {
+  int32_t num_failed_urls = 0;
+  std::vector<absl::Status> fail_statuses;
+  for (const std::string& url : debug_urls) {
+    if (absl::StartsWith(absl::AsciiStrToLower(url), kFileURLScheme)) {
+      const std::string dump_root_dir = url.substr(strlen(kFileURLScheme));
 
-      Status s = DebugFileIO::DumpTensorToDir(
-          debug_node_key, tensor, wall_time_us, dump_root_dir, nullptr);
+      const int64_t tensorBytes =
+          tensor.IsInitialized() ? tensor.TotalBytes() : 0;
+      if (!DebugFileIO::requestDiskByteUsage(tensorBytes)) {
+        return errors::ResourceExhausted(
+            "TensorFlow Debugger has exhausted file-system byte-size "
+            "allowance (",
+            DebugFileIO::global_disk_bytes_limit_, "), therefore it cannot ",
+            "dump an additional ", tensorBytes, " byte(s) of tensor data ",
+            "for the debug tensor ", debug_node_key.node_name, ":",
+            debug_node_key.output_slot, ". You may use the environment ",
+            "variable TFDBG_DISK_BYTES_LIMIT to set a higher limit.");
+      }
+
+      absl::Status s = debug_node_key.io_of_node.empty()
+                           ? DebugFileIO::DumpTensorToDir(
+                                 debug_node_key, tensor, wall_time_us,
+                                 dump_root_dir, nullptr)
+                           : DebugFileIO::DumpTensorToDirForNodeDumping(
+                                 debug_node_key, tensor, wall_time_us,
+                                 dump_root_dir, nullptr, step_id);
       if (!s.ok()) {
         num_failed_urls++;
         fail_statuses.push_back(s);
       }
-    } else if (str_util::Lowercase(url).find(kGrpcURLScheme) == 0) {
+    } else if (absl::StartsWith(absl::AsciiStrToLower(url), kGrpcURLScheme)) {
 #ifndef PLATFORM_WINDOWS
-      Status s = DebugGrpcIO::SendTensorThroughGrpcStream(
+      absl::Status s = DebugGrpcIO::SendTensorThroughGrpcStream(
           debug_node_key, tensor, wall_time_us, url, gated_grpc);
 
       if (!s.ok()) {
@@ -472,64 +468,68 @@ Status DebugIO::PublishDebugTensor(const DebugNodeKey& debug_node_key,
 #else
       GRPC_OSS_WINDOWS_UNIMPLEMENTED_ERROR;
 #endif
+    } else if (absl::StartsWith(absl::AsciiStrToLower(url), kMemoryURLScheme)) {
+      const std::string dump_root_dir = url.substr(strlen(kMemoryURLScheme));
+      auto* callback_registry = DebugCallbackRegistry::singleton();
+      auto* callback = callback_registry->GetCallback(dump_root_dir);
+      CHECK(callback) << "No callback registered for: " << dump_root_dir;
+      (*callback)(debug_node_key, tensor);
     } else {
-      return Status(error::UNAVAILABLE,
-                    strings::StrCat("Invalid debug target URL: ", url));
+      return absl::Status(absl::StatusCode::kUnavailable,
+                          absl::StrCat("Invalid debug target URL: ", url));
     }
   }
 
   if (num_failed_urls == 0) {
-    return Status::OK();
+    return absl::OkStatus();
   } else {
-    string error_message = strings::StrCat(
+    std::string error_message = strings::StrCat(
         "Publishing to ", num_failed_urls, " of ", debug_urls.size(),
         " debug target URLs failed, due to the following errors:");
-    for (Status& status : fail_statuses) {
-      error_message =
-          strings::StrCat(error_message, " ", status.error_message(), ";");
+    for (absl::Status& status : fail_statuses) {
+      error_message = absl::StrCat(error_message, " ", status.message(), ";");
     }
 
-    return Status(error::INTERNAL, error_message);
+    return absl::Status(absl::StatusCode::kInternal, error_message);
   }
 }
 
-// static
-Status DebugIO::PublishDebugTensor(const DebugNodeKey& debug_node_key,
-                                   const Tensor& tensor,
-                                   const uint64 wall_time_us,
-                                   const gtl::ArraySlice<string>& debug_urls) {
+absl::Status DebugIO::PublishDebugTensor(
+    const DebugNodeKey& debug_node_key, const Tensor& tensor,
+    const uint64_t wall_time_us,
+    const absl::Span<const std::string> debug_urls) {
   return PublishDebugTensor(debug_node_key, tensor, wall_time_us, debug_urls,
                             false);
 }
 
-// static
-Status DebugIO::PublishGraph(const Graph& graph, const string& device_name,
-                             const std::unordered_set<string>& debug_urls) {
+absl::Status DebugIO::PublishGraph(
+    const Graph& graph, const std::string& device_name,
+    const std::unordered_set<std::string>& debug_urls) {
   GraphDef graph_def;
   graph.ToGraphDef(&graph_def);
 
-  string buf;
+  std::string buf;
   graph_def.SerializeToString(&buf);
 
-  const int64 now_micros = Env::Default()->NowMicros();
+  const int64_t now_micros = Env::Default()->NowMicros();
   Event event;
   event.set_wall_time(static_cast<double>(now_micros));
   event.set_graph_def(buf);
 
-  Status status = Status::OK();
-  for (const string& debug_url : debug_urls) {
-    if (debug_url.find(kFileURLScheme) == 0) {
-      const string dump_root_dir =
+  absl::Status status = absl::OkStatus();
+  for (const std::string& debug_url : debug_urls) {
+    if (absl::StartsWith(debug_url, kFileURLScheme)) {
+      const std::string dump_root_dir =
           io::JoinPath(debug_url.substr(strlen(kFileURLScheme)),
                        DebugNodeKey::DeviceNameToDevicePath(device_name));
-      const uint64 graph_hash = ::tensorflow::Hash64(buf);
-      const string file_name =
-          strings::StrCat(DebugIO::kMetadataFilePrefix, DebugIO::kGraphTag,
+      const uint64_t graph_hash = ::tensorflow::Hash64(buf);
+      const std::string file_name =
+          strings::StrCat(DebugNodeKey::kMetadataFilePrefix, DebugIO::kGraphTag,
                           DebugIO::kHashTag, graph_hash, "_", now_micros);
 
       status.Update(
           DebugFileIO::DumpEventProtoToFile(event, dump_root_dir, file_name));
-    } else if (debug_url.find(kGrpcURLScheme) == 0) {
+    } else if (absl::StartsWith(debug_url, kGrpcURLScheme)) {
 #ifndef PLATFORM_WINDOWS
       status.Update(PublishEncodedGraphDefInChunks(buf, device_name, now_micros,
                                                    debug_url));
@@ -542,7 +542,6 @@ Status DebugIO::PublishGraph(const Graph& graph, const string& device_name,
   return status;
 }
 
-// static
 bool DebugIO::IsCopyNodeGateOpen(
     const std::vector<DebugWatchAndURLSpec>& specs) {
 #ifndef PLATFORM_WINDOWS
@@ -562,11 +561,10 @@ bool DebugIO::IsCopyNodeGateOpen(
 #endif
 }
 
-// static
-bool DebugIO::IsDebugNodeGateOpen(const string& watch_key,
-                                  const std::vector<string>& debug_urls) {
+bool DebugIO::IsDebugNodeGateOpen(const std::string& watch_key,
+                                  const std::vector<std::string>& debug_urls) {
 #ifndef PLATFORM_WINDOWS
-  for (const string& debug_url : debug_urls) {
+  for (const std::string& debug_url : debug_urls) {
     if (debug_url.compare(0, strlen(DebugIO::kGrpcURLScheme),
                           DebugIO::kGrpcURLScheme)) {
       return true;
@@ -582,11 +580,10 @@ bool DebugIO::IsDebugNodeGateOpen(const string& watch_key,
 #endif
 }
 
-// static
-bool DebugIO::IsDebugURLGateOpen(const string& watch_key,
-                                 const string& debug_url) {
+bool DebugIO::IsDebugURLGateOpen(const std::string& watch_key,
+                                 const std::string& debug_url) {
 #ifndef PLATFORM_WINDOWS
-  if (debug_url.find(kGrpcURLScheme) != 0) {
+  if (debug_url != kGrpcURLScheme) {
     return true;
   } else {
     return DebugGrpcIO::IsReadGateOpen(debug_url, watch_key);
@@ -596,9 +593,8 @@ bool DebugIO::IsDebugURLGateOpen(const string& watch_key,
 #endif
 }
 
-// static
-Status DebugIO::CloseDebugURL(const string& debug_url) {
-  if (debug_url.find(DebugIO::kGrpcURLScheme) == 0) {
+absl::Status DebugIO::CloseDebugURL(const std::string& debug_url) {
+  if (absl::StartsWith(debug_url, DebugIO::kGrpcURLScheme)) {
 #ifndef PLATFORM_WINDOWS
     return DebugGrpcIO::CloseGrpcStream(debug_url);
 #else
@@ -606,20 +602,16 @@ Status DebugIO::CloseDebugURL(const string& debug_url) {
 #endif
   } else {
     // No-op for non-gRPC URLs.
-    return Status::OK();
+    return absl::OkStatus();
   }
 }
 
-// static
-static Status CloseDebugURL(const string& debug_url) { return Status::OK(); }
-
-// static
-Status DebugFileIO::DumpTensorToDir(const DebugNodeKey& debug_node_key,
-                                    const Tensor& tensor,
-                                    const uint64 wall_time_us,
-                                    const string& dump_root_dir,
-                                    string* dump_file_path) {
-  const string file_path =
+absl::Status DebugFileIO::DumpTensorToDir(const DebugNodeKey& debug_node_key,
+                                          const Tensor& tensor,
+                                          const uint64_t wall_time_us,
+                                          const std::string& dump_root_dir,
+                                          std::string* dump_file_path) {
+  const std::string file_path =
       GetDumpFilePath(dump_root_dir, debug_node_key, wall_time_us);
 
   if (dump_file_path != nullptr) {
@@ -629,10 +621,22 @@ Status DebugFileIO::DumpTensorToDir(const DebugNodeKey& debug_node_key,
   return DumpTensorToEventFile(debug_node_key, tensor, wall_time_us, file_path);
 }
 
-// static
-string DebugFileIO::GetDumpFilePath(const string& dump_root_dir,
-                                    const DebugNodeKey& debug_node_key,
-                                    const uint64 wall_time_us) {
+absl::Status DebugFileIO::DumpTensorToDirForNodeDumping(
+    const DebugNodeKey& debug_node_key, const Tensor& tensor,
+    const uint64_t wall_time_us, const std::string& dump_root_dir,
+    std::string* dump_file_path, const int64_t step_id) {
+  const std::string file_path = GetDumpFilePathForNodeDumping(
+      dump_root_dir, debug_node_key, wall_time_us, step_id);
+  if (dump_file_path != nullptr) {
+    *dump_file_path = file_path;
+  }
+
+  return DumpTensorToEventFile(debug_node_key, tensor, wall_time_us, file_path);
+}
+
+std::string DebugFileIO::GetDumpFilePath(const std::string& dump_root_dir,
+                                         const DebugNodeKey& debug_node_key,
+                                         const uint64_t wall_time_us) {
   return AppendTimestampToFilePath(
       io::JoinPath(dump_root_dir, debug_node_key.device_path,
                    strings::StrCat(debug_node_key.node_name, "_",
@@ -641,22 +645,34 @@ string DebugFileIO::GetDumpFilePath(const string& dump_root_dir,
       wall_time_us);
 }
 
-// static
-Status DebugFileIO::DumpEventProtoToFile(const Event& event_proto,
-                                         const string& dir_name,
-                                         const string& file_name) {
+std::string DebugFileIO::GetDumpFilePathForNodeDumping(
+    const std::string& dump_root_dir, const DebugNodeKey& debug_node_key,
+    const uint64_t wall_time_us, const int64_t step_id) {
+  return AppendTimestampToFilePath(
+      io::JoinPath(
+          dump_root_dir, kDumpSubDirName, absl::StrCat("step-", step_id),
+          strings::StrCat(
+              absl::StrReplaceAll(debug_node_key.io_of_node, {{"/", "-"}}), ":",
+              debug_node_key.is_input ? "in" : "out", ":",
+              debug_node_key.io_index)),
+      wall_time_us);
+}
+
+absl::Status DebugFileIO::DumpEventProtoToFile(const Event& event_proto,
+                                               const std::string& dir_name,
+                                               const std::string& file_name) {
   Env* env(Env::Default());
 
-  Status s = RecursiveCreateDir(env, dir_name);
+  absl::Status s = RecursiveCreateDir(env, dir_name);
   if (!s.ok()) {
-    return Status(error::FAILED_PRECONDITION,
-                  strings::StrCat("Failed to create directory  ", dir_name,
-                                  ", due to: ", s.error_message()));
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        absl::StrCat("Failed to create directory  ", dir_name,
+                                     ", due to: ", s.message()));
   }
 
-  const string file_path = io::JoinPath(dir_name, file_name);
+  const std::string file_path = io::JoinPath(dir_name, file_name);
 
-  string event_str;
+  std::string event_str;
   event_proto.SerializeToString(&event_str);
 
   std::unique_ptr<WritableFile> f = nullptr;
@@ -664,66 +680,100 @@ Status DebugFileIO::DumpEventProtoToFile(const Event& event_proto,
   f->Append(event_str).IgnoreError();
   TF_CHECK_OK(f->Close());
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-// static
-Status DebugFileIO::DumpTensorToEventFile(const DebugNodeKey& debug_node_key,
-                                          const Tensor& tensor,
-                                          const uint64 wall_time_us,
-                                          const string& file_path) {
+absl::Status DebugFileIO::DumpTensorToEventFile(
+    const DebugNodeKey& debug_node_key, const Tensor& tensor,
+    const uint64_t wall_time_us, const std::string& file_path) {
   std::vector<Event> events;
   TF_RETURN_IF_ERROR(
       WrapTensorAsEvents(debug_node_key, tensor, wall_time_us, 0, &events));
-  return DumpEventProtoToFile(events[0], io::Dirname(file_path).ToString(),
-                              io::Basename(file_path).ToString());
+  return DumpEventProtoToFile(events[0], std::string(io::Dirname(file_path)),
+                              std::string(io::Basename(file_path)));
 }
 
-// static
-Status DebugFileIO::RecursiveCreateDir(Env* env, const string& dir) {
+absl::Status DebugFileIO::RecursiveCreateDir(Env* env, const std::string& dir) {
   if (env->FileExists(dir).ok() && env->IsDirectory(dir).ok()) {
     // The path already exists as a directory. Return OK right away.
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  string parent_dir = io::Dirname(dir).ToString();
+  std::string parent_dir(io::Dirname(dir));
   if (!env->FileExists(parent_dir).ok()) {
     // The parent path does not exist yet, create it first.
-    Status s = RecursiveCreateDir(env, parent_dir);  // Recursive call
+    absl::Status s = RecursiveCreateDir(env, parent_dir);  // Recursive call
     if (!s.ok()) {
-      return Status(
-          error::FAILED_PRECONDITION,
-          strings::StrCat("Failed to create directory  ", parent_dir));
+      return absl::Status(
+          absl::StatusCode::kFailedPrecondition,
+          absl::StrCat("Failed to create directory  ", parent_dir));
     }
   } else if (env->FileExists(parent_dir).ok() &&
              !env->IsDirectory(parent_dir).ok()) {
     // The path exists, but it is a file.
-    return Status(error::FAILED_PRECONDITION,
-                  strings::StrCat("Failed to create directory  ", parent_dir,
-                                  " because the path exists as a file "));
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        absl::StrCat("Failed to create directory  ", parent_dir,
+                                     " because the path exists as a file "));
   }
 
   env->CreateDir(dir).IgnoreError();
   // Guard against potential race in creating directories by doing a check
   // after the CreateDir call.
   if (env->FileExists(dir).ok() && env->IsDirectory(dir).ok()) {
-    return Status::OK();
+    return absl::OkStatus();
   } else {
-    return Status(error::ABORTED,
-                  strings::StrCat("Failed to create directory  ", parent_dir));
+    return absl::Status(
+        absl::StatusCode::kAborted,
+        absl::StrCat("Failed to create directory  ", parent_dir));
   }
 }
 
-#ifndef PLATFORM_WINDOWS
-DebugGrpcChannel::DebugGrpcChannel(const string& server_stream_addr)
-    : server_stream_addr_(server_stream_addr),
-      url_(strings::StrCat(DebugIO::kGrpcURLScheme, server_stream_addr)) {}
+// Default total disk usage limit: 100 GBytes
+const uint64_t DebugFileIO::kDefaultGlobalDiskBytesLimit = 107374182400L;
+uint64_t DebugFileIO::global_disk_bytes_limit_ = 0;
+uint64_t DebugFileIO::disk_bytes_used_ = 0;
 
-Status DebugGrpcChannel::Connect(const int64 timeout_micros) {
+mutex DebugFileIO::bytes_mu_(LINKER_INITIALIZED);
+
+bool DebugFileIO::requestDiskByteUsage(uint64_t bytes) {
+  mutex_lock l(bytes_mu_);
+  if (global_disk_bytes_limit_ == 0) {
+    const char* env_tfdbg_disk_bytes_limit = getenv("TFDBG_DISK_BYTES_LIMIT");
+    if (env_tfdbg_disk_bytes_limit == nullptr ||
+        strlen(env_tfdbg_disk_bytes_limit) == 0) {
+      global_disk_bytes_limit_ = kDefaultGlobalDiskBytesLimit;
+    } else {
+      strings::safe_strtou64(string(env_tfdbg_disk_bytes_limit),
+                             &global_disk_bytes_limit_);
+    }
+  }
+
+  if (bytes == 0) {
+    return true;
+  }
+  if (disk_bytes_used_ + bytes < global_disk_bytes_limit_) {
+    disk_bytes_used_ += bytes;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+void DebugFileIO::resetDiskByteUsage() {
+  mutex_lock l(bytes_mu_);
+  disk_bytes_used_ = 0;
+}
+
+#ifndef PLATFORM_WINDOWS
+DebugGrpcChannel::DebugGrpcChannel(const std::string& server_stream_addr)
+    : server_stream_addr_(server_stream_addr),
+      url_(absl::StrCat(DebugIO::kGrpcURLScheme, server_stream_addr)) {}
+
+absl::Status DebugGrpcChannel::Connect(const int64_t timeout_micros) {
   ::grpc::ChannelArguments args;
-  args.SetInt(GRPC_ARG_MAX_MESSAGE_LENGTH, std::numeric_limits<int32>::max());
+  args.SetInt(GRPC_ARG_MAX_MESSAGE_LENGTH, std::numeric_limits<int32_t>::max());
   // Avoid problems where default reconnect backoff is too long (e.g., 20 s).
-  args.SetInt("grpc.testing.fixed_reconnect_backoff_ms", 1000);
+  args.SetInt(GRPC_ARG_MAX_RECONNECT_BACKOFF_MS, 1000);
   channel_ = ::grpc::CreateCustomChannel(
       server_stream_addr_, ::grpc::InsecureChannelCredentials(), args);
   if (!channel_->WaitForConnected(
@@ -733,80 +783,76 @@ Status DebugGrpcChannel::Connect(const int64 timeout_micros) {
         "Failed to connect to gRPC channel at ", server_stream_addr_,
         " within a timeout of ", timeout_micros / 1e6, " s.");
   }
-  stub_ = EventListener::NewStub(channel_);
+  stub_ = grpc::EventListener::NewStub(channel_);
   reader_writer_ = stub_->SendEvents(&ctx_);
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 bool DebugGrpcChannel::WriteEvent(const Event& event) {
   mutex_lock l(mu_);
-
   return reader_writer_->Write(event);
 }
 
 bool DebugGrpcChannel::ReadEventReply(EventReply* event_reply) {
   mutex_lock l(mu_);
-
   return reader_writer_->Read(event_reply);
 }
 
-Status DebugGrpcChannel::ReceiveServerRepliesAndClose() {
-  mutex_lock l(mu_);
-
-  reader_writer_->WritesDone();
-
-  // Read all EventReply messages (if any) from the server.
+void DebugGrpcChannel::ReceiveAndProcessEventReplies(const size_t max_replies) {
   EventReply event_reply;
-  while (reader_writer_->Read(&event_reply)) {
+  size_t num_replies = 0;
+  while ((max_replies == 0 || ++num_replies <= max_replies) &&
+         ReadEventReply(&event_reply)) {
     for (const EventReply::DebugOpStateChange& debug_op_state_change :
          event_reply.debug_op_state_changes()) {
-      string watch_key = strings::StrCat(debug_op_state_change.node_name(), ":",
-                                         debug_op_state_change.output_slot(),
-                                         ":", debug_op_state_change.debug_op());
+      std::string watch_key =
+          strings::StrCat(debug_op_state_change.node_name(), ":",
+                          debug_op_state_change.output_slot(), ":",
+                          debug_op_state_change.debug_op());
       DebugGrpcIO::SetDebugNodeKeyGrpcState(url_, watch_key,
                                             debug_op_state_change.state());
     }
   }
+}
+
+absl::Status DebugGrpcChannel::ReceiveServerRepliesAndClose() {
+  reader_writer_->WritesDone();
+  // Read all EventReply messages (if any) from the server.
+  ReceiveAndProcessEventReplies(0);
 
   if (reader_writer_->Finish().ok()) {
-    return Status::OK();
+    return absl::OkStatus();
   } else {
-    return Status(error::FAILED_PRECONDITION,
-                  "Failed to close debug GRPC stream.");
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        "Failed to close debug GRPC stream.");
   }
 }
 
-// static
-mutex DebugGrpcIO::streams_mu;
+mutex DebugGrpcIO::streams_mu_(LINKER_INITIALIZED);
 
-// static
-int64 DebugGrpcIO::channel_connection_timeout_micros = 900 * 1000 * 1000;
+int64_t DebugGrpcIO::channel_connection_timeout_micros_ = 900 * 1000 * 1000;
 // TODO(cais): Make this configurable?
 
-// static
 const size_t DebugGrpcIO::kGrpcMessageSizeLimitBytes = 4000 * 1024;
 
-// static
 const size_t DebugGrpcIO::kGrpcMaxVarintLengthSize = 6;
 
-// static
-std::unordered_map<string, std::shared_ptr<DebugGrpcChannel>>*
+std::unordered_map<std::string, std::unique_ptr<DebugGrpcChannel>>*
 DebugGrpcIO::GetStreamChannels() {
-  static std::unordered_map<string, std::shared_ptr<DebugGrpcChannel>>*
-      stream_channels =
-          new std::unordered_map<string, std::shared_ptr<DebugGrpcChannel>>();
+  static std::unordered_map<
+      std::string, std::unique_ptr<DebugGrpcChannel>>* stream_channels =
+      new std::unordered_map<std::string, std::unique_ptr<DebugGrpcChannel>>();
   return stream_channels;
 }
 
-// static
-Status DebugGrpcIO::SendTensorThroughGrpcStream(
+absl::Status DebugGrpcIO::SendTensorThroughGrpcStream(
     const DebugNodeKey& debug_node_key, const Tensor& tensor,
-    const uint64 wall_time_us, const string& grpc_stream_url,
+    const uint64_t wall_time_us, const std::string& grpc_stream_url,
     const bool gated) {
   if (gated &&
       !IsReadGateOpen(grpc_stream_url, debug_node_key.debug_node_name)) {
-    return Status::OK();
+    return absl::OkStatus();
   } else {
     std::vector<Event> events;
     TF_RETURN_IF_ERROR(WrapTensorAsEvents(debug_node_key, tensor, wall_time_us,
@@ -816,76 +862,83 @@ Status DebugGrpcIO::SendTensorThroughGrpcStream(
           SendEventProtoThroughGrpcStream(event, grpc_stream_url));
     }
     if (IsWriteGateOpen(grpc_stream_url, debug_node_key.debug_node_name)) {
-      EventReply event_reply;
-      TF_RETURN_IF_ERROR(ReceiveEventReplyProtoThroughGrpcStream(
-          &event_reply, grpc_stream_url));
+      DebugGrpcChannel* debug_grpc_channel = nullptr;
+      TF_RETURN_IF_ERROR(
+          GetOrCreateDebugGrpcChannel(grpc_stream_url, &debug_grpc_channel));
+      debug_grpc_channel->ReceiveAndProcessEventReplies(1);
       // TODO(cais): Support new tensor value carried in the EventReply for
       // overriding the value of the tensor being published.
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 }
 
-// static
-Status DebugGrpcIO::ReceiveEventReplyProtoThroughGrpcStream(
-    EventReply* event_reply, const string& grpc_stream_url) {
-  std::shared_ptr<DebugGrpcChannel> debug_grpc_channel;
-  {
-    mutex_lock l(streams_mu);
-    std::unordered_map<string, std::shared_ptr<DebugGrpcChannel>>*
-        stream_channels = GetStreamChannels();
-    debug_grpc_channel = (*stream_channels)[grpc_stream_url];
-  }
+absl::Status DebugGrpcIO::ReceiveEventReplyProtoThroughGrpcStream(
+    EventReply* event_reply, const std::string& grpc_stream_url) {
+  DebugGrpcChannel* debug_grpc_channel = nullptr;
+  TF_RETURN_IF_ERROR(
+      GetOrCreateDebugGrpcChannel(grpc_stream_url, &debug_grpc_channel));
   if (debug_grpc_channel->ReadEventReply(event_reply)) {
-    return Status::OK();
+    return absl::OkStatus();
   } else {
-    return errors::Cancelled(strings::StrCat(
-        "Reading EventReply from stream URL ", grpc_stream_url, " failed."));
+    return errors::Cancelled(absl::StrCat("Reading EventReply from stream URL ",
+                                          grpc_stream_url, " failed."));
   }
 }
 
-// static
-Status DebugGrpcIO::SendEventProtoThroughGrpcStream(
-    const Event& event_proto, const string& grpc_stream_url) {
-  const string addr_with_path =
-      grpc_stream_url.find(DebugIO::kGrpcURLScheme) == 0
+absl::Status DebugGrpcIO::GetOrCreateDebugGrpcChannel(
+    const std::string& grpc_stream_url, DebugGrpcChannel** debug_grpc_channel) {
+  const std::string addr_with_path =
+      absl::StartsWith(grpc_stream_url, DebugIO::kGrpcURLScheme)
           ? grpc_stream_url.substr(strlen(DebugIO::kGrpcURLScheme))
           : grpc_stream_url;
-  const string server_stream_addr =
+  const std::string server_stream_addr =
       addr_with_path.substr(0, addr_with_path.find('/'));
-  std::shared_ptr<DebugGrpcChannel> debug_grpc_channel;
   {
-    mutex_lock l(streams_mu);
-    std::unordered_map<string, std::shared_ptr<DebugGrpcChannel>>*
+    mutex_lock l(streams_mu_);
+    std::unordered_map<std::string, std::unique_ptr<DebugGrpcChannel>>*
         stream_channels = GetStreamChannels();
     if (stream_channels->find(grpc_stream_url) == stream_channels->end()) {
-      debug_grpc_channel.reset(new DebugGrpcChannel(server_stream_addr));
-      TF_RETURN_IF_ERROR(
-          debug_grpc_channel->Connect(channel_connection_timeout_micros));
-      (*stream_channels)[grpc_stream_url] = debug_grpc_channel;
-    } else {
-      debug_grpc_channel = (*stream_channels)[grpc_stream_url];
+      std::unique_ptr<DebugGrpcChannel> channel(
+          new DebugGrpcChannel(server_stream_addr));
+      TF_RETURN_IF_ERROR(channel->Connect(channel_connection_timeout_micros_));
+      stream_channels->insert(
+          std::make_pair(grpc_stream_url, std::move(channel)));
     }
+    *debug_grpc_channel = (*stream_channels)[grpc_stream_url].get();
   }
+  return absl::OkStatus();
+}
+
+absl::Status DebugGrpcIO::SendEventProtoThroughGrpcStream(
+    const Event& event_proto, const std::string& grpc_stream_url,
+    const bool receive_reply) {
+  DebugGrpcChannel* debug_grpc_channel;
+  TF_RETURN_IF_ERROR(
+      GetOrCreateDebugGrpcChannel(grpc_stream_url, &debug_grpc_channel));
 
   bool write_ok = debug_grpc_channel->WriteEvent(event_proto);
   if (!write_ok) {
-    return errors::Cancelled(strings::StrCat("Write event to stream URL ",
-                                             grpc_stream_url, " failed."));
+    return errors::Cancelled(absl::StrCat("Write event to stream URL ",
+                                          grpc_stream_url, " failed."));
   }
 
-  return Status::OK();
+  if (receive_reply) {
+    debug_grpc_channel->ReceiveAndProcessEventReplies(1);
+  }
+
+  return absl::OkStatus();
 }
 
-bool DebugGrpcIO::IsReadGateOpen(const string& grpc_debug_url,
-                                 const string& watch_key) {
+bool DebugGrpcIO::IsReadGateOpen(const std::string& grpc_debug_url,
+                                 const std::string& watch_key) {
   const DebugNodeName2State* enabled_node_to_state =
       GetEnabledDebugOpStatesAtUrl(grpc_debug_url);
   return enabled_node_to_state->find(watch_key) != enabled_node_to_state->end();
 }
 
-bool DebugGrpcIO::IsWriteGateOpen(const string& grpc_debug_url,
-                                  const string& watch_key) {
+bool DebugGrpcIO::IsWriteGateOpen(const std::string& grpc_debug_url,
+                                  const std::string& watch_key) {
   const DebugNodeName2State* enabled_node_to_state =
       GetEnabledDebugOpStatesAtUrl(grpc_debug_url);
   auto it = enabled_node_to_state->find(watch_key);
@@ -896,39 +949,36 @@ bool DebugGrpcIO::IsWriteGateOpen(const string& grpc_debug_url,
   }
 }
 
-// static
-Status DebugGrpcIO::CloseGrpcStream(const string& grpc_stream_url) {
-  mutex_lock l(streams_mu);
+absl::Status DebugGrpcIO::CloseGrpcStream(const std::string& grpc_stream_url) {
+  mutex_lock l(streams_mu_);
 
-  std::unordered_map<string, std::shared_ptr<DebugGrpcChannel>>*
+  std::unordered_map<std::string, std::unique_ptr<DebugGrpcChannel>>*
       stream_channels = GetStreamChannels();
   if (stream_channels->find(grpc_stream_url) != stream_channels->end()) {
     // Stream of the specified address exists. Close it and remove it from
     // record.
-    Status s;
-    s = (*stream_channels)[grpc_stream_url]->ReceiveServerRepliesAndClose();
+    absl::Status s =
+        (*stream_channels)[grpc_stream_url]->ReceiveServerRepliesAndClose();
     (*stream_channels).erase(grpc_stream_url);
     return s;
   } else {
     // Stream of the specified address does not exist. No action.
-    return Status::OK();
+    return absl::OkStatus();
   }
 }
 
-// static
-std::unordered_map<string, DebugGrpcIO::DebugNodeName2State>*
+std::unordered_map<std::string, DebugGrpcIO::DebugNodeName2State>*
 DebugGrpcIO::GetEnabledDebugOpStates() {
-  static std::unordered_map<string, DebugNodeName2State>*
+  static std::unordered_map<std::string, DebugNodeName2State>*
       enabled_debug_op_states =
-          new std::unordered_map<string, DebugNodeName2State>();
+          new std::unordered_map<std::string, DebugNodeName2State>();
   return enabled_debug_op_states;
 }
 
-// static
 DebugGrpcIO::DebugNodeName2State* DebugGrpcIO::GetEnabledDebugOpStatesAtUrl(
-    const string& grpc_debug_url) {
+    const std::string& grpc_debug_url) {
   static mutex* debug_ops_state_mu = new mutex();
-  std::unordered_map<string, DebugNodeName2State>* states =
+  std::unordered_map<std::string, DebugNodeName2State>* states =
       GetEnabledDebugOpStates();
 
   mutex_lock l(*debug_ops_state_mu);
@@ -939,9 +989,8 @@ DebugGrpcIO::DebugNodeName2State* DebugGrpcIO::GetEnabledDebugOpStatesAtUrl(
   return &(*states)[grpc_debug_url];
 }
 
-// static
 void DebugGrpcIO::SetDebugNodeKeyGrpcState(
-    const string& grpc_debug_url, const string& watch_key,
+    const std::string& grpc_debug_url, const std::string& watch_key,
     const EventReply::DebugOpStateChange::State new_state) {
   DebugNodeName2State* states = GetEnabledDebugOpStatesAtUrl(grpc_debug_url);
   if (new_state == EventReply::DebugOpStateChange::DISABLED) {
@@ -956,7 +1005,6 @@ void DebugGrpcIO::SetDebugNodeKeyGrpcState(
   }
 }
 
-// static
 void DebugGrpcIO::ClearEnabledWatchKeys() {
   GetEnabledDebugOpStates()->clear();
 }

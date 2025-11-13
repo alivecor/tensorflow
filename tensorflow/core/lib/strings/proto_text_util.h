@@ -13,15 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_LIB_STRINGS_PROTO_TEXT_UTIL_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_LIB_STRINGS_PROTO_TEXT_UTIL_H_
+#ifndef TENSORFLOW_CORE_LIB_STRINGS_PROTO_TEXT_UTIL_H_
+#define TENSORFLOW_CORE_LIB_STRINGS_PROTO_TEXT_UTIL_H_
 
-#include "tensorflow/core/lib/strings/numbers.h"
-#include "tensorflow/core/lib/strings/scanner.h"
-#include "tensorflow/core/lib/strings/str_util.h"
-#include "tensorflow/core/lib/strings/strcat.h"
-#include "tensorflow/core/platform/macros.h"
-#include "tensorflow/core/platform/protobuf.h"
+#include <cstddef>
+#include <string>
+
+#include "absl/strings/escaping.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "tensorflow/core/platform/numbers.h"
+#include "tensorflow/core/platform/scanner.h"
 
 namespace tensorflow {
 namespace strings {
@@ -35,35 +37,37 @@ class ProtoTextOutput {
   // Construct a ProtoTextOutput that writes to <output> If short_debug is true,
   // outputs text to match proto.ShortDebugString(); else matches
   // proto.DebugString().
-  ProtoTextOutput(string* output, bool short_debug)
+  ProtoTextOutput(std::string* output, bool short_debug)
       : output_(output),
         short_debug_(short_debug),
         field_separator_(short_debug ? " " : "\n") {}
 
   // Writes opening of nested message and increases indent level.
   void OpenNestedMessage(const char field_name[]) {
-    StrAppend(output_, level_empty_ ? "" : field_separator_, indent_,
-              field_name, " {", field_separator_);
-    if (!short_debug_) StrAppend(&indent_, "  ");
+    absl::StrAppend(output_, level_empty_ ? "" : field_separator_, indent_,
+                    field_name, " {", field_separator_);
+    if (!short_debug_) absl::StrAppend(&indent_, "  ");
     level_empty_ = true;
   }
 
   // Writes close of nested message and decreases indent level.
   void CloseNestedMessage() {
     if (!short_debug_) indent_.resize(indent_.size() - 2);
-    StrAppend(output_, level_empty_ ? "" : field_separator_, indent_, "}");
+    absl::StrAppend(output_, level_empty_ ? "" : field_separator_, indent_,
+                    "}");
     level_empty_ = false;
   }
 
   // Print the close of the top-level message that was printed.
   void CloseTopMessage() {
-    if (!short_debug_ && !level_empty_) StrAppend(output_, "\n");
+    if (!short_debug_ && !level_empty_) absl::StrAppend(output_, "\n");
   }
 
   // Appends a numeric value, like my_field: 123
   template <typename T>
   void AppendNumeric(const char field_name[], T value) {
-    AppendFieldAndValue(field_name, StrCat(value));
+    AppendFieldAndValue(field_name,
+                        absl::StrCat(strings::LegacyPrecision(value)));
   }
 
   // Appends a numeric value, like my_field: 123, but only if value != 0.
@@ -83,64 +87,43 @@ class ProtoTextOutput {
   }
 
   // Appends a string value, like my_field: "abc123".
-  void AppendString(const char field_name[], const string& value) {
-    AppendFieldAndValue(
-        field_name, StrCat("\"", ::tensorflow::str_util::CEscape(value), "\""));
+  void AppendString(const char field_name[], const std::string& value) {
+    AppendFieldAndValue(field_name,
+                        absl::StrCat("\"", absl::CEscape(value), "\""));
   }
 
   // Appends a string value, like my_field: "abc123", but only if value is not
   // empty.
-  void AppendStringIfNotEmpty(const char field_name[], const string& value) {
+  void AppendStringIfNotEmpty(const char field_name[],
+                              const std::string& value) {
     if (!value.empty()) AppendString(field_name, value);
   }
 
   // Appends the string name of an enum, like my_field: FIRST_ENUM.
-  void AppendEnumName(const char field_name[], const string& name) {
+  void AppendEnumName(const char field_name[], const std::string& name) {
     AppendFieldAndValue(field_name, name);
   }
 
  private:
-  void AppendFieldAndValue(const char field_name[], StringPiece value_text) {
-    StrAppend(output_, level_empty_ ? "" : field_separator_, indent_,
-              field_name, kColonSeparator, value_text);
+  void AppendFieldAndValue(const char field_name[],
+                           absl::string_view value_text) {
+    absl::StrAppend(output_, level_empty_ ? "" : field_separator_, indent_,
+                    field_name, kColonSeparator, value_text);
     level_empty_ = false;
   }
 
-  string* const output_;
+  std::string* const output_;
   const bool short_debug_;
-  const string field_separator_;
-  string indent_;
+  const std::string field_separator_;
+  std::string indent_;
 
   // False when at least one field has been output for the message at the
   // current deepest level of nesting.
   bool level_empty_ = true;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(ProtoTextOutput);
+  ProtoTextOutput(const ProtoTextOutput&) = delete;
+  void operator=(const ProtoTextOutput&) = delete;
 };
-
-inline bool ProtoParseNumeric(StringPiece s, int32* value) {
-  return ::tensorflow::strings::safe_strto32(s, value);
-}
-
-inline bool ProtoParseNumeric(StringPiece s, uint32* value) {
-  return ::tensorflow::strings::safe_strtou32(s, value);
-}
-
-inline bool ProtoParseNumeric(StringPiece s, int64* value) {
-  return ::tensorflow::strings::safe_strto64(s, value);
-}
-
-inline bool ProtoParseNumeric(StringPiece s, uint64* value) {
-  return ::tensorflow::strings::safe_strtou64(s, value);
-}
-
-inline bool ProtoParseNumeric(StringPiece s, float* value) {
-  return ::tensorflow::strings::safe_strtof(s.ToString().c_str(), value);
-}
-
-inline bool ProtoParseNumeric(StringPiece s, double* value) {
-  return ::tensorflow::strings::safe_strtod(s.ToString().c_str(), value);
-}
 
 inline void ProtoSpaceAndComments(Scanner* scanner) {
   for (;;) {
@@ -155,7 +138,7 @@ inline void ProtoSpaceAndComments(Scanner* scanner) {
 // failed.
 template <typename T>
 bool ProtoParseNumericFromScanner(Scanner* scanner, T* value) {
-  StringPiece numeric_str;
+  absl::string_view numeric_str;
   scanner->RestartCapture();
   if (!scanner->Many(Scanner::LETTER_DIGIT_DOT_PLUS_MINUS)
            .GetResult(nullptr, &numeric_str)) {
@@ -174,7 +157,7 @@ bool ProtoParseNumericFromScanner(Scanner* scanner, T* value) {
   }
 
   ProtoSpaceAndComments(scanner);
-  return ProtoParseNumeric(numeric_str, value);
+  return SafeStringToNumeric<T>(numeric_str, value);
 }
 
 // Parse the next boolean value from <scanner>, returning false if parsing
@@ -183,9 +166,9 @@ bool ProtoParseBoolFromScanner(Scanner* scanner, bool* value);
 
 // Parse the next string literal from <scanner>, returning false if parsing
 // failed.
-bool ProtoParseStringLiteralFromScanner(Scanner* scanner, string* value);
+bool ProtoParseStringLiteralFromScanner(Scanner* scanner, std::string* value);
 
 }  // namespace strings
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_LIB_STRINGS_PROTO_TEXT_UTIL_H_
+#endif  // TENSORFLOW_CORE_LIB_STRINGS_PROTO_TEXT_UTIL_H_

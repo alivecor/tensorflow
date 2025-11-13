@@ -15,11 +15,12 @@ limitations under the License.
 
 #include "tensorflow/core/distributed_runtime/scheduler.h"
 
+#include <limits>
 #include <queue>
 
-#include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/common_runtime/device.h"
 #include "tensorflow/core/common_runtime/device_set.h"
+#include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/util/util.h"
 
 namespace tensorflow {
@@ -80,7 +81,7 @@ Microseconds SlackAnalysis::ComputeAsap(std::vector<Microseconds>* asap_times) {
   std::vector<int> pending_count(graph_->num_node_ids());
   InitializePending(graph_, &pending_count);
 
-  std::deque<Node*> queue;
+  std::deque<const Node*> queue;
   Node* srcNode = graph_->source_node();
   queue.push_back(srcNode);
   (*asap_times)[srcNode->id()] = 0;
@@ -92,7 +93,7 @@ Microseconds SlackAnalysis::ComputeAsap(std::vector<Microseconds>* asap_times) {
     for (const Edge* out_edge : curr->out_edges()) {
       // The time needed for 'out' to get its input from 'curr'.
       Microseconds copy_time(0);
-      Node* out = out_edge->dst();
+      const Node* out = out_edge->dst();
       if (!out_edge->IsControlEdge() &&
           curr->assigned_device_name() != out->assigned_device_name()) {
         // Add an arbitrary 10microsecs for each copy.
@@ -125,7 +126,7 @@ Microseconds SlackAnalysis::ComputeAlap(std::vector<Microseconds>* alap_times) {
     // For reverse execution order, Switch nodes are special. We process
     // them only once when one of its outputs is processed.
     if (IsSwitch(n)) {
-      int32 num_control_edges = 0;
+      int32_t num_control_edges = 0;
       for (const Edge* edge : n->out_edges()) {
         if (edge->IsControlEdge()) {
           num_control_edges++;
@@ -137,7 +138,7 @@ Microseconds SlackAnalysis::ComputeAlap(std::vector<Microseconds>* alap_times) {
     }
   }
 
-  std::deque<Node*> queue;
+  std::deque<const Node*> queue;
   Node* sinkNode = graph_->sink_node();
   queue.push_back(sinkNode);
   (*alap_times)[sinkNode->id()] = 0;
@@ -148,7 +149,7 @@ Microseconds SlackAnalysis::ComputeAlap(std::vector<Microseconds>* alap_times) {
     for (const Edge* in_edge : curr->in_edges()) {
       // The time needed for 'curr' to get its input from 'src'.
       Microseconds copy_time(0);
-      Node* src = in_edge->src();
+      const Node* src = in_edge->src();
       if (!in_edge->IsControlEdge() &&
           src->assigned_device_name() != curr->assigned_device_name()) {
         // TODO(yuanbyu): Use the real cost model
@@ -172,7 +173,7 @@ Microseconds SlackAnalysis::ComputeAlap(std::vector<Microseconds>* alap_times) {
   return (*alap_times)[graph_->source_node()->id()];
 }
 
-void SlackAnalysis::ComputeSlack(std::vector<int64>* slacks) {
+void SlackAnalysis::ComputeSlack(std::vector<int64_t>* slacks) {
   std::vector<Microseconds> asap_times;
   std::vector<Microseconds> alap_times;
   ComputeAsap(&asap_times);
@@ -188,7 +189,7 @@ void SlackAnalysis::ComputeSlack(std::vector<int64>* slacks) {
 
 GreedyScheduler::GreedyScheduler(const DeviceSet* devices,
                                  const CostModel* cost_model, const Graph* g,
-                                 std::vector<int64>* priority)
+                                 std::vector<int64_t>* priority)
     : devices_(devices),
       cost_model_(cost_model),
       graph_(g),
@@ -226,7 +227,6 @@ Microseconds GreedyScheduler::ComputeSchedule(
   while (!event_queue.empty()) {
     Event event = event_queue.top();
     event_queue.pop();
-    Microseconds curr_time;
     if (event.is_completion) {
       Sim* sim = device_states_[event.node->assigned_device_name()];
       --sim->num_running;
@@ -237,7 +237,7 @@ Microseconds GreedyScheduler::ComputeSchedule(
 
       for (const Edge* out_edge : event.node->out_edges()) {
         Microseconds copy_time(0);
-        Node* out = out_edge->dst();
+        const Node* out = out_edge->dst();
         if (!out_edge->IsControlEdge() &&
             event.node->assigned_device_name() != out->assigned_device_name()) {
           // TODO(yuanbyu): Use below with the real cost model.
@@ -278,11 +278,11 @@ Microseconds GreedyScheduler::ComputeSchedule(
   return max_completion;
 }
 
-Node* GreedyScheduler::GetNodeWithHighestPriority(
-    const std::vector<Node*>& nodes) {
-  Node* curr_node = nullptr;
-  int64 curr_priority = kint64max;
-  for (Node* n : nodes) {
+const Node* GreedyScheduler::GetNodeWithHighestPriority(
+    const std::vector<const Node*>& nodes) {
+  const Node* curr_node = nullptr;
+  int64_t curr_priority = std::numeric_limits<int64_t>::max();
+  for (const Node* n : nodes) {
     if ((*priority_)[n->id()] < curr_priority) {
       curr_node = n;
       curr_priority = (*priority_)[n->id()];
@@ -298,7 +298,7 @@ PriorityScheduler::PriorityScheduler(const DeviceSet* devices,
 
 Microseconds PriorityScheduler::ComputeSchedule(
     std::vector<Microseconds>* start_times) {
-  std::vector<int64> slacks;
+  std::vector<int64_t> slacks;
   SlackAnalysis slack(graph_, cost_model_);
   slack.ComputeSlack(&slacks);
   GreedyScheduler greedysched(devices_, cost_model_, graph_, &slacks);
@@ -306,7 +306,7 @@ Microseconds PriorityScheduler::ComputeSchedule(
 }
 
 Microseconds PriorityScheduler::AssignPriorities(
-    std::vector<int64>* priorities) {
+    std::vector<int64_t>* priorities) {
   std::vector<Microseconds> start_times;
   Microseconds makespan = ComputeSchedule(&start_times);
 

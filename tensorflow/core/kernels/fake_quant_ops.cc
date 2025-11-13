@@ -15,22 +15,27 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-#ifdef GOOGLE_CUDA
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
 #define EIGEN_USE_GPU
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #include "tensorflow/core/kernels/fake_quant_ops_functor.h"
-
+// Above is the related header but clang tidy doesn't recognize it.
 #include "tensorflow/core/framework/numeric_op.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/lib/monitoring/gauge.h"
 #include "tensorflow/core/platform/protobuf.h"
+#include "tensorflow/core/util/determinism.h"
 
 using tensorflow::BinaryElementWiseOp;
 using tensorflow::DEVICE_CPU;
-#if GOOGLE_CUDA
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
 using tensorflow::DEVICE_GPU;
-#endif
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 using tensorflow::OpKernel;
 using tensorflow::OpKernelConstruction;
 using tensorflow::OpKernelContext;
@@ -44,8 +49,14 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
+auto* using_fake_quant = monitoring::Gauge<bool, 0>::New(
+    "/tensorflow/api/op/using_fake_quantization",
+    "True if a fake_quant op is created.");
+
+#define SET_USING_FAKE_QUANT() using_fake_quant->GetCell()->Set(true)
+
 namespace {
-bool IsNumBitsValid(int num_bits) { return num_bits >= 2 && num_bits <= 8; }
+bool IsNumBitsValid(int num_bits) { return num_bits >= 2 && num_bits <= 16; }
 }  // namespace
 
 // -----------------------------------------------------------------------------
@@ -65,12 +76,14 @@ class FakeQuantWithMinMaxArgsOp
                                 " >= ", max_));
     int num_bits;
     OP_REQUIRES_OK(context, context->GetAttr("num_bits", &num_bits));
-    OP_REQUIRES(context, IsNumBitsValid(num_bits),
-                InvalidArgument("num_bits must be between 2 and 8, inclusive"));
+    OP_REQUIRES(
+        context, IsNumBitsValid(num_bits),
+        InvalidArgument("num_bits must be between 2 and 16, inclusive"));
     bool narrow_range;
     OP_REQUIRES_OK(context, context->GetAttr("narrow_range", &narrow_range));
     quant_min_ = narrow_range ? 1 : 0;
     quant_max_ = (1 << num_bits) - 1;
+    SET_USING_FAKE_QUANT();
   }
 
   void Operate(OpKernelContext* context, const Tensor& input, Tensor* output) {
@@ -104,8 +117,9 @@ class FakeQuantWithMinMaxArgsGradientOp
                                 " >= ", max_));
     int num_bits;
     OP_REQUIRES_OK(context, context->GetAttr("num_bits", &num_bits));
-    OP_REQUIRES(context, IsNumBitsValid(num_bits),
-                InvalidArgument("num_bits must be between 2 and 8, inclusive"));
+    OP_REQUIRES(
+        context, IsNumBitsValid(num_bits),
+        InvalidArgument("num_bits must be between 2 and 16, inclusive"));
     bool narrow_range;
     OP_REQUIRES_OK(context, context->GetAttr("narrow_range", &narrow_range));
     quant_min_ = narrow_range ? 1 : 0;
@@ -141,7 +155,8 @@ REGISTER_KERNEL_BUILDER(
     Name("FakeQuantWithMinMaxArgsGradient").Device(DEVICE_CPU),
     FakeQuantWithMinMaxArgsGradientOp<CPUDevice>);
 
-#if GOOGLE_CUDA
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
 typedef Eigen::GpuDevice GPUDevice;
 
 // Forward declarations for functor specializations for GPU.
@@ -163,7 +178,7 @@ void FakeQuantWithMinMaxArgsGradientFunctor<GPUDevice>::operator()(
 REGISTER_KERNEL_BUILDER(
     Name("FakeQuantWithMinMaxArgsGradient").Device(DEVICE_GPU),
     FakeQuantWithMinMaxArgsGradientOp<GPUDevice>);
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // -----------------------------------------------------------------------------
 // Implementation of FakeQuantWithMinMaxVarsOp, see its documentation in
@@ -175,12 +190,14 @@ class FakeQuantWithMinMaxVarsOp : public OpKernel {
       : OpKernel::OpKernel(context) {
     int num_bits;
     OP_REQUIRES_OK(context, context->GetAttr("num_bits", &num_bits));
-    OP_REQUIRES(context, IsNumBitsValid(num_bits),
-                InvalidArgument("num_bits must be between 2 and 8, inclusive"));
+    OP_REQUIRES(
+        context, IsNumBitsValid(num_bits),
+        InvalidArgument("num_bits must be between 2 and 16, inclusive"));
     bool narrow_range;
     OP_REQUIRES_OK(context, context->GetAttr("narrow_range", &narrow_range));
     quant_min_ = narrow_range ? 1 : 0;
     quant_max_ = (1 << num_bits) - 1;
+    SET_USING_FAKE_QUANT();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -188,6 +205,13 @@ class FakeQuantWithMinMaxVarsOp : public OpKernel {
     const Tensor& input = context->input(0);
     const Tensor& min = context->input(1);
     const Tensor& max = context->input(2);
+
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(min.shape()),
+        InvalidArgument("`min` must be rank 0 but is rank ", min.dims()));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(max.shape()),
+        InvalidArgument("`max` must be rank 0 but is rank ", max.dims()));
 
     Tensor* output;
     OP_REQUIRES_OK(context,
@@ -213,12 +237,20 @@ class FakeQuantWithMinMaxVarsGradientOp : public OpKernel {
       : OpKernel::OpKernel(context) {
     int num_bits;
     OP_REQUIRES_OK(context, context->GetAttr("num_bits", &num_bits));
-    OP_REQUIRES(context, IsNumBitsValid(num_bits),
-                InvalidArgument("num_bits must be between 2 and 8, inclusive"));
+    OP_REQUIRES(
+        context, IsNumBitsValid(num_bits),
+        InvalidArgument("num_bits must be between 2 and 16, inclusive"));
     bool narrow_range;
     OP_REQUIRES_OK(context, context->GetAttr("narrow_range", &narrow_range));
     quant_min_ = narrow_range ? 1 : 0;
     quant_max_ = (1 << num_bits) - 1;
+    if (std::is_same<Device, Eigen::GpuDevice>::value) {
+      OP_REQUIRES(
+          context, !OpDeterminismRequired(),
+          errors::Unimplemented(
+              "Determinism is not yet supported in GPU implementation of "
+              "FakeQuantWithMinMaxVarsGradient."));
+    }
   }
 
   void Compute(OpKernelContext* context) override {
@@ -229,6 +261,12 @@ class FakeQuantWithMinMaxVarsGradientOp : public OpKernel {
                 InvalidArgument("gradient and input must be the same size"));
     const Tensor& min = context->input(2);
     const Tensor& max = context->input(3);
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(min.shape()),
+        InvalidArgument("`min` must be rank 0 but is rank ", min.dims()));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(max.shape()),
+        InvalidArgument("`max` must be rank 0 but is rank ", max.dims()));
 
     Tensor* grad_wrt_input;
     OP_REQUIRES_OK(context,
@@ -261,7 +299,8 @@ REGISTER_KERNEL_BUILDER(
     Name("FakeQuantWithMinMaxVarsGradient").Device(DEVICE_CPU),
     FakeQuantWithMinMaxVarsGradientOp<CPUDevice>);
 
-#if GOOGLE_CUDA
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
 template <>
 void FakeQuantWithMinMaxVarsFunctor<GPUDevice>::operator()(
     const GPUDevice& d, typename TTypes<float>::ConstFlat inputs,
@@ -290,7 +329,7 @@ REGISTER_KERNEL_BUILDER(Name("FakeQuantWithMinMaxVarsGradient")
                             .HostMemory("min")
                             .HostMemory("max"),
                         FakeQuantWithMinMaxVarsGradientOp<GPUDevice>);
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // -----------------------------------------------------------------------------
 // Implementation of FakeQuantWithMinMaxVarsPerChannelOp, see its documentation
@@ -302,12 +341,14 @@ class FakeQuantWithMinMaxVarsPerChannelOp : public OpKernel {
       : OpKernel::OpKernel(context) {
     int num_bits;
     OP_REQUIRES_OK(context, context->GetAttr("num_bits", &num_bits));
-    OP_REQUIRES(context, IsNumBitsValid(num_bits),
-                InvalidArgument("num_bits must be between 2 and 8, inclusive"));
+    OP_REQUIRES(
+        context, IsNumBitsValid(num_bits),
+        InvalidArgument("num_bits must be between 2 and 16, inclusive"));
     bool narrow_range;
     OP_REQUIRES_OK(context, context->GetAttr("narrow_range", &narrow_range));
     quant_min_ = narrow_range ? 1 : 0;
     quant_max_ = (1 << num_bits) - 1;
+    SET_USING_FAKE_QUANT();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -315,10 +356,17 @@ class FakeQuantWithMinMaxVarsPerChannelOp : public OpKernel {
     const Tensor& input = context->input(0);
     const int depth = input.dim_size(input.dims() - 1);  // last dimension size.
     const Tensor& min = context->input(1);
+    const Tensor& max = context->input(2);
+
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(min.shape()),
+        InvalidArgument("`min` must be rank 1 but is rank ", min.dims()));
     OP_REQUIRES(context, min.dim_size(0) == depth,
                 InvalidArgument("min has incorrect size, expected ", depth,
                                 " was ", min.dim_size(0)));
-    const Tensor& max = context->input(2);
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(max.shape()),
+        InvalidArgument("`max` must be rank 1 but is rank ", max.dims()));
     OP_REQUIRES(context, max.dim_size(0) == depth,
                 InvalidArgument("max has incorrect size, expected ", depth,
                                 " was ", max.dim_size(0)));
@@ -348,12 +396,20 @@ class FakeQuantWithMinMaxVarsPerChannelGradientOp : public OpKernel {
       : OpKernel::OpKernel(context) {
     int num_bits;
     OP_REQUIRES_OK(context, context->GetAttr("num_bits", &num_bits));
-    OP_REQUIRES(context, IsNumBitsValid(num_bits),
-                InvalidArgument("num_bits must be between 2 and 8, inclusive"));
+    OP_REQUIRES(
+        context, IsNumBitsValid(num_bits),
+        InvalidArgument("num_bits must be between 2 and 16, inclusive"));
     bool narrow_range;
     OP_REQUIRES_OK(context, context->GetAttr("narrow_range", &narrow_range));
     quant_min_ = narrow_range ? 1 : 0;
     quant_max_ = (1 << num_bits) - 1;
+    if (std::is_same<Device, Eigen::GpuDevice>::value) {
+      OP_REQUIRES(
+          context, !OpDeterminismRequired(),
+          errors::Unimplemented(
+              "Determinism is not yet supported in GPU implementation of "
+              "FakeQuantWithMinMaxVarsPerChannelGradient."));
+    }
   }
 
   void Compute(OpKernelContext* context) override {
@@ -364,10 +420,16 @@ class FakeQuantWithMinMaxVarsPerChannelGradientOp : public OpKernel {
                 InvalidArgument("gradient and input must be the same size"));
     const int depth = input.dim_size(input.dims() - 1);  // last dimension size.
     const Tensor& min = context->input(2);
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(min.shape()),
+        InvalidArgument("`min` must be rank 1 but is rank ", min.dims()));
     OP_REQUIRES(context, min.dim_size(0) == depth,
                 InvalidArgument("min has incorrect size, expected ", depth,
                                 " was ", min.dim_size(0)));
     const Tensor& max = context->input(3);
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(max.shape()),
+        InvalidArgument("`max` must be rank 1 but is rank ", max.dims()));
     OP_REQUIRES(context, max.dim_size(0) == depth,
                 InvalidArgument("max has incorrect size, expected ", depth,
                                 " was ", max.dim_size(0)));
@@ -405,7 +467,8 @@ REGISTER_KERNEL_BUILDER(
     Name("FakeQuantWithMinMaxVarsPerChannelGradient").Device(DEVICE_CPU),
     FakeQuantWithMinMaxVarsPerChannelGradientOp<CPUDevice>);
 
-#if GOOGLE_CUDA
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
 template <>
 void FakeQuantWithMinMaxVarsPerChannelFunctor<GPUDevice>::operator()(
     const GPUDevice& d, typename TTypes<float>::ConstMatrix inputs,
@@ -437,6 +500,6 @@ REGISTER_KERNEL_BUILDER(Name("FakeQuantWithMinMaxVarsPerChannelGradient")
                             .HostMemory("min")
                             .HostMemory("max"),
                         FakeQuantWithMinMaxVarsPerChannelGradientOp<GPUDevice>);
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace tensorflow

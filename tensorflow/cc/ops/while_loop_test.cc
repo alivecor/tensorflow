@@ -17,6 +17,7 @@ limitations under the License.
 #include "tensorflow/cc/client/client_session.h"
 #include "tensorflow/cc/ops/standard_ops.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
+#include "tensorflow/core/graph/while_context.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
 
@@ -38,10 +39,10 @@ class WhileLoopTest : public ::testing::Test {
                   const ops::BodyGraphBuilderFn& body,
                   error::Code error_code = error::OK,
                   const string& error_msg = "") {
-    Status s = ops::BuildWhileLoop(scope_, inputs_, cond, body, "test_loop",
-                                   &outputs_);
+    absl::Status s =
+        ops::BuildWhileLoop(scope_, inputs_, cond, body, kFrameName, &outputs_);
     EXPECT_EQ(s.code(), error_code);
-    EXPECT_EQ(s.error_message(), error_msg);
+    EXPECT_EQ(s.message(), error_msg);
   }
 
   template <typename T>
@@ -69,16 +70,20 @@ class WhileLoopTest : public ::testing::Test {
   Scope scope_;
   std::vector<Output> inputs_;
   std::vector<Output> outputs_;
+
+  static const char* const kFrameName;
 };
 
-Status LessThanTenCond(const Scope& s, const std::vector<Output>& inputs,
-                       Output* output) {
+const char* const WhileLoopTest::kFrameName = "test_loop";
+
+absl::Status LessThanTenCond(const Scope& s, const std::vector<Output>& inputs,
+                             Output* output) {
   *output = ops::Less(s, inputs[0], 10);
   return s.status();
 }
 
-Status AddOneBody(const Scope& s, const std::vector<Output>& inputs,
-                  std::vector<Output>* outputs) {
+absl::Status AddOneBody(const Scope& s, const std::vector<Output>& inputs,
+                        std::vector<Output>* outputs) {
   outputs->push_back(ops::Add(s, inputs[0], 1));
   return s.status();
 }
@@ -87,6 +92,23 @@ TEST_F(WhileLoopTest, Basic) {
   // Create loop: while (i < 10) i += 1
   Init(1);
   CreateLoop(LessThanTenCond, AddOneBody);
+
+  // Verify some output invariants
+  WhileContext* while_ctx;
+  for (int i = 0; i < outputs_.size(); ++i) {
+    Node* node = outputs_[i].node();
+    ASSERT_TRUE(node->IsExit()) << "Output node " << i << ":\n"
+                                << node->DebugString();
+    ASSERT_TRUE(node->while_ctx() != nullptr) << i;
+    if (i == 0) {
+      while_ctx = node->while_ctx();
+      EXPECT_EQ(while_ctx->frame_name(), kFrameName);
+    } else {
+      EXPECT_EQ(node->while_ctx(), while_ctx) << i;
+    }
+  }
+
+  // Run the loop and test we get the expected results
   Run<int>({1}, {10});
   Run<int>({11}, {11});
 }
@@ -124,7 +146,7 @@ TEST_F(WhileLoopTest, InvalidCondOutputIndex) {
         *output = {less.node(), 100};
         return s.status();
       },
-      AddOneBody, error::INVALID_ARGUMENT,
+      AddOneBody, error::OUT_OF_RANGE,
       "Node 'cond/Less' (type: 'Less', num of outputs: 1) does not have output "
       "100");
 }
@@ -160,7 +182,7 @@ TEST_F(WhileLoopTest, InvalidBodyOutputIndex) {
                outputs->emplace_back(add.node(), 100);
                return s.status();
              },
-             error::INVALID_ARGUMENT,
+             error::OUT_OF_RANGE,
              "Node 'body/Add' (type: 'Add', num of outputs: 1) does not have "
              "output 100");
 }

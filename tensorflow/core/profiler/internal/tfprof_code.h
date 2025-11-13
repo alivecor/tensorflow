@@ -16,24 +16,22 @@ limitations under the License.
 // Build a tree structure based on the TensorFlow model's python code stacks.
 // Stats are aggregated from descendants to ancestors.
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_CODE_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_CODE_H_
+#ifndef TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_CODE_H_
+#define TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_CODE_H_
 
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "tensorflow/c/checkpoint_reader.h"
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/profiler/internal/tfprof_node.h"
-#include "tensorflow/core/profiler/internal/tfprof_options.h"
 #include "tensorflow/core/profiler/internal/tfprof_show_multi.h"
 #include "tensorflow/core/profiler/internal/tfprof_timeline.h"
 #include "tensorflow/core/profiler/internal/tfprof_utils.h"
 #include "tensorflow/core/profiler/profile.pb.h"
 #include "tensorflow/core/profiler/tfprof_log.pb.h"
+#include "tensorflow/core/profiler/tfprof_options.h"
 #include "tensorflow/core/profiler/tfprof_output.pb.h"
 
 namespace tensorflow {
@@ -41,7 +39,7 @@ namespace tfprof {
 
 class PprofProfile {
  public:
-  virtual ~PprofProfile() {}
+  virtual ~PprofProfile() = default;
 
   virtual uint64 AddLocation(const CodeNode* callee,
                              const CodeNode* caller) = 0;
@@ -49,13 +47,13 @@ class PprofProfile {
   virtual void AddSample(const CodeNode* leaf,
                          std::vector<uint64>* call_ids) = 0;
 
-  virtual Status WritePprofProfile(const string& filename) = 0;
+  virtual absl::Status WritePprofProfile(const string& filename) = 0;
 };
 
 class TFCode : public TFMultiShow {
  public:
-  TFCode() {}
-  ~TFCode() override {}
+  TFCode() = default;
+  ~TFCode() override = default;
 
   // Add nodes to the code view. Called before Build()
   void AddNode(TFGraphNode* node) override;
@@ -71,7 +69,7 @@ class TFCode : public TFMultiShow {
   std::vector<CodeNode*> SearchRoot(std::vector<CodeNode*> roots,
                                     const std::vector<string>& regexes);
 
-  std::vector<CodeNode*> PrintScope(const std::vector<CodeNode*> roots,
+  std::vector<CodeNode*> PrintScope(std::vector<CodeNode*> roots,
                                     const Options& opts, int depth,
                                     int last_ident);
 
@@ -82,12 +80,10 @@ class TFCode : public TFMultiShow {
               const Options& opts, string* display_str,
               MultiGraphNodeProto* proto, std::vector<uint64>* call_ids);
 
-  string FormatNode(CodeNode* node, const Options& opts, int64 indent) const;
-  string FormatNodeMemory(CodeNode* node, int64 bytes, int64 total_bytes) const;
+  string FormatNode(CodeNode* node, const Options& opts, int64_t indent) const;
+  string FormatNodeMemory(CodeNode* node, int64_t bytes,
+                          int64_t total_bytes) const;
 
-  // Common traces track the code path that all traces share. Such as
-  // "main()", "create_op", etc.
-  std::set<string> common_traces_;
   std::unique_ptr<CodeNode> root_;
   std::unique_ptr<TFMultiGraphNode> graph_root_;
   std::unique_ptr<PprofProfile> pprof_profile_;
@@ -97,4 +93,4 @@ class TFCode : public TFMultiShow {
 }  // namespace tfprof
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_CODE_H_
+#endif  // TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_CODE_H_

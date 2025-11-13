@@ -16,16 +16,74 @@ limitations under the License.
 // XLA-specific Ops for broadcasting used in gradient
 // code.
 
+#include <cstdint>
+#include <vector>
+
+#include "absl/container/inlined_vector.h"
+#include "absl/strings/str_join.h"
 #include "tensorflow/compiler/tf2xla/xla_helpers.h"
 #include "tensorflow/compiler/tf2xla/xla_op_kernel.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
-#include "tensorflow/compiler/xla/literal_util.h"
+#include "xla/hlo/builder/value_inference.h"
+#include "xla/literal.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/bcast.h"
 
 namespace tensorflow {
 namespace {
+
+// Given shapes of two tensors, computes the broadcast shape.
+class BCastArgsOp : public XlaOpKernel {
+ public:
+  explicit BCastArgsOp(OpKernelConstruction* ctx) : XlaOpKernel(ctx) {
+  }
+
+  void Compile(XlaOpKernelContext* ctx) override {
+    OP_REQUIRES(
+        ctx, ctx->num_inputs() == 2,
+        errors::Unimplemented("Broadcast for n-ary operations (n > 2)"));
+    absl::InlinedVector<BCast::Vec, 2> shapes;
+    for (int i = 0; i < ctx->num_inputs(); ++i) {
+      const TensorShape in_shape = ctx->InputShape(i);
+      OP_REQUIRES(ctx, TensorShapeUtils::IsVector(in_shape),
+                  errors::InvalidArgument("In[", i, "] must be a vector.",
+                                          in_shape.DebugString()));
+      std::vector<int64_t> shape;
+      OP_REQUIRES_OK(ctx, ctx->ConstantInputAsIntVector(
+                              i, &shape, xla::ValueInferenceMode::kUpperBound));
+      shapes.push_back(BCast::Vec(shape.begin(), shape.end()));
+    }
+    BCast bcast(shapes[0], shapes[1]);
+    OP_REQUIRES(ctx, bcast.IsValid(),
+                errors::InvalidArgument(
+                    "Incompatible shapes: [", absl::StrJoin(shapes[0], ","),
+                    "] vs. [", absl::StrJoin(shapes[1], ","), "]"));
+
+    DataType val_type = ctx->expected_output_dtype(0);
+    const int64_t len = bcast.output_shape().size();
+    Tensor output(val_type, TensorShape({len}));
+    for (int64_t i = 0; i < len; ++i) {
+      if (val_type == DT_INT32) {
+        output.flat<int32_t>()(i) =
+            static_cast<int32_t>(bcast.output_shape()[i]);
+      } else {
+        output.flat<int64_t>()(i) =
+            static_cast<int64_t>(bcast.output_shape()[i]);
+      }
+    }
+    ctx->SetConstantOutput(0, output);
+  }
+
+ private:
+  BCastArgsOp(const BCastArgsOp&) = delete;
+  void operator=(const BCastArgsOp&) = delete;
+};
+REGISTER_XLA_OP(Name("BroadcastArgs")
+                    .CompileTimeConstantInput("s0")
+                    .CompileTimeConstantInput("s1"),
+                BCastArgsOp);
 
 // Given shapes of two tensors, computes the reduction indices for the
 // gradient computation.
@@ -35,8 +93,6 @@ namespace {
 class BCastGradArgsOp : public XlaOpKernel {
  public:
   explicit BCastGradArgsOp(OpKernelConstruction* ctx) : XlaOpKernel(ctx) {
-    OP_REQUIRES_OK(
-        ctx, ctx->MatchSignature({DT_INT32, DT_INT32}, {DT_INT32, DT_INT32}));
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
@@ -44,44 +100,53 @@ class BCastGradArgsOp : public XlaOpKernel {
         ctx, ctx->num_inputs() == 2,
         errors::Unimplemented("Broadcast for n-ary operations (n > 2)"));
 
-    gtl::InlinedVector<BCast::Vec, 4> shapes;
+    absl::InlinedVector<BCast::Vec, 4> shapes;
     for (int i = 0; i < ctx->num_inputs(); ++i) {
       const TensorShape in_shape = ctx->InputShape(i);
       OP_REQUIRES(ctx, TensorShapeUtils::IsVector(in_shape),
                   errors::InvalidArgument("In[", i, "] must be a vector.",
                                           in_shape.DebugString()));
-      xla::Literal literal;
-      OP_REQUIRES_OK(ctx, ctx->ConstantInput(i, &literal));
+      std::vector<int64_t> vec;
+      // Technically we don't need to infer the upper-bound here. However the
+      // forward path uses the upperbound as bounded shape so we need backward
+      // path to use the same shape to decide the reduction indices.
+      OP_REQUIRES_OK(ctx, ctx->ConstantInputAsIntVector(
+                              i, &vec, xla::ValueInferenceMode::kUpperBound));
 
-      BCast::Vec vec;
-      for (int64 i = 0; i < in_shape.num_elements(); ++i) {
-        vec.push_back(literal.Get<int>({i}));
-      }
-      shapes.push_back(vec);
+      shapes.push_back(BCast::Vec(vec.begin(), vec.end()));
     }
     BCast bcast(shapes[0], shapes[1]);
     OP_REQUIRES(ctx, bcast.IsValid(),
                 errors::InvalidArgument(
-                    "Incompatible shapes: [", str_util::Join(shapes[0], ","),
-                    "] vs. [", str_util::Join(shapes[1], ","), "]"));
+                    "Incompatible shapes: [", absl::StrJoin(shapes[0], ","),
+                    "] vs. [", absl::StrJoin(shapes[1], ","), "]"));
     Output(ctx, 0, bcast.grad_x_reduce_idx());
     Output(ctx, 1, bcast.grad_y_reduce_idx());
   }
 
  private:
   void Output(XlaOpKernelContext* ctx, int idx, const BCast::Vec& v) {
-    const int64 len = v.size();
-    Tensor constant(DT_INT32, TensorShape({len}));
-    for (int64 i = 0; i < len; ++i) {
-      constant.flat<int32>()(i) = static_cast<int32>(v[i]);
+    const int64_t len = v.size();
+    DataType val_type = ctx->expected_output_dtype(idx);
+    Tensor constant(val_type, TensorShape({len}));
+    for (int64_t i = 0; i < len; ++i) {
+      if (val_type == DT_INT32) {
+        constant.flat<int32_t>()(i) = static_cast<int32_t>(v[i]);
+      } else {
+        constant.flat<int64_t>()(i) = static_cast<int64_t>(v[i]);
+      }
     }
     ctx->SetConstantOutput(idx, constant);
   }
 
-  TF_DISALLOW_COPY_AND_ASSIGN(BCastGradArgsOp);
+  BCastGradArgsOp(const BCastGradArgsOp&) = delete;
+  void operator=(const BCastGradArgsOp&) = delete;
 };
 
-REGISTER_XLA_OP(Name("BroadcastGradientArgs"), BCastGradArgsOp);
+REGISTER_XLA_OP(Name("BroadcastGradientArgs")
+                    .CompileTimeConstantInput("s0")
+                    .CompileTimeConstantInput("s1"),
+                BCastGradArgsOp);
 
 }  // namespace
 }  // namespace tensorflow

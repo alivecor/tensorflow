@@ -29,8 +29,8 @@ struct MinMaxRecord {
 
 // Try to parse a log file containing loosely-structured lines, some of which
 // are the min/max logs we want.
-Status ExtractMinMaxRecords(const string& log_file_name,
-                            std::vector<MinMaxRecord>* records) {
+absl::Status ExtractMinMaxRecords(const string& log_file_name,
+                                  std::vector<MinMaxRecord>* records) {
   string file_data;
   TF_RETURN_IF_ERROR(
       ReadFileToString(Env::Default(), log_file_name, &file_data));
@@ -40,8 +40,7 @@ Status ExtractMinMaxRecords(const string& log_file_name,
   for (const string& file_line : file_lines) {
     // We expect to find a line with components separated by semicolons, so to
     // start make sure that the basic structure is in place/
-    StringPiece line(file_line);
-    if (!line.contains(print_suffix + ";" + requant_prefix)) {
+    if (!absl::StrContains(file_line, print_suffix + ";" + requant_prefix)) {
       continue;
     }
     std::vector<string> line_parts = str_util::Split(file_line, ';');
@@ -53,8 +52,7 @@ Status ExtractMinMaxRecords(const string& log_file_name,
     bool min_max_found = false;
     int min_max_index;
     for (int i = 1; i < line_parts.size(); ++i) {
-      StringPiece line_part(line_parts[i]);
-      if (line_part.starts_with(requant_prefix)) {
+      if (absl::StartsWith(line_parts[i], requant_prefix)) {
         min_max_found = true;
         min_max_index = i;
       }
@@ -76,7 +74,7 @@ Status ExtractMinMaxRecords(const string& log_file_name,
     }
     string min_number_string = min_string_parts[0];
     float min;
-    if (!strings::safe_strtof(min_number_string.c_str(), &min)) {
+    if (!absl::SimpleAtof(min_number_string.c_str(), &min)) {
       continue;
     }
     string max_string = min_max_parts[2];
@@ -86,26 +84,25 @@ Status ExtractMinMaxRecords(const string& log_file_name,
     }
     string max_number_string = max_string_parts[0];
     float max;
-    if (!strings::safe_strtof(max_number_string.c_str(), &max)) {
+    if (!absl::SimpleAtof(max_number_string.c_str(), &max)) {
       continue;
     }
-    StringPiece name_string = line_parts[min_max_index - 1];
-    if (!name_string.ends_with(print_suffix)) {
+    absl::string_view name_string = line_parts[min_max_index - 1];
+    if (!absl::EndsWith(name_string, print_suffix)) {
       continue;
     }
-    string name =
-        name_string.substr(0, name_string.size() - print_suffix.size())
-            .ToString();
+    string name(
+        name_string.substr(0, name_string.size() - print_suffix.size()));
     records->push_back({name, min, max});
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Uses the observed min/max values for requantization captured in a log file to
 // replace costly RequantizationRange ops with simple Consts.
-Status FreezeRequantizationRanges(const GraphDef& input_graph_def,
-                                  const TransformFuncContext& context,
-                                  GraphDef* output_graph_def) {
+absl::Status FreezeRequantizationRanges(const GraphDef& input_graph_def,
+                                        const TransformFuncContext& context,
+                                        GraphDef* output_graph_def) {
   string min_max_log_file;
   TF_RETURN_IF_ERROR(
       context.GetOneStringParameter("min_max_log_file", "", &min_max_log_file));

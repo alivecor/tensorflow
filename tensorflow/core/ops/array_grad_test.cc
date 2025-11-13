@@ -172,7 +172,7 @@ TEST(ArrayGradTest, ConcatGrad) {
 
   // Test Concat.
   auto dx = ConcatGrad(1, x0, x1, dy);
-  test::ExpectTensorEqual<int32>(dx[0], test::AsScalar(0));
+  test::ExpectTensorEqual<int32_t>(dx[0], test::AsScalar(0));
   test::ExpectClose(
       dx[1],
       test::AsTensor<float>({0.,  1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9.,
@@ -185,7 +185,7 @@ TEST(ArrayGradTest, ConcatGrad) {
 
   // Test ConcatV2 with positive concat axis.
   dx = ConcatGradV2(1, x0, x1, dy);
-  test::ExpectTensorEqual<int32>(dx[dx.size() - 1], test::AsScalar(0));
+  test::ExpectTensorEqual<int32_t>(dx[dx.size() - 1], test::AsScalar(0));
   test::ExpectClose(
       dx[0],
       test::AsTensor<float>({0.,  1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9.,
@@ -198,7 +198,7 @@ TEST(ArrayGradTest, ConcatGrad) {
 
   // Test ConcatV2 with negative concat axis.
   dx = ConcatGradV2(-2, x0, x1, dy);
-  test::ExpectTensorEqual<int32>(dx[dx.size() - 1], test::AsScalar(0));
+  test::ExpectTensorEqual<int32_t>(dx[dx.size() - 1], test::AsScalar(0));
   test::ExpectClose(
       dx[0],
       test::AsTensor<float>({0.,  1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9.,
@@ -238,6 +238,39 @@ std::vector<Tensor> SplitGrad(int dim, const Tensor& x, const Tensor& dy0,
   return out;
 }
 
+std::vector<Tensor> SplitVGrad(const Tensor& x, const Tensor& size_splits,
+                               int dim, const Tensor& dy0, const Tensor& dy1) {
+  auto T = DT_FLOAT;
+  auto Tlen = DT_INT64;
+  auto gdef = test::function::GDef(
+      {f::NDef("x", "Placeholder", {}, {{"dtype", T}}),
+       f::NDef("size_splits", "Placeholder", {}, {{"dtype", Tlen}}),
+       f::NDef("dim", "Placeholder", {}, {{"dtype", DT_INT32}}),
+       f::NDef("dy0", "Placeholder", {}, {{"dtype", T}}),
+       f::NDef("dy1", "Placeholder", {}, {{"dtype", T}}),
+       f::NDef("dx", "SymbolicGradient",
+               {"x", "size_splits", "dim", "dy0", "dy1"},
+               {{"f", FDH::FunctionRef("SplitV", {{"split_dim", dim},
+                                                  {"num_split", 2},
+                                                  {"T", T},
+                                                  {"Tlen", Tlen}})},
+                {"Tin", DataTypeSlice{T, Tlen, DT_INT32, T, T}},
+                {"Tout", DataTypeSlice{T, Tlen, DT_INT32}}})});
+  VLOG(1) << DebugStringWhole(gdef);
+  auto sess = NewSession();
+  TF_CHECK_OK(sess->Create(gdef));
+  std::vector<Tensor> out;
+  TF_CHECK_OK(sess->Run({{"x:0", x},
+                         {"size_splits:0", size_splits},
+                         {"dim", test::AsScalar(dim)},
+                         {"dy0:0", dy0},
+                         {"dy1:0", dy1}},
+                        {"dx:0", "dx:1", "dx:2"}, {}, &out));
+  CHECK_EQ(out.size(), 3);
+  TF_CHECK_OK(sess->Close());
+  return out;
+}
+
 TEST(ArrayGradTest, SplitGrad) {
   Tensor x(DT_FLOAT, {2, 4, 5});
   x.flat<float>().setZero();
@@ -245,15 +278,30 @@ TEST(ArrayGradTest, SplitGrad) {
   Tensor dy1(DT_FLOAT, {2, 2, 5});
   test::FillIota<float>(&dy0, 0);
   test::FillIota<float>(&dy1, 100);
-  auto dx = SplitGrad(1, x, dy0, dy1);
-  test::ExpectTensorEqual<int32>(dx[0], test::AsScalar(0));
-  test::ExpectClose(
-      dx[1], test::AsTensor<float>(
-                 {0.,   1.,   2.,   3.,   4.,   5.,   6.,   7.,   8.,   9.,
-                  100., 101., 102., 103., 104., 105., 106., 107., 108., 109.,
-                  10.,  11.,  12.,  13.,  14.,  15.,  16.,  17.,  18.,  19.,
-                  110., 111., 112., 113., 114., 115., 116., 117., 118., 119.},
-                 {2, 4, 5}));
+  auto expected_dx = test::AsTensor<float>(
+      {0.,   1.,   2.,   3.,   4.,   5.,   6.,   7.,   8.,   9.,
+       100., 101., 102., 103., 104., 105., 106., 107., 108., 109.,
+       10.,  11.,  12.,  13.,  14.,  15.,  16.,  17.,  18.,  19.,
+       110., 111., 112., 113., 114., 115., 116., 117., 118., 119.},
+      {2, 4, 5});
+  auto expected_d_dim = test::AsScalar(0);
+
+  // SplitGrad
+  {
+    auto dx = SplitGrad(1, x, dy0, dy1);
+    test::ExpectTensorEqual<int32_t>(dx[0], expected_d_dim);
+    test::ExpectClose(dx[1], expected_dx);
+  }
+  // SplitVGrad
+  {
+    Tensor size_splits(DT_INT64, {2});
+    size_splits.flat<int64_t>().setConstant(2);
+    auto expected_d_size_splits = test::AsTensor<int64_t>({0, 0}, {2});
+    auto dx = SplitVGrad(x, size_splits, 1, dy0, dy1);
+    test::ExpectClose(dx[0], expected_dx);
+    test::ExpectTensorEqual<int64_t>(dx[1], expected_d_size_splits);
+    test::ExpectTensorEqual<int32_t>(dx[2], expected_d_dim);
+  }
 }
 
 std::vector<Tensor> ReshapeGrad(const Tensor& x, const Tensor& s,
@@ -281,7 +329,7 @@ std::vector<Tensor> ReshapeGrad(const Tensor& x, const Tensor& s,
 TEST(ArrayGradTest, ReshapeGrad) {
   Tensor x(DT_FLOAT, {2, 4, 5});
   x.flat<float>().setZero();
-  auto s = test::AsTensor<int32>({8, 5});
+  auto s = test::AsTensor<int32_t>({8, 5});
   Tensor dy(DT_FLOAT, {8, 5});
   test::FillIota<float>(&dy, 73);
   auto dx = ReshapeGrad(x, s, dy);
@@ -292,7 +340,7 @@ TEST(ArrayGradTest, ReshapeGrad) {
                   93.,  94.,  95.,  96.,  97.,  98.,  99.,  100., 101., 102.,
                   103., 104., 105., 106., 107., 108., 109., 110., 111., 112.},
                  {2, 4, 5}));
-  test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0}));
+  test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0, 0}));
 }
 
 std::vector<Tensor> ExpandDimsGrad(const Tensor& x, const Tensor& s,
@@ -320,7 +368,7 @@ std::vector<Tensor> ExpandDimsGrad(const Tensor& x, const Tensor& s,
 TEST(ArrayGradTest, ExpandDimsGrad) {
   Tensor x(DT_FLOAT, {2, 4, 5});
   x.flat<float>().setZero();
-  auto s = test::AsTensor<int32>({1});
+  auto s = test::AsTensor<int32_t>({1});
   Tensor dy(DT_FLOAT, {2, 1, 4, 5});
   test::FillIota<float>(&dy, 73);
   auto dx = ExpandDimsGrad(x, s, dy);
@@ -331,7 +379,7 @@ TEST(ArrayGradTest, ExpandDimsGrad) {
                   93.,  94.,  95.,  96.,  97.,  98.,  99.,  100., 101., 102.,
                   103., 104., 105., 106., 107., 108., 109., 110., 111., 112.},
                  {2, 4, 5}));
-  test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0}));
+  test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0}));
 }
 
 std::vector<Tensor> SqueezeGrad(const Tensor& x, const Tensor& dy) {
@@ -388,7 +436,7 @@ std::vector<Tensor> TransposeGrad(const Tensor& x, const Tensor& p,
 TEST(ArrayGradTest, TransposeGrad) {
   Tensor x(DT_FLOAT, {2, 4, 5});
   x.flat<float>().setZero();
-  auto p = test::AsTensor<int32>({2, 0, 1});
+  auto p = test::AsTensor<int32_t>({2, 0, 1});
   Tensor dy(DT_FLOAT, {5, 2, 4});
   test::FillIota<float>(&dy, 0);
   auto dx = TransposeGrad(x, p, dy);
@@ -398,7 +446,7 @@ TEST(ArrayGradTest, TransposeGrad) {
                                 4., 12., 20., 28., 36., 5., 13., 21., 29., 37.,
                                 6., 14., 22., 30., 38., 7., 15., 23., 31., 39.},
                                {2, 4, 5}));
-  test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0, 0}));
+  test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0, 0, 0}));
 }
 
 std::vector<Tensor> ReverseGrad(const Tensor& x, const Tensor& dims,
@@ -462,13 +510,13 @@ std::vector<Tensor> ReverseV2Grad(const Tensor& x, const Tensor& axis,
 TEST(ArrayGradTest, ReverseV2Grad) {
   Tensor x(DT_FLOAT, {2, 3});
   x.flat<float>().setZero();
-  auto axis = test::AsTensor<int32>({1});
+  auto axis = test::AsTensor<int32_t>({1});
   Tensor dy(DT_FLOAT, {2, 3});
   test::FillIota<float>(&dy, 1);
   auto dx = ReverseV2Grad(x, axis, dy);
   test::ExpectTensorEqual<float>(
       dx[0], test::AsTensor<float>({3., 2., 1., 6., 5., 4.}, {2, 3}));
-  test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0}));
+  test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0}));
 }
 
 std::vector<Tensor> SliceGrad(const Tensor& x, const Tensor& b, const Tensor& s,
@@ -498,8 +546,8 @@ std::vector<Tensor> SliceGrad(const Tensor& x, const Tensor& b, const Tensor& s,
 TEST(ArrayGradTest, SliceGrad) {
   Tensor x(DT_FLOAT, {2, 3, 4});
   x.flat<float>().setZero();
-  auto begin = test::AsTensor<int32>({1, 1, 1});
-  auto size = test::AsTensor<int32>({1, 2, 2});
+  auto begin = test::AsTensor<int32_t>({1, 1, 1});
+  auto size = test::AsTensor<int32_t>({1, 2, 2});
   Tensor dy(DT_FLOAT, {1, 2, 2});
   test::FillIota<float>(&dy, 1);
   auto dx = SliceGrad(x, begin, size, dy);
@@ -510,16 +558,16 @@ TEST(ArrayGradTest, SliceGrad) {
                             0., 0., 0., 0., 0., 1., 2., 0., 0., 3., 4., 0.,
                         },
                         {2, 3, 4}));
-  test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0, 0}));
-  test::ExpectTensorEqual<int32>(dx[2], test::AsTensor<int32>({0, 0, 0}));
+  test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0, 0, 0}));
+  test::ExpectTensorEqual<int32_t>(dx[2], test::AsTensor<int32_t>({0, 0, 0}));
 }
 
 std::vector<Tensor> StridedSliceGrad(const Tensor& x, const Tensor& begin,
                                      const Tensor& end, const Tensor& strides,
-                                     const Tensor& dy, int32 begin_mask,
-                                     int32 end_mask, int32 ellipsis_mask,
-                                     int32 new_axis_mask,
-                                     int32 shrink_axis_mask) {
+                                     const Tensor& dy, int32_t begin_mask,
+                                     int32_t end_mask, int32_t ellipsis_mask,
+                                     int32_t new_axis_mask,
+                                     int32_t shrink_axis_mask) {
   auto T = DT_FLOAT;
   auto gdef = test::function::GDef(
       {f::NDef("x", "Placeholder", {}, {{"dtype", T}}),
@@ -559,8 +607,8 @@ std::vector<Tensor> StridedSliceGrad(const Tensor& x, const Tensor& begin,
 std::vector<Tensor> StridedSliceGradGrad(
     const Tensor& shape, const Tensor& begin, const Tensor& end,
     const Tensor& strides, const Tensor& dy, const Tensor& grad,
-    int32 begin_mask, int32 end_mask, int32 ellipsis_mask, int32 new_axis_mask,
-    int32 shrink_axis_mask) {
+    int32_t begin_mask, int32_t end_mask, int32_t ellipsis_mask,
+    int32_t new_axis_mask, int32_t shrink_axis_mask) {
   auto T = DT_FLOAT;
   auto gdef = test::function::GDef(
       {f::NDef("shape", "Placeholder", {}, {{"dtype", DT_INT32}}),
@@ -605,12 +653,12 @@ std::vector<Tensor> StridedSliceGradGrad(
 TEST(ArrayGradTest, StridedSliceGrad) {
   Tensor x(DT_FLOAT, {2, 3, 4});
   x.flat<float>().setZero();
-  Tensor x_shape = test::AsTensor<int32>({2, 3, 4}, {3});
+  Tensor x_shape = test::AsTensor<int32_t>({2, 3, 4}, {3});
 
   {
-    auto start = test::AsTensor<int32>({1, 1, 1});
-    auto stop = test::AsTensor<int32>({2, 3, 3});
-    auto strides = test::AsTensor<int32>({1, 1, 1});
+    auto start = test::AsTensor<int32_t>({1, 1, 1});
+    auto stop = test::AsTensor<int32_t>({2, 3, 3});
+    auto strides = test::AsTensor<int32_t>({1, 1, 1});
     Tensor dy(DT_FLOAT, {1, 2, 2});
     test::FillIota<float>(&dy, 1);
     int begin_mask = 0, end_mask = 0, new_axis_mask = 0, shrink_axis_mask = 0,
@@ -625,8 +673,8 @@ TEST(ArrayGradTest, StridedSliceGrad) {
                               0., 0., 0., 0., 0., 1., 2., 0., 0., 3., 4., 0.,
                           },
                           {2, 3, 4}));
-    test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0, 0}));
-    test::ExpectTensorEqual<int32>(dx[2], test::AsTensor<int32>({0, 0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0, 0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[2], test::AsTensor<int32_t>({0, 0, 0}));
     auto ddx = StridedSliceGradGrad(x_shape, start, stop, strides, dy, dx[0],
                                     begin_mask, end_mask, ellipsis_mask,
                                     new_axis_mask, shrink_axis_mask);
@@ -635,9 +683,9 @@ TEST(ArrayGradTest, StridedSliceGrad) {
 
   // test equivalent of python tf.gradients(foo[1:2, 1:3, 1:3])
   {
-    auto start = test::AsTensor<int32>({1, 1, 1});
-    auto stop = test::AsTensor<int32>({2, 3, 3});
-    auto strides = test::AsTensor<int32>({1, 1, 1});
+    auto start = test::AsTensor<int32_t>({1, 1, 1});
+    auto stop = test::AsTensor<int32_t>({2, 3, 3});
+    auto strides = test::AsTensor<int32_t>({1, 1, 1});
     Tensor dy(DT_FLOAT, {1, 2, 2});
     test::FillIota<float>(&dy, 1);
     int begin_mask = 0, end_mask = 0, new_axis_mask = 0, shrink_axis_mask = 0,
@@ -652,8 +700,8 @@ TEST(ArrayGradTest, StridedSliceGrad) {
                               0., 0., 0., 0., 0., 1., 2., 0., 0., 3., 4., 0.,
                           },
                           {2, 3, 4}));
-    test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0, 0}));
-    test::ExpectTensorEqual<int32>(dx[2], test::AsTensor<int32>({0, 0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0, 0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[2], test::AsTensor<int32_t>({0, 0, 0}));
     auto ddx = StridedSliceGradGrad(x_shape, start, stop, strides, dy, dx[0],
                                     begin_mask, end_mask, ellipsis_mask,
                                     new_axis_mask, shrink_axis_mask);
@@ -663,9 +711,9 @@ TEST(ArrayGradTest, StridedSliceGrad) {
   // test equivalent of python tf.gradients(foo[1, 1:, :-2, None])
   {
     int dontcare = 66;
-    auto start = test::AsTensor<int32>({1, 1, dontcare, dontcare});
-    auto stop = test::AsTensor<int32>({2, dontcare, -2, dontcare});
-    auto strides = test::AsTensor<int32>({1, 1, 1, dontcare});
+    auto start = test::AsTensor<int32_t>({1, 1, dontcare, dontcare});
+    auto stop = test::AsTensor<int32_t>({2, dontcare, -2, dontcare});
+    auto strides = test::AsTensor<int32_t>({1, 1, 1, dontcare});
     Tensor dy(DT_FLOAT, {2, 2, 1});
     test::FillIota<float>(&dy, 1);
     int begin_mask = 4, end_mask = 2, new_axis_mask = 8, shrink_axis_mask = 1,
@@ -680,8 +728,10 @@ TEST(ArrayGradTest, StridedSliceGrad) {
                               0., 0., 0., 0., 1., 2., 0., 0., 3., 4., 0., 0.,
                           },
                           {2, 3, 4}));
-    test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0, 0, 0}));
-    test::ExpectTensorEqual<int32>(dx[2], test::AsTensor<int32>({0, 0, 0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[1],
+                                     test::AsTensor<int32_t>({0, 0, 0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[2],
+                                     test::AsTensor<int32_t>({0, 0, 0, 0}));
     auto ddx = StridedSliceGradGrad(x_shape, start, stop, strides, dy, dx[0],
                                     begin_mask, end_mask, ellipsis_mask,
                                     new_axis_mask, shrink_axis_mask);
@@ -691,9 +741,9 @@ TEST(ArrayGradTest, StridedSliceGrad) {
   // test equivalent of tf.gradients(foo[1, ...]) i.e. foo[1, 0:3, 0:4]
   {
     int dontcare = 66;
-    auto start = test::AsTensor<int32>({1, dontcare});
-    auto stop = test::AsTensor<int32>({2, dontcare});
-    auto strides = test::AsTensor<int32>({1, 1});
+    auto start = test::AsTensor<int32_t>({1, dontcare});
+    auto stop = test::AsTensor<int32_t>({2, dontcare});
+    auto strides = test::AsTensor<int32_t>({1, 1});
     Tensor dy(DT_FLOAT, {3, 4});
     test::FillIota<float>(&dy, 1);
     int begin_mask = 0, end_mask = 0, new_axis_mask = 0, shrink_axis_mask = 1,
@@ -708,8 +758,8 @@ TEST(ArrayGradTest, StridedSliceGrad) {
                               1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.,
                           },
                           {2, 3, 4}));
-    test::ExpectTensorEqual<int32>(dx[1], test::AsTensor<int32>({0, 0}));
-    test::ExpectTensorEqual<int32>(dx[2], test::AsTensor<int32>({0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[1], test::AsTensor<int32_t>({0, 0}));
+    test::ExpectTensorEqual<int32_t>(dx[2], test::AsTensor<int32_t>({0, 0}));
     auto ddx = StridedSliceGradGrad(x_shape, start, stop, strides, dy, dx[0],
                                     begin_mask, end_mask, ellipsis_mask,
                                     new_axis_mask, shrink_axis_mask);
@@ -717,5 +767,41 @@ TEST(ArrayGradTest, StridedSliceGrad) {
   }
 }
 
+std::vector<Tensor> BroadcastToGrad(const Tensor& x, const Tensor& shape,
+                                    const Tensor& dy) {
+  auto T = DT_FLOAT;
+  auto Tidx = DT_INT32;
+  auto gdef = test::function::GDef(
+      {f::NDef("x", "Placeholder", {}, {{"dtype", T}}),
+       f::NDef("shape", "Placeholder", {}, {{"dtype", Tidx}}),
+       f::NDef("dy", "Placeholder", {}, {{"dtype", T}}),
+       f::NDef(
+           "dx", "SymbolicGradient", {"x", "shape", "dy"},
+           {{"f", FDH::FunctionRef("BroadcastTo", {{"T", T}, {"Tidx", Tidx}})},
+            {"Tin", DataTypeSlice{T, Tidx, T}},
+            {"Tout", DataTypeSlice{T, Tidx}}})});
+  VLOG(1) << DebugStringWhole(gdef);
+  auto sess = NewSession();
+  TF_CHECK_OK(sess->Create(gdef));
+  std::vector<Tensor> out;
+  TF_CHECK_OK(sess->Run({{"x:0", x}, {"shape:0", shape}, {"dy:0", dy}},
+                        {"dx:0", "dx:1"}, {}, &out));
+  CHECK_EQ(out.size(), 2);
+  TF_CHECK_OK(sess->Close());
+  return out;
+}
+
+TEST(ArrayGradTest, BroadcastToGrad) {
+  Tensor x(DT_FLOAT, {2, 2});
+  x.flat<float>().setZero();
+  Tensor shape(DT_INT32, {3});
+  test::FillValues<int32_t>(&shape, {2, 2, 2});
+  Tensor dy(DT_FLOAT, {2, 2, 2});
+  test::FillIota<float>(&dy, 0);
+  auto dx = BroadcastToGrad(x, shape, dy);
+  test::ExpectClose(dx[0], test::AsTensor<float>({4., 6., 8., 10.}, {2, 2}));
+  test::ExpectTensorEqual<int32_t>(dx[1],
+                                   test::AsTensor<int32_t>({0, 0, 0}, {3}));
+}
 }  // namespace
 }  // namespace tensorflow

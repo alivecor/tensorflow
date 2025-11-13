@@ -15,20 +15,17 @@ limitations under the License.
 
 #include "tensorflow/core/profiler/internal/tfprof_stats.h"
 
+#include <memory>
 #include <utility>
 
-#include "tensorflow/c/checkpoint_reader.h"
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/env.h"
-#include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/profiler/internal/tfprof_constants.h"
-#include "tensorflow/core/profiler/internal/tfprof_options.h"
 #include "tensorflow/core/profiler/internal/tfprof_utils.h"
 #include "tensorflow/core/profiler/tfprof_log.pb.h"
+#include "tensorflow/core/profiler/tfprof_options.h"
 #include "tensorflow/core/profiler/tfprof_output.pb.h"
-#include "tensorflow/core/protobuf/config.pb.h"
 
 namespace tensorflow {
 namespace tfprof {
@@ -38,19 +35,20 @@ class TFProfStatsTest : public ::testing::Test {
     string graph_path =
         io::JoinPath(testing::TensorFlowSrcRoot(),
                      "core/profiler/internal/testdata/graph.pbtxt");
-    std::unique_ptr<tensorflow::GraphDef> graph_pb(new tensorflow::GraphDef());
+    std::unique_ptr<tensorflow::GraphDef> graph_pb =
+        std::make_unique<tensorflow::GraphDef>();
     TF_CHECK_OK(
         ReadProtoFile(Env::Default(), graph_path, graph_pb.get(), false));
 
-    std::unique_ptr<tensorflow::RunMetadata> run_meta_pb(
-        new tensorflow::RunMetadata());
+    std::unique_ptr<tensorflow::RunMetadata> run_meta_pb =
+        std::make_unique<tensorflow::RunMetadata>();
     string run_meta_path =
         io::JoinPath(testing::TensorFlowSrcRoot(),
                      "core/profiler/internal/testdata/run_meta");
     TF_CHECK_OK(
         ReadProtoFile(Env::Default(), run_meta_path, run_meta_pb.get(), true));
 
-    std::unique_ptr<OpLogProto> op_log_pb(new OpLogProto());
+    std::unique_ptr<OpLogProto> op_log_pb = std::make_unique<OpLogProto>();
     string op_log_path =
         io::JoinPath(testing::TensorFlowSrcRoot(),
                      "core/profiler/internal/testdata/tfprof_log");
@@ -59,13 +57,14 @@ class TFProfStatsTest : public ::testing::Test {
     string ckpt_path = io::JoinPath(testing::TensorFlowSrcRoot(),
                                     "core/profiler/internal/testdata/ckpt");
     TF_Status* status = TF_NewStatus();
-    std::unique_ptr<checkpoint::CheckpointReader> ckpt_reader(
-        new checkpoint::CheckpointReader(ckpt_path, status));
+    std::unique_ptr<checkpoint::CheckpointReader> ckpt_reader =
+        std::make_unique<checkpoint::CheckpointReader>(ckpt_path, status);
     CHECK(TF_GetCode(status) == TF_OK);
     TF_DeleteStatus(status);
 
-    tf_stats_.reset(new TFStats(std::move(graph_pb), std::move(run_meta_pb),
-                                std::move(op_log_pb), std::move(ckpt_reader)));
+    tf_stats_ =
+        std::make_unique<TFStats>(std::move(graph_pb), std::move(run_meta_pb),
+                                  std::move(op_log_pb), std::move(ckpt_reader));
     tf_stats_->BuildAllViews();
   }
 
@@ -89,21 +88,27 @@ TEST_F(TFProfStatsTest, CustomOpType) {
 
   GraphNodeProto expected;
   CHECK(protobuf::TextFormat::ParseFromString(
-      "name: \"_TFProfRoot\"\ntotal_exec_micros: 13\ntotal_parameters: "
-      "451\nchildren {\n  name: \"DW\"\n  exec_micros: 2\n  parameters: 162\n  "
-      "total_exec_micros: 2\n  total_parameters: 162\n  devices: "
+      "name: \"_TFProfRoot\"\ntotal_exec_micros: 13\ntotal_requested_bytes: "
+      "2560\ntotal_parameters: 451\nchildren {\n  name: \"DW\"\n  exec_micros: "
+      "2\n  requested_bytes: 1280\n  parameters: 162\n  total_exec_micros: 2\n "
+      " total_requested_bytes: 1280\n  total_parameters: 162\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  cpu_exec_micros: 2\n  "
       "total_cpu_exec_micros: 2\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  output_bytes: 1280\n  total_output_bytes: "
-      "1280\n}\nchildren {\n  name: \"DW2\"\n  exec_micros: 11\n  parameters: "
-      "288\n  total_exec_micros: 11\n  total_parameters: 288\n  devices: "
+      "total_definition_count: 1\n  peak_bytes: 1280\n  residual_bytes: 1280\n "
+      " output_bytes: 1280\n  total_peak_bytes: 1280\n  total_residual_bytes: "
+      "1280\n  total_output_bytes: 1280\n}\nchildren {\n  name: \"DW2\"\n  "
+      "exec_micros: 11\n  requested_bytes: 1280\n  parameters: 288\n  "
+      "total_exec_micros: 11\n  total_requested_bytes: 1280\n  "
+      "total_parameters: 288\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  cpu_exec_micros: 11\n  "
       "total_cpu_exec_micros: 11\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  output_bytes: 1280\n  total_output_bytes: "
-      "1280\n}\nchildren {\n  name: \"ScalarW\"\n  parameters: 1\n  "
-      "total_parameters: 1\n  total_definition_count: "
+      "total_definition_count: 1\n  peak_bytes: 1280\n  residual_bytes: 1280\n "
+      " output_bytes: 1280\n  total_peak_bytes: 1280\n  total_residual_bytes: "
+      "1280\n  total_output_bytes: 1280\n}\nchildren {\n  name: \"ScalarW\"\n  "
+      "parameters: 1\n  total_parameters: 1\n  total_definition_count: "
       "1\n}\ntotal_cpu_exec_micros: 13\ntotal_run_count: "
-      "2\ntotal_definition_count: 3\ntotal_output_bytes: 2560\n",
+      "2\ntotal_definition_count: 3\ntotal_peak_bytes: "
+      "2560\ntotal_residual_bytes: 2560\ntotal_output_bytes: 2560\n",
       &expected));
   EXPECT_EQ(expected.DebugString(), root.DebugString());
 
@@ -119,21 +124,27 @@ TEST_F(TFProfStatsTest, CheckPointOpType) {
 
   GraphNodeProto expected;
   CHECK(protobuf::TextFormat::ParseFromString(
-      "name: \"_TFProfRoot\"\ntotal_exec_micros: 13\ntotal_parameters: "
-      "451\nchildren {\n  name: \"DW\"\n  exec_micros: 2\n  parameters: 162\n  "
-      "total_exec_micros: 2\n  total_parameters: 162\n  devices: "
+      "name: \"_TFProfRoot\"\ntotal_exec_micros: 13\ntotal_requested_bytes: "
+      "2560\ntotal_parameters: 451\nchildren {\n  name: \"DW\"\n  exec_micros: "
+      "2\n  requested_bytes: 1280\n  parameters: 162\n  total_exec_micros: 2\n "
+      " total_requested_bytes: 1280\n  total_parameters: 162\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  cpu_exec_micros: 2\n  "
       "total_cpu_exec_micros: 2\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  output_bytes: 1280\n  total_output_bytes: "
-      "1280\n}\nchildren {\n  name: \"DW2\"\n  exec_micros: 11\n  parameters: "
-      "288\n  total_exec_micros: 11\n  total_parameters: 288\n  devices: "
+      "total_definition_count: 1\n  peak_bytes: 1280\n  residual_bytes: 1280\n "
+      " output_bytes: 1280\n  total_peak_bytes: 1280\n  total_residual_bytes: "
+      "1280\n  total_output_bytes: 1280\n}\nchildren {\n  name: \"DW2\"\n  "
+      "exec_micros: 11\n  requested_bytes: 1280\n  parameters: 288\n  "
+      "total_exec_micros: 11\n  total_requested_bytes: 1280\n  "
+      "total_parameters: 288\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  cpu_exec_micros: 11\n  "
       "total_cpu_exec_micros: 11\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  output_bytes: 1280\n  total_output_bytes: "
-      "1280\n}\nchildren {\n  name: \"ScalarW\"\n  parameters: 1\n  "
-      "total_parameters: 1\n  total_definition_count: "
+      "total_definition_count: 1\n  peak_bytes: 1280\n  residual_bytes: 1280\n "
+      " output_bytes: 1280\n  total_peak_bytes: 1280\n  total_residual_bytes: "
+      "1280\n  total_output_bytes: 1280\n}\nchildren {\n  name: \"ScalarW\"\n  "
+      "parameters: 1\n  total_parameters: 1\n  total_definition_count: "
       "1\n}\ntotal_cpu_exec_micros: 13\ntotal_run_count: "
-      "2\ntotal_definition_count: 3\ntotal_output_bytes: 2560\n",
+      "2\ntotal_definition_count: 3\ntotal_peak_bytes: "
+      "2560\ntotal_residual_bytes: 2560\ntotal_output_bytes: 2560\n",
       &expected));
   EXPECT_EQ(expected.DebugString(), root.DebugString());
 
@@ -150,7 +161,7 @@ TEST_F(TFProfStatsTest, TestGraph) {
   GraphNodeProto expected;
   CHECK(protobuf::TextFormat::ParseFromString(
       "name: \"_TFProfRoot\"\ntotal_exec_micros: 4945\ntotal_requested_bytes: "
-      "14592\ntotal_parameters: 451\nchildren {\n  name: "
+      "30464\ntotal_parameters: 451\nchildren {\n  name: "
       "\"DW/Initializer/random_normal/mul\"\n  children {\n    name: "
       "\"DW/Initializer/random_normal/RandomStandardNormal\"\n    children {\n "
       "     name: \"DW/Initializer/random_normal/shape\"\n      "
@@ -166,7 +177,7 @@ TEST_F(TFProfStatsTest, TestGraph) {
       "4\n}\ntotal_float_ops: 10440\ntotal_accelerator_exec_micros: "
       "404\ntotal_cpu_exec_micros: 4541\ntotal_run_count: "
       "6\ntotal_definition_count: 32\ntotal_peak_bytes: "
-      "9984\ntotal_residual_bytes: 1280\ntotal_output_bytes: 4864\n",
+      "25856\ntotal_residual_bytes: 3840\ntotal_output_bytes: 4864\n",
       &expected));
   EXPECT_EQ(expected.DebugString(), root.DebugString());
 
@@ -181,9 +192,9 @@ TEST_F(TFProfStatsTest, TestFloatOps) {
   GraphNodeProto expected;
   CHECK(protobuf::TextFormat::ParseFromString(
       "name: \"_TFProfRoot\"\ntotal_exec_micros: 4945\ntotal_requested_bytes: "
-      "14592\ntotal_parameters: 451\nchildren {\n  name: \"Conv2D\"\n  "
-      "exec_micros: 4292\n  requested_bytes: 9472\n  total_exec_micros: 4292\n "
-      " total_requested_bytes: 9472\n  devices: "
+      "30464\ntotal_parameters: 451\nchildren {\n  name: \"Conv2D\"\n  "
+      "exec_micros: 4292\n  requested_bytes: 18176\n  total_exec_micros: "
+      "4292\n  total_requested_bytes: 18176\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  float_ops: 5832\n  "
       "total_float_ops: 5832\n  input_shapes {\n    key: 0\n    value {\n      "
       "dim {\n        size: 2\n      }\n      dim {\n        size: 6\n      "
@@ -194,11 +205,11 @@ TEST_F(TFProfStatsTest, TestFloatOps) {
       "6\n      }\n    }\n  }\n  accelerator_exec_micros: 226\n  "
       "cpu_exec_micros: 4066\n  total_accelerator_exec_micros: 226\n  "
       "total_cpu_exec_micros: 4066\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  peak_bytes: 5888\n  residual_bytes: 768\n  "
-      "output_bytes: 768\n  total_peak_bytes: 5888\n  total_residual_bytes: "
+      "total_definition_count: 1\n  peak_bytes: 14592\n  residual_bytes: 768\n "
+      " output_bytes: 768\n  total_peak_bytes: 14592\n  total_residual_bytes: "
       "768\n  total_output_bytes: 768\n}\nchildren {\n  name: \"Conv2D_1\"\n  "
-      "exec_micros: 597\n  requested_bytes: 5120\n  total_exec_micros: 597\n  "
-      "total_requested_bytes: 5120\n  devices: "
+      "exec_micros: 597\n  requested_bytes: 9728\n  total_exec_micros: 597\n  "
+      "total_requested_bytes: 9728\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  float_ops: 4608\n  "
       "total_float_ops: 4608\n  input_shapes {\n    key: 0\n    value {\n      "
       "dim {\n        size: 2\n      }\n      dim {\n        size: 3\n      "
@@ -209,12 +220,12 @@ TEST_F(TFProfStatsTest, TestFloatOps) {
       "12\n      }\n    }\n  }\n  accelerator_exec_micros: 178\n  "
       "cpu_exec_micros: 419\n  total_accelerator_exec_micros: 178\n  "
       "total_cpu_exec_micros: 419\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  peak_bytes: 4096\n  residual_bytes: 512\n  "
-      "output_bytes: 512\n  total_peak_bytes: 4096\n  total_residual_bytes: "
+      "total_definition_count: 1\n  peak_bytes: 8704\n  residual_bytes: 512\n  "
+      "output_bytes: 512\n  total_peak_bytes: 8704\n  total_residual_bytes: "
       "512\n  total_output_bytes: 512\n}\ntotal_float_ops: "
       "10440\ntotal_accelerator_exec_micros: 404\ntotal_cpu_exec_micros: "
       "4541\ntotal_run_count: 6\ntotal_definition_count: 35\ntotal_peak_bytes: "
-      "9984\ntotal_residual_bytes: 1280\ntotal_output_bytes: 4864\n",
+      "25856\ntotal_residual_bytes: 3840\ntotal_output_bytes: 4864\n",
       &expected));
   EXPECT_EQ(expected.DebugString(), root.DebugString());
 
@@ -231,9 +242,9 @@ TEST_F(TFProfStatsTest, TestAccountShownNameOnly) {
   GraphNodeProto expected;
   CHECK(protobuf::TextFormat::ParseFromString(
       "name: \"_TFProfRoot\"\ntotal_exec_micros: 597\ntotal_requested_bytes: "
-      "5120\nchildren {\n  name: \"Conv2D_1\"\n  exec_micros: 597\n  "
-      "requested_bytes: 5120\n  total_exec_micros: 597\n  "
-      "total_requested_bytes: 5120\n  devices: "
+      "9728\nchildren {\n  name: \"Conv2D_1\"\n  exec_micros: 597\n  "
+      "requested_bytes: 9728\n  total_exec_micros: 597\n  "
+      "total_requested_bytes: 9728\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  float_ops: 4608\n  "
       "total_float_ops: 4608\n  input_shapes {\n    key: 0\n    value {\n      "
       "dim {\n        size: 2\n      }\n      dim {\n        size: 3\n      "
@@ -244,12 +255,12 @@ TEST_F(TFProfStatsTest, TestAccountShownNameOnly) {
       "12\n      }\n    }\n  }\n  accelerator_exec_micros: 178\n  "
       "cpu_exec_micros: 419\n  total_accelerator_exec_micros: 178\n  "
       "total_cpu_exec_micros: 419\n  run_count: 1\n  total_run_count: 1\n  "
-      "total_definition_count: 1\n  peak_bytes: 4096\n  residual_bytes: 512\n  "
-      "output_bytes: 512\n  total_peak_bytes: 4096\n  total_residual_bytes: "
+      "total_definition_count: 1\n  peak_bytes: 8704\n  residual_bytes: 512\n  "
+      "output_bytes: 512\n  total_peak_bytes: 8704\n  total_residual_bytes: "
       "512\n  total_output_bytes: 512\n}\ntotal_float_ops: "
       "4608\ntotal_accelerator_exec_micros: 178\ntotal_cpu_exec_micros: "
       "419\ntotal_run_count: 1\ntotal_definition_count: 2\ntotal_peak_bytes: "
-      "4096\ntotal_residual_bytes: 512\ntotal_output_bytes: 512\n",
+      "8704\ntotal_residual_bytes: 512\ntotal_output_bytes: 512\n",
       &expected));
   EXPECT_EQ(expected.DebugString(), root.DebugString());
 
@@ -265,8 +276,9 @@ TEST_F(TFProfStatsTest, TestShowTensorValue) {
   GraphNodeProto expected;
   CHECK(protobuf::TextFormat::ParseFromString(
       "name: \"_TFProfRoot\"\ntotal_exec_micros: 4945\ntotal_requested_bytes: "
-      "14592\ntotal_parameters: 451\nchildren {\n  name: \"DW\"\n  "
-      "exec_micros: 2\n  parameters: 162\n  total_exec_micros: 2\n  "
+      "30464\ntotal_parameters: 451\nchildren {\n  name: \"DW\"\n  "
+      "exec_micros: 2\n  requested_bytes: 1280\n  parameters: 162\n  "
+      "total_exec_micros: 2\n  total_requested_bytes: 1280\n  "
       "total_parameters: 162\n  devices: "
       "\"/job:localhost/replica:0/task:0/gpu:0\"\n  tensor_value {\n    dtype: "
       "DT_FLOAT\n    value_double: -0.000534315\n    value_double: "
@@ -351,11 +363,13 @@ TEST_F(TFProfStatsTest, TestShowTensorValue) {
       "value_double: 0.000374641\n    value_double: -0.00149603\n    "
       "value_double: -0.000317367\n    value_double: -0.000417829\n  }\n  "
       "cpu_exec_micros: 2\n  total_cpu_exec_micros: 2\n  run_count: 1\n  "
-      "total_run_count: 1\n  total_definition_count: 10\n  output_bytes: "
-      "1280\n  total_output_bytes: 1280\n}\ntotal_float_ops: "
-      "10440\ntotal_accelerator_exec_micros: 404\ntotal_cpu_exec_micros: "
-      "4541\ntotal_run_count: 6\ntotal_definition_count: 35\ntotal_peak_bytes: "
-      "9984\ntotal_residual_bytes: 1280\ntotal_output_bytes: 4864\n",
+      "total_run_count: 1\n  total_definition_count: 10\n  peak_bytes: 1280\n  "
+      "residual_bytes: 1280\n  output_bytes: 1280\n  total_peak_bytes: 1280\n  "
+      "total_residual_bytes: 1280\n  total_output_bytes: "
+      "1280\n}\ntotal_float_ops: 10440\ntotal_accelerator_exec_micros: "
+      "404\ntotal_cpu_exec_micros: 4541\ntotal_run_count: "
+      "6\ntotal_definition_count: 35\ntotal_peak_bytes: "
+      "25856\ntotal_residual_bytes: 3840\ntotal_output_bytes: 4864\n",
       &expected));
   EXPECT_EQ(expected.DebugString(), root.DebugString());
 }

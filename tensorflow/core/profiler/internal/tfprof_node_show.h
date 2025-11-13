@@ -21,19 +21,20 @@ limitations under the License.
 // ScopeNode and GraphNode each maps to one TFGraphNode.
 // CodeNode and OpNode each maps to one TFMultiGraphNode.
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_NODE_SHOW_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_NODE_SHOW_H_
+#ifndef TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_NODE_SHOW_H_
+#define TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_NODE_SHOW_H_
 
 #include <algorithm>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/profiler/internal/tfprof_constants.h"
 #include "tensorflow/core/profiler/internal/tfprof_node.h"
-#include "tensorflow/core/profiler/internal/tfprof_options.h"
 #include "tensorflow/core/profiler/internal/tfprof_utils.h"
+#include "tensorflow/core/profiler/tfprof_options.h"
 #include "tensorflow/core/profiler/tfprof_output.pb.h"
 
 namespace tensorflow {
@@ -42,13 +43,13 @@ namespace tfprof {
 class ShowNode {
  public:
   explicit ShowNode(const TFGraphNode* node);
-  virtual ~ShowNode() {}
+  virtual ~ShowNode() = default;
 
   const string& name() const { return node->name(); }
   GraphNodeProto* mutable_proto();
   const GraphNodeProto& proto() const;
 
-  void ReInit(int64 step);
+  void ReInit(int64_t step);
 
   void AggregateTotalStats(ShowNode* node);
 
@@ -68,7 +69,7 @@ class GraphNode : public ShowNode {
  public:
   explicit GraphNode(TFGraphNode* node) : ShowNode(node) {}
 
-  bool Trackable(int64 step) const { return node->trackable(step); }
+  bool Trackable(int64_t step) const { return node->trackable(step); }
 
   std::vector<GraphNode*> children;
   std::vector<GraphNode*> show_children;
@@ -77,7 +78,7 @@ class GraphNode : public ShowNode {
 class ScopeNode : public ShowNode {
  public:
   explicit ScopeNode(const TFGraphNode* node) : ShowNode(node) {}
-  ~ScopeNode() override {}
+  ~ScopeNode() override = default;
 
   std::vector<ScopeNode*> children;
   std::vector<ScopeNode*> show_children;
@@ -86,9 +87,9 @@ class ScopeNode : public ShowNode {
 class ShowMultiNode {
  public:
   explicit ShowMultiNode(TFMultiGraphNode* node);
-  virtual ~ShowMultiNode() {}
+  virtual ~ShowMultiNode() = default;
 
-  bool ReInit(int64 step, const std::vector<string>& type_regexes);
+  bool ReInit(int64_t step, const std::vector<string>& type_regexes);
 
   const string& name() const { return node->name(); }
   MultiGraphNodeProto* mutable_proto();
@@ -111,29 +112,29 @@ class ShowMultiNode {
 
 class CodeNode : public ShowMultiNode {
  public:
-  CodeNode(TFMultiGraphNode* node, const CodeDef::Trace* trace,
+  CodeNode(TFMultiGraphNode* node, const CallStack::Trace* trace,
            const string& suffix)
       : ShowMultiNode(node), trace_(trace), suffix_(suffix) {}
-  ~CodeNode() override {}
+  ~CodeNode() override = default;
 
-  CodeNode* AddChildren(const string& name, const CodeDef::Trace* trace,
+  CodeNode* AddChildren(const string& name, const CallStack::Trace* trace,
                         const string suffix) {
     auto it = children_.find(name);
     if (it != children_.end()) {
       return it->second.get();
     }
 
-    graph_children_.push_back(
-        std::unique_ptr<TFMultiGraphNode>(new TFMultiGraphNode(name)));
+    graph_children_.push_back(std::make_unique<TFMultiGraphNode>(name));
     auto child = &children_[name];
-    child->reset(new CodeNode(graph_children_.back().get(), trace, suffix));
+    *child =
+        std::make_unique<CodeNode>(graph_children_.back().get(), trace, suffix);
     children.push_back(child->get());
     return child->get();
   }
 
   bool has_trace() const { return trace_ != nullptr; }
-  const int32 lineno() const { return trace_->lineno(); }
-  string file() const { return trace_->file() + suffix_; }
+  int32 lineno() const { return trace_->lineno(); }
+  string file() const { return trace_->file(); }
   string function() const { return trace_->function() + suffix_; }
   int32 func_start_line() const { return trace_->func_start_line(); }
 
@@ -141,7 +142,7 @@ class CodeNode : public ShowMultiNode {
   std::vector<CodeNode*> show_children;
 
  private:
-  const CodeDef::Trace* trace_;
+  const CallStack::Trace* trace_;
   string suffix_;
   std::vector<std::unique_ptr<TFMultiGraphNode>> graph_children_;
   std::map<string, std::unique_ptr<CodeNode>> children_;
@@ -150,10 +151,10 @@ class CodeNode : public ShowMultiNode {
 class OpNode : public ShowMultiNode {
  public:
   explicit OpNode(TFMultiGraphNode* node) : ShowMultiNode(node) {}
-  ~OpNode() override {}
+  ~OpNode() override = default;
 };
 
 }  // namespace tfprof
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_NODE_SHOW_H_
+#endif  // TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_NODE_SHOW_H_

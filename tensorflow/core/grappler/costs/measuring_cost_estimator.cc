@@ -18,11 +18,12 @@ limitations under the License.
 #include <limits>
 
 #include "tensorflow/core/framework/cost_graph.pb.h"
+#include "tensorflow/core/framework/step_stats.pb.h"
 #include "tensorflow/core/grappler/clusters/cluster.h"
 #include "tensorflow/core/grappler/costs/robust_stats.h"
 #include "tensorflow/core/grappler/grappler_item.h"
 #include "tensorflow/core/kernels/ops_util.h"
-#include "tensorflow/core/lib/core/blocking_counter.h"
+#include "tensorflow/core/platform/blocking_counter.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/public/session.h"
 
@@ -43,26 +44,32 @@ MeasuringCostEstimator::MeasuringCostEstimator(Cluster* cluster,
   cluster_ = cluster;
 }
 
-Status MeasuringCostEstimator::Initialize(const GrapplerItem& item) {
+absl::Status MeasuringCostEstimator::Initialize(const GrapplerItem& item) {
   feed_ = item.feed;
   fetch_ = item.fetch;
   return cluster_->Initialize(item);
 }
 
-Status MeasuringCostEstimator::PredictCosts(const GraphDef& optimized_graph,
-                                            CostGraphDef* cost_graph,
-                                            Costs* costs) const {
+absl::Status MeasuringCostEstimator::PredictCosts(
+    const GraphDef& optimized_graph, RunMetadata* run_metadata,
+    Costs* costs) const {
+  CostGraphDef* cost_graph = nullptr;
+  if (run_metadata) {
+    cost_graph = run_metadata->mutable_cost_graph();
+  }
+  const bool running_simulation = (cluster_->type() == "virtual");
+
   std::vector<double> times(measurement_steps_);
   BlockingCounter barrier(measurement_steps_);
 
   mutex status_mu;
-  Status status;
+  absl::Status status;
 
   auto measurement_fn = [&](const int step) {
     const Costs::MicroSeconds start = Env::Default()->NowMicros();
 
     RunMetadata metadata;
-    const Status local_status =
+    const absl::Status local_status =
         cluster_->Run(optimized_graph, feed_, fetch_, &metadata);
     {
       mutex_lock lock(status_mu);
@@ -80,9 +87,23 @@ Status MeasuringCostEstimator::PredictCosts(const GraphDef& optimized_graph,
     }
 
     const Costs::MicroSeconds finish = Env::Default()->NowMicros();
-    const double time = (finish - start).count() * 1e3;
-    times[step] = time;
-
+    if (running_simulation) {
+      // When running simulation, return the estimated runtime, not the time it
+      // takes to run the simulation.
+      double time = 0.0;
+      for (const DeviceStepStats& stepstats :
+           metadata.step_stats().dev_stats()) {
+        for (const NodeExecStats& node_stats : stepstats.node_stats()) {
+          const double completion_time =
+              node_stats.all_end_rel_micros() + node_stats.all_start_micros();
+          time = std::max(time, completion_time * 1e3);
+        }
+      }
+      times[step] = time;
+    } else {
+      const double time = (finish - start).count() * 1e3;
+      times[step] = time;
+    }
     if (cost_graph && (step + 1 == measurement_steps_)) {
       metadata.mutable_cost_graph()->Swap(cost_graph);
     }
@@ -94,8 +115,7 @@ Status MeasuringCostEstimator::PredictCosts(const GraphDef& optimized_graph,
   measurement_fn(-1);
 
   if (!status.ok()) {
-    LOG(ERROR) << "Failed to run start measurements: "
-               << status.error_message();
+    LOG(ERROR) << "Failed to run start measurements: " << status.message();
     costs->execution_time = Costs::Duration::max();
     return status;
   }
@@ -114,11 +134,8 @@ Status MeasuringCostEstimator::PredictCosts(const GraphDef& optimized_graph,
   }
 
   if (!status.ok()) {
-    LOG(ERROR) << "Failed to measure graph performance: "
-               << status.error_message();
+    LOG(ERROR) << "Failed to measure graph performance: " << status.message();
     costs->execution_time = Costs::Duration::max();
-    costs->max_execution_time = Costs::Duration::max();
-    costs->min_execution_time = 0;
     return status;
   }
 
@@ -126,10 +143,8 @@ Status MeasuringCostEstimator::PredictCosts(const GraphDef& optimized_graph,
   // to filter out outliers.
   RobustStats stats(times);
   costs->execution_time = Costs::Duration(stats.mean());
-  costs->max_execution_time = Costs::Duration(stats.hi());
-  costs->min_execution_time = Costs::Duration(stats.lo());
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 }  // end namespace grappler
 }  // end namespace tensorflow

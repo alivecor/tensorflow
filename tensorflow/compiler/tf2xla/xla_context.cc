@@ -19,20 +19,19 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/types/span.h"
 #include "tensorflow/compiler/tf2xla/literal_util.h"
 #include "tensorflow/compiler/tf2xla/shape_util.h"
 #include "tensorflow/compiler/tf2xla/type_util.h"
 #include "tensorflow/compiler/tf2xla/xla_helpers.h"
-#include "tensorflow/compiler/tf2xla/xla_op_kernel.h"
-#include "tensorflow/compiler/xla/client/client_library.h"
-#include "tensorflow/compiler/xla/client/computation_builder.h"
-#include "tensorflow/compiler/xla/layout_util.h"
-#include "tensorflow/compiler/xla/literal_util.h"
-#include "tensorflow/compiler/xla/statusor.h"
+#include "xla/client/client_library.h"
+#include "xla/hlo/builder/xla_builder.h"
+#include "xla/hlo/builder/xla_computation.h"
+#include "xla/layout_util.h"
+#include "xla/literal.h"
 #include "tensorflow/core/common_runtime/dma_helper.h"
-#include "tensorflow/core/lib/gtl/array_slice.h"
-#include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/platform/statusor.h"
 
 namespace tensorflow {
 
@@ -45,8 +44,8 @@ const char XlaContext::kXlaContextResourceName[] = "_xla_context";
   // per-step context is looked up in the resource manager. The
   // JIT will prepopulate the JITContext.
   XlaContext* context;
-  TF_CHECK_OK(ctx->resource_manager()->Lookup(
-      ctx->step_container()->name(), kXlaContextResourceName, &context));
+  TF_CHECK_OK(ctx->step_container()->Lookup(ctx->resource_manager(),
+                                            kXlaContextResourceName, &context));
   // The resource manager handed us a fresh reference to 'context', but retains
   // a reference itself so the context won't be freed. The resource manager will
   // outlive the JIT compilation.
@@ -54,127 +53,124 @@ const char XlaContext::kXlaContextResourceName[] = "_xla_context";
   return *context;
 }
 
-/* static */ XlaContext& XlaContext::Get(const XlaOpKernelContext* ctx) {
-  return Get(ctx->op_kernel_context());
-}
-
-void XlaContext::set_args(std::vector<Argument> args) {
+void XlaContext::set_args(std::vector<XlaExpression> args) {
   args_ = std::move(args);
 }
 
-XlaContext::XlaContext(XlaCompiler* compiler, xla::ComputationBuilder* builder,
-                       bool allow_cpu_custom_calls,
-                       bool resolve_compile_time_constants)
-    : compiler_(compiler),
-      builder_(builder),
-      allow_cpu_custom_calls_(allow_cpu_custom_calls),
-      resolve_compile_time_constants_(resolve_compile_time_constants) {}
-
-const xla::ComputationDataHandle&
-XlaContext::GetOrCreateRuntimeContextParameter() {
-  CHECK(allow_cpu_custom_calls_);
-  if (has_context_parameter_) return context_parameter_;
-  has_context_parameter_ = true;
-
-  // Allocate the next available parameter for the context parameter.
-  int num_parameters = 0;
-  for (const Argument& arg : args_) {
-    if (!arg.value.is_constant) {
-      ++num_parameters;
+XlaContext::XlaContext(XlaCompiler* compiler, xla::XlaBuilder* builder,
+                       const Graph* graph)
+    : compiler_(compiler), builder_(builder) {
+  if (graph) {
+    for (const Node* node : graph->nodes()) {
+      stack_traces_[node->name()] = node->GetStackTrace();
     }
   }
-  context_parameter_ = builder_->Parameter(
-      num_parameters, xla::ShapeUtil::MakeOpaqueShape(), "tf_context");
-  return context_parameter_;
 }
 
-string XlaContext::DebugString() { return "TLA JIT context"; }
+std::string XlaContext::DebugString() const { return "XLA JIT context"; }
 
-// This is called by the Retval Op to associate a computed value
-// with a specific return value of the subgraph.
-void XlaContext::AddRetval(int retval_index, DataType type,
-                           const xla::ComputationDataHandle& handle) {
-  VLOG(1) << "Added retval index " << retval_index << " to XLA computation";
-  // Add the return value to the list being built up.
-  if (retvals_.size() <= retval_index) {
-    retvals_.resize(retval_index + 1);
+void XlaContext::SetRetval(int index, const XlaExpression& expression) {
+  const int64_t retvals_size = retvals_.size();
+  if (retvals_size <= index) {
+    retvals_.resize(index + 1);
   }
-  retvals_[retval_index].is_constant = false;
-  retvals_[retval_index].type = type;
-  retvals_[retval_index].handle = handle;
+  retvals_[index] = expression;
 }
 
-Status XlaContext::AddConstRetval(int retval_index, DataType dtype,
-                                  const xla::Literal& literal) {
-  VLOG(1) << "Adding retval index " << retval_index
-          << " with non-data-dependent tensor to XLA computation";
-  if (retvals_.size() <= retval_index) {
-    retvals_.resize(retval_index + 1);
-  }
-  retvals_[retval_index].type = dtype;
-  if (resolve_compile_time_constants_) {
-    retvals_[retval_index].is_constant = true;
-    TF_RETURN_IF_ERROR(LiteralToHostTensor(
-        literal, dtype, &retvals_[retval_index].constant_value));
-  } else {
-    retvals_[retval_index].is_constant = false;
-    retvals_[retval_index].handle = builder_->ConstantLiteral(literal);
-  }
-  return Status::OK();
+XlaResource* XlaContext::AddResource(std::unique_ptr<XlaResource> resource) {
+  resources_.push_back(std::move(resource));
+  return resources_.back().get();
 }
 
-void XlaContext::AddSideEffects() {
-  has_side_effects_ = true;
-}
-
-xla::ComputationBuilder* XlaContext::builder() { return builder_; }
-
-Status XlaContext::CreateResource(XlaResource::Kind kind, int arg_num,
-                                  string name, DataType type,
-                                  const xla::ComputationDataHandle& handle,
-                                  XlaResource** resource) {
-  resources_.emplace_back(new XlaResource);
-  *resource = resources_.back().get();
-  XlaResource& r = **resource;
-  r.kind = kind;
-  r.arg_num = arg_num;
-  r.name = std::move(name);
-  r.type = type;
-  r.initial_value = r.value = handle;
-  return Status::OK();
-}
-
-const xla::Computation* XlaContext::GetOrCreateMax(const DataType type) {
-  return LookupOrCreate(type, &max_func_, [this, type] {
-    const string type_string = DataTypeString(type);
+const xla::XlaComputation* XlaContext::GetOrCreateMax(const DataType type) {
+  return LookupOrCreate(type, &max_func_, [type] {
+    const std::string type_string = DataTypeString(type);
     VLOG(1) << "Building Max() for " << type_string;
-    xla::ComputationBuilder b(builder()->client(), "max<" + type_string + ">");
+    xla::XlaBuilder b("max<" + type_string + ">");
     xla::PrimitiveType xla_type;
     TF_CHECK_OK(DataTypeToPrimitiveType(type, &xla_type));
-    auto x = b.Parameter(0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
-    auto y = b.Parameter(1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
-    b.Max(x, y);
-    return b.Build().ConsumeValueOrDie();
+    auto x =
+        xla::Parameter(&b, 0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
+    auto y =
+        xla::Parameter(&b, 1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
+    xla::Max(x, y);
+    return b.Build().value();
   });
 }
 
-const xla::Computation* XlaContext::GetOrCreateAdd(const DataType type) {
-  return LookupOrCreate(type, &add_func_, [this, type] {
-    const string type_string = DataTypeString(type);
+const xla::XlaComputation* XlaContext::GetOrCreateMin(const DataType type) {
+  return LookupOrCreate(type, &min_func_, [type] {
+    const std::string type_string = DataTypeString(type);
+    VLOG(1) << "Building Min() for " << type_string;
+    xla::XlaBuilder b("min<" + type_string + ">");
+    xla::PrimitiveType xla_type;
+    TF_CHECK_OK(DataTypeToPrimitiveType(type, &xla_type));
+    auto x =
+        xla::Parameter(&b, 0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
+    auto y =
+        xla::Parameter(&b, 1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
+    xla::Min(x, y);
+    return b.Build().value();
+  });
+}
+
+const xla::XlaComputation* XlaContext::GetOrCreateAdd(const DataType type) {
+  return LookupOrCreate(type, &add_func_, [type] {
+    const std::string type_string = DataTypeString(type);
     VLOG(1) << "Building Add() for " << type_string;
-    xla::ComputationBuilder b(builder()->client(), "add<" + type_string + ">");
+    xla::XlaBuilder b("add<" + type_string + ">");
     xla::PrimitiveType xla_type;
     TF_CHECK_OK(DataTypeToPrimitiveType(type, &xla_type));
-    auto x = b.Parameter(0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
-    auto y = b.Parameter(1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
-    b.Add(x, y);
-    return b.Build().ConsumeValueOrDie();
+    auto x =
+        xla::Parameter(&b, 0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
+    auto y =
+        xla::Parameter(&b, 1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
+    xla::Add(x, y);
+    return b.Build().value();
   });
 }
 
-const xla::Computation* XlaContext::LookupOrCreate(
+const xla::XlaComputation* XlaContext::GetOrCreateLogAddExp(
+    const DataType type) {
+  return LookupOrCreate(type, &log_add_exp_func_, [type] {
+    const std::string type_string = DataTypeString(type);
+    VLOG(1) << "Building LogAddExp() for " << type_string;
+    xla::XlaBuilder b("log_add_exp<" + type_string + ">");
+    xla::PrimitiveType xla_type;
+    TF_CHECK_OK(DataTypeToPrimitiveType(type, &xla_type));
+    auto x =
+        xla::Parameter(&b, 0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
+    auto y =
+        xla::Parameter(&b, 1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
+    auto max = xla::Max(x, y);
+    auto min = xla::Min(x, y);
+    auto inner = xla::Select(xla::Not(xla::IsFinite(max)),
+                             xla::Neg(xla::Abs(max)), xla::Sub(min, max));
+
+    xla::Add(max, xla::Log1p(xla::Exp(inner)));
+    return b.Build().value();
+  });
+}
+
+const xla::XlaComputation* XlaContext::GetOrCreateMul(const DataType type) {
+  return LookupOrCreate(type, &mul_func_, [type] {
+    const std::string type_string = DataTypeString(type);
+    VLOG(1) << "Building Mul() for " << type_string;
+    xla::XlaBuilder b("mul<" + type_string + ">");
+    xla::PrimitiveType xla_type;
+    TF_CHECK_OK(DataTypeToPrimitiveType(type, &xla_type));
+    auto x =
+        xla::Parameter(&b, 0, xla::ShapeUtil::MakeShape(xla_type, {}), "x");
+    auto y =
+        xla::Parameter(&b, 1, xla::ShapeUtil::MakeShape(xla_type, {}), "y");
+    xla::Mul(x, y);
+    return b.Build().value();
+  });
+}
+
+const xla::XlaComputation* XlaContext::LookupOrCreate(
     DataType type, ComputationMap* out,
-    const std::function<xla::Computation()>& create) {
+    const std::function<xla::XlaComputation()>& create) {
   {
     const auto& entry = (*out)[type];
     if (!entry.IsNull()) {
@@ -190,6 +186,35 @@ const xla::Computation* XlaContext::LookupOrCreate(
     }
     return &entry;
   }
+}
+
+absl::Status XlaContext::RecordCollectiveInfoFromNestedCompilationResult(
+    const XlaCompilationResult& result) {
+  if (result.collective_info) {
+    return RecordCollectiveInfo(result.collective_info->group_key,
+                                result.collective_info->group_size)
+        .status();
+  }
+  return absl::OkStatus();
+}
+
+absl::StatusOr<int64_t> XlaContext::RecordCollectiveInfo(int group_key,
+                                                         int group_size) {
+  if (!collective_info_) {
+    collective_info_ = {group_key, group_size, 0};
+  } else if (collective_info_->group_key != group_key ||
+             collective_info_->group_size != group_size) {
+    return errors::InvalidArgument(
+        "Only single configuration of CollectiveReduceV2Op is ",
+        "supported in a given cluster. Recorded group_key=",
+        collective_info_->group_key,
+        " attempting to insert group_key=", group_key);
+  }
+
+  // Create the channel_id to be used for the collective. Avoid having the
+  // same channel_id to be used for 2 or more collectives since XLA attempts
+  // to "gang schedule" all collectives with the same channel_id.
+  return (static_cast<int64_t>(group_key) << 32) | collective_info_->next_id++;
 }
 
 }  // namespace tensorflow

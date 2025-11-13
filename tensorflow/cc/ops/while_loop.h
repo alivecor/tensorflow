@@ -13,8 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CC_OPS_WHILE_LOOP_H_
-#define THIRD_PARTY_TENSORFLOW_CC_OPS_WHILE_LOOP_H_
+#ifndef TENSORFLOW_CC_OPS_WHILE_LOOP_H_
+#define TENSORFLOW_CC_OPS_WHILE_LOOP_H_
+
+#include <string>
+#include <vector>
 
 #include "tensorflow/cc/framework/ops.h"
 #include "tensorflow/cc/framework/scope.h"
@@ -24,14 +27,15 @@ namespace ops {
 
 // Function that takes cond graph inputs and returns cond graph boolean output.
 // 'output' need not be set if an error is returned.
-typedef std::function<Status(const Scope&, const std::vector<Output>& inputs,
-                             Output* output)>
+typedef std::function<absl::Status(
+    const Scope&, const std::vector<Output>& inputs, Output* output)>
     CondGraphBuilderFn;
 
 // Function that takes body graph inputs and returns body graph outputs.
 // 'outputs' need not be populated if an error is returned.
-typedef std::function<Status(const Scope&, const std::vector<Output>& inputs,
-                             std::vector<Output>* outputs)>
+typedef std::function<absl::Status(const Scope&,
+                                   const std::vector<Output>& inputs,
+                                   std::vector<Output>* outputs)>
     BodyGraphBuilderFn;
 
 // Constructs a while loop.
@@ -48,17 +52,29 @@ typedef std::function<Status(const Scope&, const std::vector<Output>& inputs,
 //     unique name. This will be used as a prefix for created operations.
 // * outputs: output param that returns final loop variable outputs in non-error
 //     case. Must be non-null and empty.
+// * create_while_ctx: if true, a WhileContext is created and populated for this
+//     loop. See core/graph/while_context.h for more details on
+//     WhileContexts. This is set to false for loops used as part of gradient
+//     computations, since they're part of the gradient for a loop in the
+//     forward-pass.
+//     TODO(skyewm): revisit this. Should we create WhileContexts for all loops,
+//     even if we don't need them?
+// * cond_output: if non-null, the output of the predicate is returned. This
+//     will always be a LoopCond node.
 //
 // Returns an error if the while loop could not be fully constructed.
 //
 // TODO(skyewm): clean up partially-constructed loop in error case
 // TODO(skyewm): create public interface to this method
-Status BuildWhileLoop(const Scope& scope, const std::vector<Output>& inputs,
-                      const CondGraphBuilderFn& cond,
-                      const BodyGraphBuilderFn& body, const string& frame_name,
-                      OutputList* outputs);
+absl::Status BuildWhileLoop(const Scope& scope,
+                            const std::vector<Output>& inputs,
+                            const CondGraphBuilderFn& cond,
+                            const BodyGraphBuilderFn& body,
+                            const string& frame_name, OutputList* outputs,
+                            bool create_while_ctx = true,
+                            Output* cond_output = nullptr);
 
 }  // namespace ops
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CC_OPS_WHILE_LOOP_H_
+#endif  // TENSORFLOW_CC_OPS_WHILE_LOOP_H_

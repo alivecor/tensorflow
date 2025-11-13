@@ -21,12 +21,14 @@ limitations under the License.
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
+#include "tensorflow/core/framework/tensor_util.h"
 #include "tensorflow/core/lib/random/random_distributions.h"
 #include "tensorflow/core/lib/random/simple_philox.h"
 #include "tensorflow/core/util/guarded_philox_random.h"
@@ -57,46 +59,30 @@ static constexpr int kReservedSamplesPerOutput = 256;
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
-// We will compute half-precision Poisson samples with float precision
-// intermediate calculations.
 template <typename T>
 struct PoissonComputeType {
-  typedef T ComputeType;
-};
-
-template <>
-struct PoissonComputeType<Eigen::half> {
-  typedef float ComputeType;
+  typedef double ComputeType;
 };
 
 }  // namespace
 
 namespace functor {
 
-template <typename Device, typename T>
-struct PoissonFunctor {
-  void operator()(OpKernelContext* ctx, const Device& d, const T* rate_flat,
-                  int num_rate, int num_samples,
-                  const random::PhiloxRandom& rng, T* samples_flat);
-};
-
-template <typename T>
-struct PoissonFunctor<CPUDevice, T> {
+template <typename T, typename U>
+struct PoissonFunctor<CPUDevice, T, U> {
   void operator()(OpKernelContext* ctx, const CPUDevice& d, const T* rate_flat,
-                  int num_rate, int num_samples,
-                  const random::PhiloxRandom& rng, T* samples_flat) {
+                  int64_t num_rate, int64_t num_samples,
+                  const random::PhiloxRandom& rng, U* samples_flat) {
     // Two different algorithms are employed, depending on the size of
     // rate.
     // If rate < 10, we use an algorithm attributed to Knuth:
     // Seminumerical Algorithms. Art of Computer Programming, Volume 2.
     //
     // This algorithm runs in O(rate) time, and will require O(rate)
-    // uniform
-    // variates.
+    // uniform variates.
     //
     // If rate >= 10 we use a transformation-rejection algorithm from
-    // pairs
-    // of uniform random variables due to Hormann.
+    // pairs of uniform random variables due to Hormann.
     // http://www.sciencedirect.com/science/article/pii/0167668793909974
     //
     // The algorithm has an acceptance rate of ~89% for the smallest rate
@@ -111,16 +97,16 @@ struct PoissonFunctor<CPUDevice, T> {
     typedef random::UniformDistribution<random::PhiloxRandom, CT> Uniform;
 
     auto DoWork = [num_samples, num_rate, &rng, samples_flat, rate_flat](
-        int start_output, int limit_output) {
+                      int64_t start_output, int64_t limit_output) {
       // Capturing "rng" by value would only make a copy for the _shared_
       // lambda.  Since we want to let each worker have its own copy, we pass
       // "rng" by reference and explicitly do a copy assignment.
 
       Uniform uniform;
       typename Uniform::ResultType uniform_result;
-      for (int64 output_idx = start_output; output_idx < limit_output;
+      for (int64_t output_idx = start_output; output_idx < limit_output;
            /* output_idx incremented within inner loop below */) {
-        const int64 rate_idx = output_idx / num_samples;
+        const int64_t rate_idx = output_idx / num_samples;
 
         // Several calculations can be done on a per-rate basis.
         const CT rate = CT(rate_flat[rate_idx]);
@@ -139,12 +125,12 @@ struct PoissonFunctor<CPUDevice, T> {
           const CT exp_neg_rate = Eigen::numext::exp(-rate);
 
           // Compute the rest of the samples for the current rate value.
-          for (int64 sample_idx = output_idx % num_samples;
+          for (int64_t sample_idx = output_idx % num_samples;
                sample_idx < num_samples && output_idx < limit_output;
                sample_idx++, output_idx++) {
             random::PhiloxRandom gen = rng;
             gen.Skip(kReservedSamplesPerOutput * output_idx);
-            int16 uniform_remaining = 0;
+            int16_t uniform_remaining = 0;
 
             CT prod = 1;
             CT x = 0;
@@ -154,12 +140,23 @@ struct PoissonFunctor<CPUDevice, T> {
             while (true) {
               UNIFORM(u);
               prod = prod * u;
-              if (prod <= exp_neg_rate) {
-                samples_rate_output[sample_idx * num_rate] = T(x);
+              if (prod <= exp_neg_rate &&
+                  x <= CT(Eigen::NumTraits<U>::highest())) {
+                samples_rate_output[sample_idx * num_rate] = U(x);
                 break;
               }
               x += 1;
             }
+          }
+          continue;
+        }
+        if (Eigen::numext::isinf(rate) && rate > CT(0)) {
+          // Fill the rest of the samples for the current rate value.
+          for (int64_t sample_idx = output_idx % num_samples;
+               sample_idx < num_samples && output_idx < limit_output;
+               sample_idx++, output_idx++) {
+            U k = Eigen::NumTraits<U>::infinity();
+            samples_rate_output[sample_idx * num_rate] = k;
           }
           continue;
         }
@@ -200,12 +197,12 @@ struct PoissonFunctor<CPUDevice, T> {
         const CT inv_alpha = CT(1.1239) + CT(1.1328) / (b - CT(3.4));
 
         // Compute the rest of the samples for the current rate value.
-        for (int64 sample_idx = output_idx % num_samples;
+        for (int64_t sample_idx = output_idx % num_samples;
              sample_idx < num_samples && output_idx < limit_output;
              sample_idx++, output_idx++) {
           random::PhiloxRandom gen = rng;
           gen.Skip(kReservedSamplesPerOutput * output_idx);
-          int16 uniform_remaining = 0;
+          int16_t uniform_remaining = 0;
 
           while (true) {
             UNIFORM(u);
@@ -216,13 +213,18 @@ struct PoissonFunctor<CPUDevice, T> {
             CT k = Eigen::numext::floor((CT(2) * a / u_shifted + b) * u + rate +
                                         CT(0.43));
 
+            if (k > CT(Eigen::NumTraits<U>::highest())) {
+              // retry in case of overflow.
+              continue;
+            }
+
             // When alpha * f(G(U)) * G'(U) is close to 1, it is possible to
             // find a rectangle (-u_r, u_r) x (0, v_r) under the curve, such
             // that if v <= v_r and |u| <= u_r, then we can accept.
             // Here v_r = 0.9227 - 3.6224 / (b - 2) and u_r = 0.43.
             if (u_shifted >= CT(0.07) &&
                 v <= CT(0.9277) - CT(3.6224) / (b - CT(2))) {
-              samples_rate_output[sample_idx * num_rate] = T(k);
+              samples_rate_output[sample_idx * num_rate] = U(k);
               break;
             }
 
@@ -235,7 +237,7 @@ struct PoissonFunctor<CPUDevice, T> {
             CT s = log(v * inv_alpha / (a / (u_shifted * u_shifted) + b));
             CT t = -rate + k * log_rate - Eigen::numext::lgamma(k + 1);
             if (s <= t) {
-              samples_rate_output[sample_idx * num_rate] = T(k);
+              samples_rate_output[sample_idx * num_rate] = U(k);
               break;
             }
           }
@@ -280,7 +282,7 @@ struct PoissonFunctor<CPUDevice, T> {
 namespace {
 
 // Samples from one or more Poisson distributions.
-template <typename T>
+template <typename T, typename U>
 class RandomPoissonOp : public OpKernel {
  public:
   explicit RandomPoissonOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -292,30 +294,31 @@ class RandomPoissonOp : public OpKernel {
     const Tensor& rate_t = ctx->input(1);
 
     TensorShape samples_shape;
-    OP_REQUIRES_OK(ctx, MakeShape(shape_t, &samples_shape));
-    const int64 num_samples = samples_shape.num_elements();
+    OP_REQUIRES_OK(ctx, tensor::MakeShape(shape_t, &samples_shape));
+    const int64_t num_samples = samples_shape.num_elements();
+    OP_REQUIRES_OK(ctx, samples_shape.AppendShapeWithStatus(rate_t.shape()));
 
-    samples_shape.AppendShape(rate_t.shape());
     // Allocate output samples.
     Tensor* samples_t = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, samples_shape, &samples_t));
     if (num_samples == 0) return;
 
     const auto rate_flat = rate_t.flat<T>().data();
-    const int64 num_rate = rate_t.NumElements();
-    auto samples_flat = samples_t->flat<T>().data();
+    const int64_t num_rate = rate_t.NumElements();
+    auto samples_flat = samples_t->flat<U>().data();
     random::PhiloxRandom rng = generator_.ReserveRandomOutputs(
         num_samples * num_rate, kReservedSamplesPerOutput);
 
-    functor::PoissonFunctor<CPUDevice, T>()(ctx, ctx->eigen_device<CPUDevice>(),
-                                            rate_flat, num_rate, num_samples,
-                                            rng, samples_flat);
+    functor::PoissonFunctor<CPUDevice, T, U>()(
+        ctx, ctx->eigen_device<CPUDevice>(), rate_flat, num_rate, num_samples,
+        rng, samples_flat);
   }
 
  private:
   GuardedPhiloxRandom generator_;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(RandomPoissonOp);
+  RandomPoissonOp(const RandomPoissonOp&) = delete;
+  void operator=(const RandomPoissonOp&) = delete;
 };
 }  // namespace
 
@@ -324,12 +327,35 @@ class RandomPoissonOp : public OpKernel {
 #define REGISTER(TYPE)                                                        \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("RandomPoisson").Device(DEVICE_CPU).TypeConstraint<TYPE>("dtype"), \
-      RandomPoissonOp<TYPE>);
+      RandomPoissonOp<TYPE, TYPE>);
 
 TF_CALL_half(REGISTER);
 TF_CALL_float(REGISTER);
 TF_CALL_double(REGISTER);
 
+#define REGISTER_V2(RTYPE, OTYPE)                                   \
+  template struct functor::PoissonFunctor<CPUDevice, RTYPE, OTYPE>; \
+  REGISTER_KERNEL_BUILDER(Name("RandomPoissonV2")                   \
+                              .Device(DEVICE_CPU)                   \
+                              .TypeConstraint<RTYPE>("R")           \
+                              .TypeConstraint<OTYPE>("dtype"),      \
+                          RandomPoissonOp<RTYPE, OTYPE>);
+
+#define REGISTER_ALL(RTYPE)        \
+  REGISTER_V2(RTYPE, Eigen::half); \
+  REGISTER_V2(RTYPE, float);       \
+  REGISTER_V2(RTYPE, double);      \
+  REGISTER_V2(RTYPE, int32);       \
+  REGISTER_V2(RTYPE, int64_t);
+
+REGISTER_ALL(Eigen::half);
+REGISTER_ALL(float);
+REGISTER_ALL(double);
+REGISTER_ALL(int32);
+REGISTER_ALL(int64_t);
+
+#undef REGISTER_ALL
+#undef REGISTER_V2
 #undef REGISTER
 
 }  // end namespace tensorflow

@@ -32,16 +32,14 @@ limitations under the License.
 #include "tensorflow/core/platform/test.h"
 
 namespace tensorflow {
-
-using namespace ops;  // NOLINT(build/namespaces)
-
+namespace ops {
 namespace {
 
-void TestAdd(const std::vector<int64>& x_shape,
+void TestAdd(const std::vector<int64_t>& x_shape,
              const std::vector<float>& x_values, float x_min_value,
-             float x_max_value, const std::vector<int64>& y_shape,
+             float x_max_value, const std::vector<int64_t>& y_shape,
              const std::vector<float>& y_values, float y_min_value,
-             float y_max_value, const std::vector<int64>& expected_shape,
+             float y_max_value, const std::vector<int64_t>& expected_shape,
              const std::vector<float>& expected_values, double tolerance) {
   Scope root = Scope::NewRootScope();
 
@@ -86,8 +84,8 @@ void TestAdd(const std::vector<int64>& x_shape,
   test::ExpectTensorNear<float>(expected_z_float, z_float, tolerance);
 }
 
-void TestAddShape(const std::vector<int64>& x_shape,
-                  const std::vector<int64>& y_shape) {
+void TestAddShape(const std::vector<int64_t>& x_shape,
+                  const std::vector<int64_t>& y_shape) {
   const size_t x_num_elements = TensorShape(x_shape).num_elements();
   std::vector<float> x_values(x_num_elements);
   for (int i = 0; i < x_num_elements; ++i) {
@@ -128,16 +126,16 @@ void TestAddShape(const std::vector<int64>& x_shape,
   std::vector<float> expected_values(
       expected_values_data,
       expected_values_data + expected_values_tensor.NumElements());
-  std::vector<int64> expected_shape;
-  for (const int64 dim : expected_values_tensor.shape().dim_sizes()) {
+  std::vector<int64_t> expected_shape;
+  for (const int64_t dim : expected_values_tensor.shape().dim_sizes()) {
     expected_shape.push_back(dim);
   }
   TestAdd(x_shape, x_values, x_min_value, x_max_value, y_shape, y_values,
           y_min_value, y_max_value, expected_shape, expected_values, 256.0);
 }
 
-void TimeAdd(const std::vector<int64>& x_shape,
-             const std::vector<int64>& y_shape, int64 iterations) {
+void TimeAdd(const std::vector<int64_t>& x_shape,
+             const std::vector<int64_t>& y_shape, int64_t iterations) {
   TestAddShape(x_shape, y_shape);
 
   Scope root = Scope::NewRootScope();
@@ -161,17 +159,17 @@ void TimeAdd(const std::vector<int64>& x_shape,
   ClientSession session(root);
   std::vector<Tensor> outputs;
 
-  int64 total_duration = 0;
+  int64_t total_duration = 0;
   for (int i = 0; i < iterations; ++i) {
-    const int64 start_time = Env::Default()->NowMicros();
+    const int64_t start_time = Env::Default()->NowMicros();
     TF_EXPECT_OK(session.Run({{placeholder, x_quantized_tensor}},
                              {add.z, add.min_z, add.max_z}, &outputs));
-    const int64 end_time = Env::Default()->NowMicros();
+    const int64_t end_time = Env::Default()->NowMicros();
     total_duration += end_time - start_time;
   }
-  const int64 one_run_duration = total_duration / iterations;
+  const int64_t one_run_duration = total_duration / iterations;
 
-  const int64 num_ops = outputs[0].NumElements();
+  const int64_t num_ops = outputs[0].NumElements();
 
   const double million_ops_per_second =
       (iterations * num_ops) / static_cast<double>(total_duration);
@@ -183,8 +181,6 @@ void TimeAdd(const std::vector<int64>& x_shape,
             << ", one_run_duration=" << one_run_duration
             << ", total_duration=" << total_duration;
 }
-
-}  // namespace
 
 void TestManualScalar() {
   TestAdd(
@@ -276,10 +272,12 @@ void BenchmarkVectorPlusTensor() {
   TimeAdd({100000, 100}, {100}, 1);
 }
 
-#if !defined(__ANDROID__)
+}  // namespace
+}  // namespace ops
+}  // namespace tensorflow
 
 #define RUN_TEST(t) \
-  TEST(QuantizedAddOpTest, t) { t(); }
+  TEST(QuantizedAddOpTest, t) { tensorflow::ops::t(); }
 
 RUN_TEST(TestManualScalar);
 RUN_TEST(TestManualVector);
@@ -288,24 +286,16 @@ RUN_TEST(TestScalar);
 RUN_TEST(TestVector);
 RUN_TEST(TestVectorPlusTensor);
 
-#undef RUN_TEST
-
-#endif  // __ANDROID__
-
-}  // end namespace tensorflow
-
 #if defined(__ANDROID__)
-int main(int argc, char** argv) {
-  LOG(INFO) << "TestManualScalar:";
-  tensorflow::TestManualScalar();
-  LOG(INFO) << "TestManualVector:";
-  tensorflow::TestManualVector();
-  LOG(INFO) << "TestManualVectorPlusTensor:";
-  tensorflow::TestManualVectorPlusTensor();
-  tensorflow::BenchmarkTensorScalar();
-  tensorflow::BenchmarkVector();
-  tensorflow::BenchmarkVectorPlusTensor();
-  LOG(INFO) << "All tests complete";
-  return 0;
-}
+
+RUN_TEST(BenchmarkTensorScalar);
+RUN_TEST(BenchmarkVector);
+RUN_TEST(BenchmarkVectorPlusTensor);
+
 #endif  // __ANDROID__
+
+int main(int argc, char** argv) {
+  // On Linux, add: absl::SetFlag(&FLAGS_logtostderr, true);
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}

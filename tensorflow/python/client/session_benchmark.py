@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests and benchmarks for interacting with the `tf.Session`."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+"""Tests and benchmarks for interacting with the `tf.compat.v1.Session`."""
 
 import time
 
@@ -33,7 +29,7 @@ from tensorflow.python.training import server_lib
 
 
 class SessionBenchmark(test.Benchmark):
-  """Tests and benchmarks for interacting with the `tf.Session`."""
+  """Tests and benchmarks for interacting with the `tf.compat.v1.Session`."""
 
   def _benchmarkFeed(self, name, target, size, iters):
     """Runs a microbenchmark to measure the cost of feeding a tensor.
@@ -56,7 +52,7 @@ class SessionBenchmark(test.Benchmark):
       no_op = array_ops.identity(p).op
       with session.Session(target) as sess:
         sess.run(no_op, feed_dict={p: feed_val})  # Warm-up run.
-        for _ in xrange(iters):
+        for _ in range(iters):
           start_time = time.time()
           sess.run(no_op, feed_dict={p: feed_val})
           end_time = time.time()
@@ -84,7 +80,7 @@ class SessionBenchmark(test.Benchmark):
       with session.Session(target) as sess:
         sess.run(v.initializer)
         sess.run(v)  # Warm-up run.
-        for _ in xrange(iters):
+        for _ in range(iters):
           start_time = time.time()
           sess.run(v)
           end_time = time.time()
@@ -113,7 +109,7 @@ class SessionBenchmark(test.Benchmark):
         sess.run(v.initializer)
         runner = sess.make_callable(v)
         runner()  # Warm-up run.
-        for _ in xrange(iters):
+        for _ in range(iters):
           start_time = time.time()
           runner()
           end_time = time.time()
@@ -139,7 +135,7 @@ class SessionBenchmark(test.Benchmark):
       with session.Session(target) as sess:
         sess.run(v.initializer)
         sess.run(v.op)  # Warm-up run.
-        for _ in xrange(iters):
+        for _ in range(iters):
           start_time = time.time()
           sess.run(v.op)
           end_time = time.time()
@@ -166,7 +162,7 @@ class SessionBenchmark(test.Benchmark):
         sess.run(v.initializer)
         runner = sess.make_callable(v.op)
         runner()  # Warm-up run.
-        for _ in xrange(iters):
+        for _ in range(iters):
           start_time = time.time()
           runner()
           end_time = time.time()

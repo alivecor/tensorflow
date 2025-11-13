@@ -14,14 +14,9 @@
 # ==============================================================================
 """Benchmark for accumulate_n() in math_ops."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import random
 import time
 
-from six.moves import xrange  # pylint: disable=redefined-builtin
 
 from tensorflow.python.client import session
 from tensorflow.python.framework import ops
@@ -39,7 +34,7 @@ from tensorflow.python.platform import test
 class AccumulateNBenchmark(test.Benchmark):
 
   def _AccumulateNTemplate(self, inputs, init, shape, validate_shape):
-    var = gen_state_ops._temporary_variable(
+    var = gen_state_ops.temporary_variable(
         shape=shape, dtype=inputs[0].dtype.base_dtype)
     ref = state_ops.assign(var, init, validate_shape=validate_shape)
     update_ops = [
@@ -47,8 +42,7 @@ class AccumulateNBenchmark(test.Benchmark):
             ref, tensor, use_locking=True).op for tensor in inputs
     ]
     with ops.control_dependencies(update_ops):
-      return gen_state_ops._destroy_temporary_variable(
-          ref, var_name=var.op.name)
+      return gen_state_ops.destroy_temporary_variable(ref, var_name=var.op.name)
 
   def _AccumulateNInitializedWithFirst(self, inputs):
     return self._AccumulateNTemplate(
@@ -60,8 +54,8 @@ class AccumulateNBenchmark(test.Benchmark):
   def _AccumulateNInitializedWithMerge(self, inputs):
     return self._AccumulateNTemplate(
         inputs,
-        init=array_ops.zeros_like(gen_control_flow_ops._merge(inputs)[0]),
-        shape=tensor_shape.vector(0),
+        init=array_ops.zeros_like(gen_control_flow_ops.merge(inputs)[0]),
+        shape=tensor_shape.TensorShape([0]),
         validate_shape=False)
 
   def _AccumulateNInitializedWithShape(self, inputs):
@@ -73,7 +67,7 @@ class AccumulateNBenchmark(test.Benchmark):
         validate_shape=True)
 
   def _GenerateUnorderedInputs(self, size, n):
-    inputs = [random_ops.random_uniform(shape=[size]) for _ in xrange(n)]
+    inputs = [random_ops.random_uniform(shape=[size]) for _ in range(n)]
     random.shuffle(inputs)
     return inputs
 
@@ -84,7 +78,7 @@ class AccumulateNBenchmark(test.Benchmark):
     inputs = self._GenerateUnorderedInputs(size, 1)
     queue = data_flow_ops.FIFOQueue(
         capacity=1, dtypes=[inputs[0].dtype], shapes=[inputs[0].get_shape()])
-    for _ in xrange(n - 1):
+    for _ in range(n - 1):
       op = queue.enqueue(inputs[-1])
       with ops.control_dependencies([op]):
         inputs.append(math_ops.tanh(1.0 + queue.dequeue()))
@@ -109,10 +103,10 @@ class AccumulateNBenchmark(test.Benchmark):
 
     with session.Session(graph=graph):
       for tag, op in test_ops:
-        for _ in xrange(100):
+        for _ in range(100):
           op.run()  # Run for warm up.
         start = time.time()
-        for _ in xrange(repeats):
+        for _ in range(repeats):
           op.run()
         duration = time.time() - start
         args = format_args + (tag, duration)

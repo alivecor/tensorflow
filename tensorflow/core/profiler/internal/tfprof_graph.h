@@ -16,8 +16,8 @@ limitations under the License.
 // Build a graph structure based on op inputs/outputs. The graph is a directed
 // acyclic graph pointing *from outputs to inputs*.
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_GRAPH_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_GRAPH_H_
+#ifndef TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_GRAPH_H_
+#define TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_GRAPH_H_
 
 #include <deque>
 #include <map>
@@ -26,13 +26,11 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include "tensorflow/c/checkpoint_reader.h"
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/profiler/internal/tfprof_node.h"
-#include "tensorflow/core/profiler/internal/tfprof_options.h"
 #include "tensorflow/core/profiler/internal/tfprof_show.h"
 #include "tensorflow/core/profiler/internal/tfprof_utils.h"
+#include "tensorflow/core/profiler/tfprof_options.h"
 #include "tensorflow/core/profiler/tfprof_output.pb.h"
 
 namespace tensorflow {
@@ -44,7 +42,7 @@ class TFGraph : public TFShow {
  public:
   explicit TFGraph(checkpoint::CheckpointReader* ckpt_reader)
       : TFShow(ckpt_reader), root_(nullptr) {}
-  ~TFGraph() override {}
+  ~TFGraph() override = default;
 
   void AddNode(TFGraphNode* node) override;
 
@@ -65,7 +63,7 @@ class TFGraph : public TFShow {
                                      const std::vector<string>& regexes,
                                      std::set<string>* visited);
 
-  std::vector<GraphNode*> PrintGraph(const std::vector<GraphNode*> roots,
+  std::vector<GraphNode*> PrintGraph(std::vector<GraphNode*> roots,
                                      const Options& opts, int depth,
                                      int last_ident, std::set<string>* visits);
 
@@ -73,7 +71,7 @@ class TFGraph : public TFShow {
                                   const Options& opts,
                                   std::set<string>* visits);
 
-  void Format(const std::vector<GraphNode*> roots, string* display_str,
+  void Format(std::vector<GraphNode*> roots, string* display_str,
               GraphNodeProto* proto);
 
   MemoryTracker memory_tracker_;
@@ -86,4 +84,4 @@ class TFGraph : public TFShow {
 }  // namespace tfprof
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_GRAPH_H_
+#endif  // TENSORFLOW_CORE_PROFILER_INTERNAL_TFPROF_GRAPH_H_

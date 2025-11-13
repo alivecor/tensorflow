@@ -15,29 +15,40 @@ limitations under the License.
 
 #include "tensorflow/core/util/equal_graph_def.h"
 
+#include <map>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
+
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/attr_value_util.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/node_def_util.h"
+#include "tensorflow/core/lib/hash/hash.h"
+#include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/protobuf.h"
 
 namespace tensorflow {
 
 bool EqualGraphDef(const GraphDef& actual, const GraphDef& expected,
-                   string* diff, const EqualGraphDefOptions& options) {
+                   std::string* diff, const EqualGraphDefOptions& options) {
   // Intentionally do not check that versions match so that this routine can
   // be used for less brittle golden file tests.
   return EqualRepeatedNodeDef(actual.node(), expected.node(), diff, options);
 }
 
+uint64_t GraphDefHash(const GraphDef& gdef,
+                      const EqualGraphDefOptions& options) {
+  return RepeatedNodeDefHash(gdef.node(), options);
+}
+
 bool EqualRepeatedNodeDef(const protobuf::RepeatedPtrField<NodeDef>& actual,
                           const protobuf::RepeatedPtrField<NodeDef>& expected,
-                          string* diff, const EqualGraphDefOptions& options) {
-  std::unordered_map<string, const NodeDef*> actual_index;
+                          std::string* diff,
+                          const EqualGraphDefOptions& options) {
+  std::unordered_map<std::string, const NodeDef*> actual_index;
   for (const NodeDef& node : actual) {
     actual_index[node.name()] = &node;
   }
@@ -46,8 +57,8 @@ bool EqualRepeatedNodeDef(const protobuf::RepeatedPtrField<NodeDef>& actual,
     auto actual_iter = actual_index.find(expected_node.name());
     if (actual_iter == actual_index.end()) {
       if (diff != nullptr) {
-        *diff = strings::StrCat("Did not find expected node '",
-                                SummarizeNodeDef(expected_node), "'");
+        *diff = absl::StrCat("Did not find expected node '",
+                             SummarizeNodeDef(expected_node), "'");
       }
       return false;
     }
@@ -62,8 +73,8 @@ bool EqualRepeatedNodeDef(const protobuf::RepeatedPtrField<NodeDef>& actual,
   if (!actual_index.empty()) {
     if (diff != nullptr) {
       *diff =
-          strings::StrCat("Found unexpected node '",
-                          SummarizeNodeDef(*actual_index.begin()->second), "'");
+          absl::StrCat("Found unexpected node '",
+                       SummarizeNodeDef(*actual_index.begin()->second), "'");
     }
     return false;
   }
@@ -71,21 +82,36 @@ bool EqualRepeatedNodeDef(const protobuf::RepeatedPtrField<NodeDef>& actual,
   return true;
 }
 
+uint64_t RepeatedNodeDefHash(const protobuf::RepeatedPtrField<NodeDef>& ndefs,
+                             const EqualGraphDefOptions& options) {
+  uint64_t h = 0xDECAFCAFFE;
+  // Insert NodeDefs into map to deterministically sort by name
+  std::map<std::string, const NodeDef*> nodes;
+  for (const NodeDef& node : ndefs) {
+    nodes[node.name()] = &node;
+  }
+  for (const auto& pair : nodes) {
+    h = Hash64(pair.first.data(), pair.first.size(), h);
+    h = Hash64Combine(NodeDefHash(*pair.second, options), h);
+  }
+  return h;
+}
+
 namespace {
 
-string JoinStringField(const protobuf::RepeatedPtrField<string>& f) {
-  string ret;
+std::string JoinStringField(const protobuf::RepeatedPtrField<std::string>& f) {
+  std::string ret;
   for (int i = 0; i < f.size(); ++i) {
-    if (i > 0) strings::StrAppend(&ret, ", ");
-    strings::StrAppend(&ret, f.Get(i));
+    if (i > 0) absl::StrAppend(&ret, ", ");
+    absl::StrAppend(&ret, f.Get(i));
   }
   return ret;
 }
 
 }  // namespace
 
-bool EqualNodeDef(const NodeDef& actual, const NodeDef& expected, string* diff,
-                  const EqualGraphDefOptions& options) {
+bool EqualNodeDef(const NodeDef& actual, const NodeDef& expected,
+                  std::string* diff, const EqualGraphDefOptions& options) {
   if (actual.name() != expected.name()) {
     if (diff != nullptr) {
       *diff = strings::StrCat("Actual node name '", actual.name(),
@@ -124,11 +150,14 @@ bool EqualNodeDef(const NodeDef& actual, const NodeDef& expected, string* diff,
 
   int first_control_input = actual.input_size();
   for (int i = 0; i < actual.input_size(); ++i) {
-    if (StringPiece(actual.input(i)).starts_with("^")) {
+    if (absl::StartsWith(actual.input(i), "^")) {
       first_control_input = i;
       break;
     }
-    if (actual.input(i) != expected.input(i)) {
+    // Special case for inputs: "tensor" is equivalent to "tensor:0"
+    if (actual.input(i) != expected.input(i) &&
+        actual.input(i) != absl::StrCat(expected.input(i), ":0") &&
+        absl::StrCat(actual.input(i), ":0") != expected.input(i)) {
       if (diff != nullptr) {
         *diff = strings::StrCat("Node named '", actual.name(), "' has input ",
                                 i, " '", actual.input(i),
@@ -139,8 +168,8 @@ bool EqualNodeDef(const NodeDef& actual, const NodeDef& expected, string* diff,
     }
   }
 
-  std::unordered_set<string> actual_control;
-  std::unordered_set<string> expected_control;
+  std::unordered_set<std::string> actual_control;
+  std::unordered_set<std::string> expected_control;
   for (int i = first_control_input; i < actual.input_size(); ++i) {
     actual_control.insert(actual.input(i));
     expected_control.insert(expected.input(i));
@@ -163,7 +192,7 @@ bool EqualNodeDef(const NodeDef& actual, const NodeDef& expected, string* diff,
     return false;
   }
 
-  std::unordered_set<string> actual_attr;
+  std::unordered_set<std::string> actual_attr;
   for (const auto& a : actual.attr()) {
     if (options.ignore_internal_attrs && !a.first.empty() &&
         a.first[0] == '_') {
@@ -207,6 +236,47 @@ bool EqualNodeDef(const NodeDef& actual, const NodeDef& expected, string* diff,
   }
 
   return true;
+}
+
+uint64_t NodeDefHash(const NodeDef& ndef, const EqualGraphDefOptions& options) {
+  uint64_t h = Hash64(ndef.name());
+  h = Hash64(ndef.op().data(), ndef.op().size(), h);
+  h = Hash64(ndef.device().data(), ndef.device().size(), h);
+
+  // Normal inputs. Order important.
+  int first_control_input = ndef.input_size();
+  for (int i = 0; i < ndef.input_size(); ++i) {
+    if (absl::StartsWith(ndef.input(i), "^")) {
+      first_control_input = i;
+      break;
+    }
+    h = Hash64(ndef.input(i).data(), ndef.input(i).size(), h);
+  }
+
+  // Control inputs. Order irrelevant.
+  std::set<std::string> ndef_control;
+  for (int i = first_control_input; i < ndef.input_size(); ++i) {
+    ndef_control.insert(ndef.input(i));
+  }
+  for (const std::string& s : ndef_control) {
+    h = Hash64(s.data(), s.size(), h);
+  }
+
+  // Attributes
+  std::map<std::string, AttrValue> ndef_attr;
+  for (const auto& a : ndef.attr()) {
+    if (options.ignore_internal_attrs && !a.first.empty() &&
+        a.first[0] == '_') {
+      continue;
+    }
+    ndef_attr[a.first] = a.second;
+  }
+  for (const auto& a : ndef_attr) {
+    h = Hash64(a.first.data(), a.first.size(), h);
+    h = Hash64Combine(AttrValueHash(a.second), h);
+  }
+
+  return h;
 }
 
 }  // namespace tensorflow

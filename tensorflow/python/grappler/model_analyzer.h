@@ -13,10 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_CORE_GRAPPLER_COSTS_MODEL_ANALYZER_H_
-#define TENSORFLOW_CORE_GRAPPLER_COSTS_MODEL_ANALYZER_H_
+#ifndef TENSORFLOW_PYTHON_GRAPPLER_MODEL_ANALYZER_H_
+#define TENSORFLOW_PYTHON_GRAPPLER_MODEL_ANALYZER_H_
 
 #include <iostream>
+
+#include "absl/status/status.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/lib/core/status.h"
 
@@ -31,11 +33,12 @@ class GraphProperties;
 class ModelAnalyzer {
  public:
   explicit ModelAnalyzer(const GrapplerItem& item);
-  Status GenerateReport(std::ostream& os);
+  absl::Status GenerateReport(bool debug, bool assume_valid_feeds,
+                              std::ostream& os);
 
  private:
   void PrintNodeInfo(const NodeDef* node, const GraphProperties& properties,
-                     std::ostream& os) const;
+                     bool debug, std::ostream& os) const;
 
   const GrapplerItem& item_;
 };
@@ -43,4 +46,4 @@ class ModelAnalyzer {
 }  // end namespace grappler
 }  // end namespace tensorflow
 
-#endif  // TENSORFLOW_CORE_GRAPPLER_COSTS_MODEL_ANALYZER_H_
+#endif  // TENSORFLOW_PYTHON_GRAPPLER_MODEL_ANALYZER_H_

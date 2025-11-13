@@ -14,62 +14,65 @@
 # ==============================================================================
 """Experimental API for TensorFlow's "Eager" mode of execution."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-from tensorflow.python import pywrap_tensorflow
-from tensorflow.python.eager import context
-from tensorflow.python.eager import memory_trace
+from tensorflow.python import pywrap_tfe
 from tensorflow.python.framework import errors
+from tensorflow.python.platform import tf_logging as logging
 
 # Trace of execution and memory usage.
 _active_trace = None
 
 
-def _status_to_exception(code, message):
+def _status_to_exception(status):
   try:
-    error_class = errors.exception_type_from_error_code(code)
-    return error_class(None, None, message)
+    error_class = errors.exception_type_from_error_code(status.code)
+    e = error_class(None, None, status.message, status.payloads)
+    logging.error_log("%s: %s" % (e.__class__.__name__, e))
+    return e
   except KeyError:
-    return errors.UnknownError(None, None, message, code)
+    e = errors.UnknownError(
+        None, None, status.message, status.code, status.payloads
+    )
+    logging.error_log("%s: %s" % (e.__class__.__name__, e))
+    return e
 
 
 class _NotOkStatusException(Exception):
   """Exception class to handle not ok Status."""
 
-  def __init__(self, message, code):
+  def __init__(self, message, code, payloads):
     super(_NotOkStatusException, self).__init__()
     self.message = message
     self.code = code
+    self.payloads = payloads
 
   def __str__(self):
-    e = _status_to_exception(self.code, self.message)
+    e = _status_to_exception(self)
     return "%s: %s" % (e.__class__.__name__, e)
 
 
-pywrap_tensorflow.TFE_Py_RegisterExceptionClass(_NotOkStatusException)
+pywrap_tfe.TFE_Py_RegisterExceptionClass(_NotOkStatusException)
 
 
-def enable_tracing():
-  """Enables tracing of execution and memory usage.
+class _FallbackException(Exception):
+  """Exception class to handle fallback from the fastpath.
 
-  WARNING: tracing is not thread-safe.
+  The fastpath that we refer to here is the one implemented to reduce per-op
+  overheads (TFE_Py_FastPathExecute_C). If the conditions for executing the op
+  on the fastpath are not met, we fallback to a safer (and more complete)
+  slowpath, and this Exception is raised to signal that transition.
   """
-  global _active_trace
-  _active_trace = memory_trace.MemoryTrace(
-      len(context.get_default_context().devices()))
+  pass
 
 
-def flush_trace():
-  """Flushes the active trace, if it exists.
+class _SymbolicException(Exception):
+  """Exception class to handle use of symbolic tensors when executing eagerly.
 
-  WARNING: tracing is not thread-safe.
+  `keras.Input()` creates symbolic tensors (in a FuncGraph managed by the
+  Keras backend) while in eager execution. This exception is used to
+  identify this case (raised in `convert_to_tensor` cause generated functions
+  for ops to construct graphs instead of executing the kernel).
   """
-  if _active_trace is not None:
-    _active_trace.flush_trace()
+  pass
 
 
-def active_trace():
-  """Returns the current global active trace of execution and memory usage."""
-  return _active_trace
+pywrap_tfe.TFE_Py_RegisterFallbackExceptionClass(_FallbackException)

@@ -43,7 +43,7 @@ void WorkerCachePartial::GetDeviceLocalityAsync(const string& device_name,
   if (!GetDeviceLocalityNonBlocking(device_name, locality)) {
     // If cache entry was empty, make one try to fill it by RPC.
     SchedClosure([this, &device_name, locality, done]() {
-      Status s = RefreshDeviceStatus(device_name);
+      absl::Status s = RefreshDeviceStatus(device_name);
       if (s.ok() && !GetDeviceLocalityNonBlocking(device_name, locality)) {
         s = errors::Unavailable("No known remote device: ", device_name);
       }
@@ -51,13 +51,14 @@ void WorkerCachePartial::GetDeviceLocalityAsync(const string& device_name,
     });
     return;
   }
-  done(Status::OK());
+  done(absl::OkStatus());
 }
 
-Status WorkerCachePartial::RefreshDeviceStatus(const string& device_name) {
+absl::Status WorkerCachePartial::RefreshDeviceStatus(
+    const string& device_name) {
   string task;
   string device;
-  Status s;
+  absl::Status s;
   if (!DeviceNameUtils::SplitDeviceName(device_name, &task, &device)) {
     s = errors::InvalidArgument("Bad device name to RefreshDeviceStatus: ",
                                 device_name);
@@ -65,9 +66,9 @@ Status WorkerCachePartial::RefreshDeviceStatus(const string& device_name) {
   auto deleter = [this, &task](WorkerInterface* wi) {
     ReleaseWorker(task, wi);
   };
-  std::unique_ptr<WorkerInterface, decltype(deleter)> rwi(CreateWorker(task),
-                                                          deleter);
-  if (s.ok() && !rwi.get()) {
+  std::unique_ptr<WorkerInterface, decltype(deleter)> rwi(
+      GetOrCreateWorker(task), deleter);
+  if (s.ok() && !rwi) {
     s = errors::Internal("RefreshDeviceStatus, unknown worker task: ", task);
   }
 

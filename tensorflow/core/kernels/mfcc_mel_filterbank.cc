@@ -32,19 +32,20 @@ limitations under the License.
 
 #include <math.h>
 
+#include <limits>
+
 #include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
 
 MfccMelFilterbank::MfccMelFilterbank() : initialized_(false) {}
 
-bool MfccMelFilterbank::Initialize(int input_length,
-                               double input_sample_rate,
-                               int output_channel_count,
-                               double lower_frequency_limit,
-                               double upper_frequency_limit) {
+bool MfccMelFilterbank::Initialize(int input_length, double input_sample_rate,
+                                   int output_channel_count,
+                                   double lower_frequency_limit,
+                                   double upper_frequency_limit) {
   num_channels_ = output_channel_count;
-  sample_rate_  = input_sample_rate;
+  sample_rate_ = input_sample_rate;
   input_length_ = input_length;
 
   if (num_channels_ < 1) {
@@ -62,8 +63,8 @@ bool MfccMelFilterbank::Initialize(int input_length,
     return false;
   }
 
-  if (lower_frequency_limit <= 0) {
-    LOG(ERROR) << "Lower frequency limit must be positive.";
+  if (lower_frequency_limit < 0) {
+    LOG(ERROR) << "Lower frequency limit must be nonnegative.";
     return false;
   }
 
@@ -75,7 +76,17 @@ bool MfccMelFilterbank::Initialize(int input_length,
 
   // An extra center frequency is computed at the top to get the upper
   // limit on the high side of the final triangular filter.
-  center_frequencies_.resize(num_channels_ + 1);
+  std::size_t center_frequencies_size = std::size_t(num_channels_) + 1;
+  if (center_frequencies_size >= std::numeric_limits<int>::max() ||
+      center_frequencies_size > center_frequencies_.max_size()) {
+    LOG(ERROR) << "Number of filterbank channels must be less than "
+               << std::numeric_limits<int>::max()
+               << " and less than or equal to "
+               << center_frequencies_.max_size();
+    return false;
+  }
+  center_frequencies_.resize(center_frequencies_size);
+
   const double mel_low = FreqToMel(lower_frequency_limit);
   const double mel_hi = FreqToMel(upper_frequency_limit);
   const double mel_span = mel_hi - mel_low;
@@ -85,10 +96,9 @@ bool MfccMelFilterbank::Initialize(int input_length,
   }
 
   // Always exclude DC; emulate HTK.
-  const double hz_per_sbin = 0.5 * sample_rate_ /
-      static_cast<double>(input_length_ - 1);
-  start_index_ = static_cast<int>(1.5 + (lower_frequency_limit /
-                                           hz_per_sbin));
+  const double hz_per_sbin =
+      0.5 * sample_rate_ / static_cast<double>(input_length_ - 1);
+  start_index_ = static_cast<int>(1.5 + (lower_frequency_limit / hz_per_sbin));
   end_index_ = static_cast<int>(upper_frequency_limit / hz_per_sbin);
 
   // Maps the input spectrum bin indices to filter bank channels/indices. For
@@ -102,8 +112,8 @@ bool MfccMelFilterbank::Initialize(int input_length,
     if ((i < start_index_) || (i > end_index_)) {
       band_mapper_[i] = -2;  // Indicate an unused Fourier coefficient.
     } else {
-      while ((center_frequencies_[channel] < melf) &&
-             (channel < num_channels_)) {
+      while ((channel < num_channels_) &&
+             (center_frequencies_[channel] < melf)) {
         ++channel;
       }
       band_mapper_[i] = channel - 1;  // Can be == -1
@@ -121,12 +131,12 @@ bool MfccMelFilterbank::Initialize(int input_length,
       weights_[i] = 0.0;
     } else {
       if (channel >= 0) {
-        weights_[i] = (center_frequencies_[channel + 1] -
-                       FreqToMel(i * hz_per_sbin)) /
+        weights_[i] =
+            (center_frequencies_[channel + 1] - FreqToMel(i * hz_per_sbin)) /
             (center_frequencies_[channel + 1] - center_frequencies_[channel]);
       } else {
         weights_[i] = (center_frequencies_[0] - FreqToMel(i * hz_per_sbin)) /
-            (center_frequencies_[0] - mel_low);
+                      (center_frequencies_[0] - mel_low);
       }
     }
   }
@@ -152,16 +162,16 @@ bool MfccMelFilterbank::Initialize(int input_length,
     }
   }
   if (!bad_channels.empty()) {
-    LOG(ERROR) << "Missing " << bad_channels.size() << " bands " <<
-        " starting at " << bad_channels[0] <<
-        " in mel-frequency design. " <<
-        "Perhaps too many channels or " <<
-        "not enough frequency resolution in spectrum. (" <<
-        "input_length: " << input_length <<
-        " input_sample_rate: " << input_sample_rate <<
-        " output_channel_count: " << output_channel_count <<
-        " lower_frequency_limit: " << lower_frequency_limit <<
-        " upper_frequency_limit: " << upper_frequency_limit;
+    LOG(ERROR) << "Missing " << bad_channels.size() << " bands "
+               << " starting at " << bad_channels[0]
+               << " in mel-frequency design. "
+               << "Perhaps too many channels or "
+               << "not enough frequency resolution in spectrum. ("
+               << "input_length: " << input_length
+               << " input_sample_rate: " << input_sample_rate
+               << " output_channel_count: " << output_channel_count
+               << " lower_frequency_limit: " << lower_frequency_limit
+               << " upper_frequency_limit: " << upper_frequency_limit;
   }
   initialized_ = true;
   return true;
@@ -171,7 +181,7 @@ bool MfccMelFilterbank::Initialize(int input_length,
 // square root, then summing FFT magnitudes under triangular integration windows
 // whose widths increase with frequency.
 void MfccMelFilterbank::Compute(const std::vector<double> &input,
-                            std::vector<double> *output) const {
+                                std::vector<double> *output) const {
   if (!initialized_) {
     LOG(ERROR) << "Mel Filterbank not initialized.";
     return;
@@ -198,7 +208,7 @@ void MfccMelFilterbank::Compute(const std::vector<double> &input,
 }
 
 double MfccMelFilterbank::FreqToMel(double freq) const {
-  return 1127.0 * log(1.0 + (freq / 700.0));
+  return 1127.0 * log1p(freq / 700.0);
 }
 
 }  // namespace tensorflow

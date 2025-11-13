@@ -13,17 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/c/checkpoint_reader.h"
-#include "tensorflow/core/framework/graph.pb.h"
+#include <memory>
+#include <utility>
+
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/test.h"
-#include "tensorflow/core/profiler/internal/tfprof_options.h"
 #include "tensorflow/core/profiler/internal/tfprof_stats.h"
 #include "tensorflow/core/profiler/internal/tfprof_utils.h"
 #include "tensorflow/core/profiler/tfprof_log.pb.h"
+#include "tensorflow/core/profiler/tfprof_options.h"
 #include "tensorflow/core/profiler/tfprof_output.pb.h"
-#include "tensorflow/core/protobuf/config.pb.h"
 
 namespace tensorflow {
 namespace tfprof {
@@ -33,7 +33,8 @@ class TFProfTensorTest : public ::testing::Test {
     string graph_path =
         io::JoinPath(testing::TensorFlowSrcRoot(),
                      "core/profiler/internal/testdata/graph.pbtxt");
-    std::unique_ptr<tensorflow::GraphDef> graph_pb(new tensorflow::GraphDef());
+    std::unique_ptr<tensorflow::GraphDef> graph_pb =
+        std::make_unique<tensorflow::GraphDef>();
     TF_CHECK_OK(
         ReadProtoFile(Env::Default(), graph_path, graph_pb.get(), false));
 
@@ -43,13 +44,14 @@ class TFProfTensorTest : public ::testing::Test {
     string ckpt_path = io::JoinPath(testing::TensorFlowSrcRoot(),
                                     "core/profiler/internal/testdata/ckpt");
     TF_Status* status = TF_NewStatus();
-    std::unique_ptr<checkpoint::CheckpointReader> ckpt_reader(
-        new checkpoint::CheckpointReader(ckpt_path, status));
+    std::unique_ptr<checkpoint::CheckpointReader> ckpt_reader =
+        std::make_unique<checkpoint::CheckpointReader>(ckpt_path, status);
     CHECK(TF_GetCode(status) == TF_OK);
     TF_DeleteStatus(status);
 
-    tf_stats_.reset(new TFStats(std::move(graph_pb), std::move(run_meta_pb),
-                                std::move(op_log_pb), std::move(ckpt_reader)));
+    tf_stats_ =
+        std::make_unique<TFStats>(std::move(graph_pb), std::move(run_meta_pb),
+                                  std::move(op_log_pb), std::move(ckpt_reader));
     tf_stats_->BuildAllViews();
   }
 
@@ -63,7 +65,6 @@ TEST_F(TFProfTensorTest, Basics) {
                "", {});
   const GraphNodeProto& root = tf_stats_->ShowGraphNode("scope", opts);
 
-  GraphNodeProto expected;
   EXPECT_EQ(root.children(0).name(), "DW");
   EXPECT_GT(root.children(0).tensor_value().value_double_size(), 10);
   EXPECT_EQ(root.children(1).name(), "DW2");

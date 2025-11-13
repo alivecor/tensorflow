@@ -13,29 +13,29 @@
 # limitations under the License.
 # ==============================================================================
 """TensorFlow Debugger (tfdbg) User-Interface Factory."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 
 
-SUPPORTED_UI_TYPES = ["curses", "readline"]
+SUPPORTED_UI_TYPES = ["readline"]
 
 
-def get_ui(ui_type, on_ui_exit=None, available_ui_types=None):
+def get_ui(ui_type,
+           on_ui_exit=None,
+           available_ui_types=None,
+           config=None):
   """Create a `base_ui.BaseUI` subtype.
 
   This factory method attempts to fallback to other available ui_types on
-  ImportError. For example, if `ui_type` is `curses`, but `curses` cannot be
-  imported properly, e.g., on Windows, will fallback to `readline`.
+  ImportError.
 
   Args:
     ui_type: (`str`) requested UI type. Currently supported:
-      (curses | readline)
+      ( readline)
     on_ui_exit: (`Callable`) the callback to be called when the UI exits.
     available_ui_types: (`None` or `list` of `str`) Manually-set available
       ui_types.
+    config: An instance of `cli_config.CLIConfig()` carrying user-facing
+      configurations.
 
   Returns:
     A `base_ui.BaseUI` subtype object.
@@ -51,12 +51,9 @@ def get_ui(ui_type, on_ui_exit=None, available_ui_types=None):
 
   try:
     # pylint: disable=g-import-not-at-top
-    if not ui_type or ui_type == "curses":
-      from tensorflow.python.debug.cli import curses_ui
-      return curses_ui.CursesUI(on_ui_exit=on_ui_exit)
-    elif ui_type == "readline":
+    if ui_type == "readline":
       from tensorflow.python.debug.cli import readline_ui
-      return readline_ui.ReadlineUI(on_ui_exit=on_ui_exit)
+      return readline_ui.ReadlineUI(on_ui_exit=on_ui_exit, config=config)
     # pylint: enable=g-import-not-at-top
   except ImportError:
     available_ui_types.remove(ui_type)

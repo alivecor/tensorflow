@@ -28,14 +28,14 @@ namespace tensorflow {
 
 class SummaryImageOp : public OpKernel {
  public:
-  typedef Eigen::Tensor<uint8, 2, Eigen::RowMajor> Uint8Image;
+  typedef Eigen::Tensor<uint8_t, 2, Eigen::RowMajor> Uint8Image;
 
   explicit SummaryImageOp(OpKernelConstruction* context) : OpKernel(context) {
-    int64 max_images_tmp;
+    int64_t max_images_tmp;
     OP_REQUIRES_OK(context, context->GetAttr("max_images", &max_images_tmp));
     OP_REQUIRES(context, max_images_tmp < (1LL << 31),
                 errors::InvalidArgument("max_images must be < 2^31"));
-    max_images_ = static_cast<int32>(max_images_tmp);
+    max_images_ = static_cast<int32_t>(max_images_tmp);
     const TensorProto* proto;
     OP_REQUIRES_OK(context, context->GetAttr("bad_color", &proto));
     OP_REQUIRES_OK(context, context->device()->MakeTensorFromProto(
@@ -52,20 +52,22 @@ class SummaryImageOp : public OpKernel {
   void Compute(OpKernelContext* c) override {
     const Tensor& tags = c->input(0);
     const Tensor& tensor = c->input(1);
-    OP_REQUIRES(c, IsLegacyScalar(tags.shape()),
+    OP_REQUIRES(c, TensorShapeUtils::IsScalar(tags.shape()),
                 errors::InvalidArgument("Tags must be a scalar"));
-    OP_REQUIRES(c, tensor.dims() == 4 &&
-                       (tensor.dim_size(3) == 1 || tensor.dim_size(3) == 3 ||
-                        tensor.dim_size(3) == 4),
+    OP_REQUIRES(c,
+                tensor.dims() == 4 &&
+                    (tensor.dim_size(3) == 1 || tensor.dim_size(3) == 3 ||
+                     tensor.dim_size(3) == 4),
                 errors::InvalidArgument(
                     "Tensor must be 4-D with last dim 1, 3, or 4, not ",
                     tensor.shape().DebugString()));
-    const string& base_tag = tags.scalar<string>()();
+    const std::string& base_tag = tags.scalar<tstring>()();
 
-    OP_REQUIRES(c, tensor.dim_size(0) < (1LL << 31) &&
-                       tensor.dim_size(1) < (1LL << 31) &&
-                       tensor.dim_size(2) < (1LL << 31) &&
-                       (tensor.dim_size(1) * tensor.dim_size(2)) < (1LL << 29),
+    OP_REQUIRES(c,
+                tensor.dim_size(0) < (1LL << 31) &&
+                    tensor.dim_size(1) < (1LL << 31) &&
+                    tensor.dim_size(2) < (1LL << 31) &&
+                    (tensor.dim_size(1) * tensor.dim_size(2)) < (1LL << 29),
                 errors::InvalidArgument("Tensor too large for summary ",
                                         tensor.shape().DebugString()));
 
@@ -76,12 +78,17 @@ class SummaryImageOp : public OpKernel {
     const int hw = h * w;  // Compact these two dims for simplicity
     const int depth = static_cast<int>(tensor.dim_size(3));
 
+    OP_REQUIRES(c, hw > 0 && depth > 0,
+                errors::InvalidArgument(
+                    "input tensor must have non-zero dims. Found: [",
+                    batch_size, ", ", h, ", ", w, ", ", depth, "]."));
+
     Summary s;
     if (tensor.dtype() == DT_UINT8) {
       // For uint8 input, no normalization is necessary
       auto ith_image = [&tensor, batch_size, hw, depth](int i) {
-        auto values = tensor.shaped<uint8, 3>({batch_size, hw, depth});
-        return typename TTypes<uint8>::ConstMatrix(
+        auto values = tensor.shaped<uint8_t, 3>({batch_size, hw, depth});
+        return typename TTypes<uint8_t>::ConstMatrix(
             &values(i, 0, 0), Eigen::DSizes<Eigen::DenseIndex, 2>(hw, depth));
       };
       OP_REQUIRES_OK(
@@ -89,27 +96,30 @@ class SummaryImageOp : public OpKernel {
     } else if (tensor.dtype() == DT_HALF) {
       NormalizeAndAddImages<Eigen::half>(c, tensor, h, w, hw, depth, batch_size,
                                          base_tag, &s);
-    } else {  // tensor.dtype() == DT_FLOAT
+    } else if (tensor.dtype() == DT_FLOAT) {
       NormalizeAndAddImages<float>(c, tensor, h, w, hw, depth, batch_size,
                                    base_tag, &s);
+    } else {  // tensor.dtype() = DT_DOUBLE
+      NormalizeAndAddImages<double>(c, tensor, h, w, hw, depth, batch_size,
+                                    base_tag, &s);
     }
 
     Tensor* summary_tensor = nullptr;
     OP_REQUIRES_OK(c, c->allocate_output(0, TensorShape({}), &summary_tensor));
-    CHECK(s.SerializeToString(&summary_tensor->scalar<string>()()));
+    CHECK(SerializeToTString(s, &summary_tensor->scalar<tstring>()()));
   }
 
   template <class T>
   void NormalizeAndAddImages(OpKernelContext* c, const Tensor& tensor, int h,
                              int w, int hw, int depth, int batch_size,
-                             const string& base_tag, Summary* s) {
+                             const std::string& base_tag, Summary* s) {
     // For float and half images, nans and infs are replaced with bad_color.
     OP_REQUIRES(c, bad_color_.dim_size(0) >= depth,
                 errors::InvalidArgument(
                     "expected depth <= bad_color.size, got depth = ", depth,
                     ", bad_color.size = ", bad_color_.dim_size(0)));
-    auto bad_color_full = bad_color_.vec<uint8>();
-    typename TTypes<uint8>::ConstVec bad_color(bad_color_full.data(), depth);
+    auto bad_color_full = bad_color_.vec<uint8_t>();
+    typename TTypes<uint8_t>::ConstVec bad_color(bad_color_full.data(), depth);
 
     // Float images must be scaled and translated.
     Uint8Image image(hw, depth);
@@ -132,9 +142,10 @@ class SummaryImageOp : public OpKernel {
   // differently in the float and uint8 cases: the float case needs a temporary
   // buffer which can be shared across calls to ith_image, but the uint8 case
   // does not.
-  Status AddImages(const string& tag, int batch_size, int w, int h, int depth,
-                   const std::function<Uint8Image(int)>& ith_image,
-                   Summary* s) {
+  absl::Status AddImages(const std::string& tag, int batch_size, int w, int h,
+                         int depth,
+                         const std::function<Uint8Image(int)>& ith_image,
+                         Summary* s) {
     const int N = std::min<int>(max_images_, batch_size);
     for (int i = 0; i < N; ++i) {
       Summary::Value* v = s->add_value();
@@ -145,9 +156,9 @@ class SummaryImageOp : public OpKernel {
       // convention for display, so we append "/image" to guarantee that the
       // image(s) won't be displayed in the global scope with no name.
       if (max_images_ > 1) {
-        v->set_tag(strings::StrCat(tag, "/image/", i));
+        v->set_tag(absl::StrCat(tag, "/image/", i));
       } else {
-        v->set_tag(strings::StrCat(tag, "/image"));
+        v->set_tag(absl::StrCat(tag, "/image"));
       }
 
       auto image = ith_image(i);
@@ -163,13 +174,13 @@ class SummaryImageOp : public OpKernel {
         return errors::Internal("PNG encoding failed");
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   template <class T>
   static void NormalizeFloatImage(int hw, int depth,
                                   typename TTypes<T>::ConstMatrix values,
-                                  typename TTypes<uint8>::ConstVec bad_color,
+                                  typename TTypes<uint8_t>::ConstVec bad_color,
                                   Uint8Image* image) {
     if (!image->size()) return;  // Nothing to do for empty images
 
@@ -230,7 +241,7 @@ class SummaryImageOp : public OpKernel {
       }
       if (finite) {
         image->chip<0>(i) = (values.template chip<0>(i) * scale + offset)
-                                .template cast<uint8>();
+                                .template cast<uint8_t>();
       } else {
         image->chip<0>(i) = bad_color;
       }
@@ -238,7 +249,7 @@ class SummaryImageOp : public OpKernel {
   }
 
  private:
-  int32 max_images_;
+  int32_t max_images_;
   Tensor bad_color_;
 };
 

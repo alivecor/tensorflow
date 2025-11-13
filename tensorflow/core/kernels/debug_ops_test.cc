@@ -13,12 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <dirent.h>
 #include <string.h>
+
 #include <fstream>
 #include <vector>
 
 #include "tensorflow/core/debug/debug_io_utils.h"
+#include "tensorflow/core/debug/debug_node_key.h"
 #include "tensorflow/core/framework/fake_input.h"
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/summary.pb.h"
@@ -28,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/kernels/ops_testutil.h"
 #include "tensorflow/core/kernels/ops_util.h"
+#include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/env.h"
@@ -38,7 +40,8 @@ namespace tensorflow {
 
 class DebugIdentityOpTest : public OpsTestBase {
  protected:
-  Status Init(DataType input_type, const std::vector<string>& debug_urls) {
+  absl::Status Init(DataType input_type,
+                    const std::vector<string>& debug_urls) {
     env_ = Env::Default();
 
     TF_CHECK_OK(NodeDefBuilder("op", "DebugIdentity")
@@ -49,7 +52,7 @@ class DebugIdentityOpTest : public OpsTestBase {
     return InitOp();
   }
 
-  Status Init(DataType input_type) {
+  absl::Status Init(DataType input_type) {
     std::vector<string> empty_debug_urls;
     return Init(input_type, empty_debug_urls);
   }
@@ -75,10 +78,10 @@ TEST_F(DebugIdentityOpTest, Int32Success_6_FileURLs) {
   std::vector<string> dump_roots;
   std::vector<string> debug_urls;
   for (int i = 0; i < kNumDumpDirs; ++i) {
-    const string dump_root = strings::StrCat(tmp_dir, "_", i);
+    const string dump_root = absl::StrCat(tmp_dir, "_", i);
     dump_roots.push_back(dump_root);
 
-    debug_urls.push_back(strings::StrCat("file://", dump_root));
+    debug_urls.push_back(absl::StrCat("file://", dump_root));
   }
 
   uint64 wall_time = Env::Default()->NowMicros();
@@ -96,57 +99,57 @@ TEST_F(DebugIdentityOpTest, Int32Success_6_FileURLs) {
     ASSERT_TRUE(env_->IsDirectory(dump_roots[i]).ok());
 
     std::vector<string> device_roots;
-    DIR* dir0 = opendir(dump_roots[i].c_str());
-    struct dirent* ent0;
-    const string kDeviceDirPrefix =
-        strings::StrCat(DebugIO::kMetadataFilePrefix, DebugIO::kDeviceTag);
-    while ((ent0 = readdir(dir0)) != nullptr) {
-      if (!strncmp(ent0->d_name, kDeviceDirPrefix.c_str(),
+    FileSystem* fs = nullptr;
+    TF_ASSERT_OK(Env::Default()->GetFileSystemForFile(dump_roots[i], &fs));
+    std::vector<string> children;
+    TF_ASSERT_OK(fs->GetChildren(dump_roots[i], &children));
+
+    const string kDeviceDirPrefix = absl::StrCat(
+        DebugNodeKey::kMetadataFilePrefix, DebugNodeKey::kDeviceTag);
+    for (const string child : children) {
+      if (!strncmp(child.c_str(), kDeviceDirPrefix.c_str(),
                    kDeviceDirPrefix.size())) {
-        device_roots.push_back(io::JoinPath(dump_roots[i], ent0->d_name));
+        device_roots.push_back(io::JoinPath(dump_roots[i], child));
       }
     }
     ASSERT_EQ(1, device_roots.size());
-    closedir(dir0);
 
     const string& device_root = device_roots[0];
-    DIR* dir = opendir(device_root.c_str());
-    struct dirent* ent;
+    TF_ASSERT_OK(Env::Default()->GetFileSystemForFile(device_root, &fs));
+    TF_ASSERT_OK(fs->GetChildren(device_root, &children));
+
     int dump_files_found = 0;
-    while ((ent = readdir(dir)) != nullptr) {
-      if (strcmp(ent->d_name, ".") && strcmp(ent->d_name, "..")) {
-        dump_files_found++;
+    for (const string child : children) {
+      dump_files_found++;
 
-        // Try reading the file into a Event proto.
-        const string dump_file_path = io::JoinPath(device_root, ent->d_name);
-        std::fstream ifs(dump_file_path, std::ios::in | std::ios::binary);
-        Event event;
-        event.ParseFromIstream(&ifs);
-        ifs.close();
+      // Try reading the file into a Event proto.
+      const string dump_file_path = io::JoinPath(device_root, child);
+      std::fstream ifs(dump_file_path, std::ios::in | std::ios::binary);
+      Event event;
+      event.ParseFromIstream(&ifs);
+      ifs.close();
 
-        ASSERT_GE(event.wall_time(), wall_time);
-        ASSERT_EQ(1, event.summary().value().size());
-        ASSERT_EQ(strings::StrCat("FakeTensor", ":", 0, ":", "DebugIdentity"),
-                  event.summary().value(0).node_name());
+      ASSERT_GE(event.wall_time(), wall_time);
+      ASSERT_EQ(1, event.summary().value().size());
+      ASSERT_EQ(strings::StrCat("FakeTensor", ":", 0, ":", "DebugIdentity"),
+                event.summary().value(0).node_name());
 
-        Tensor tensor_prime(DT_INT32);
-        ASSERT_TRUE(tensor_prime.FromProto(event.summary().value(0).tensor()));
+      Tensor tensor_prime(DT_INT32);
+      ASSERT_TRUE(tensor_prime.FromProto(event.summary().value(0).tensor()));
 
-        // Verify tensor shape and value from the dump file.
-        ASSERT_EQ(TensorShape({6}), tensor_prime.shape());
+      // Verify tensor shape and value from the dump file.
+      ASSERT_EQ(TensorShape({6}), tensor_prime.shape());
 
-        for (int j = 0; j < 6; ++j) {
-          ASSERT_EQ(j + 1, tensor_prime.flat<int32>()(j));
-        }
+      for (int j = 0; j < 6; ++j) {
+        ASSERT_EQ(j + 1, tensor_prime.flat<int32>()(j));
       }
     }
-    closedir(dir);
 
     ASSERT_EQ(1, dump_files_found);
 
     // Remove temporary dump directory and file.
-    int64 undeleted_files = 0;
-    int64 undeleted_dirs = 0;
+    int64_t undeleted_files = 0;
+    int64_t undeleted_dirs = 0;
     ASSERT_TRUE(env_->DeleteRecursively(dump_roots[i], &undeleted_files,
                                         &undeleted_dirs)
                     .ok());
@@ -166,17 +169,17 @@ TEST_F(DebugIdentityOpTest, Int32Success_2_3) {
 
 TEST_F(DebugIdentityOpTest, StringSuccess) {
   TF_ASSERT_OK(Init(DT_STRING));
-  AddInputFromArray<string>(TensorShape({6}), {"A", "b", "C", "d", "E", "f"});
+  AddInputFromArray<tstring>(TensorShape({6}), {"A", "b", "C", "d", "E", "f"});
   TF_ASSERT_OK(RunOpKernel());
   Tensor expected(allocator(), DT_STRING, TensorShape({6}));
-  test::FillValues<string>(&expected, {"A", "b", "C", "d", "E", "f"});
-  test::ExpectTensorEqual<string>(expected, *GetOutput(0));
+  test::FillValues<tstring>(&expected, {"A", "b", "C", "d", "E", "f"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
 }
 
 // Tests for DebugNanCountOp
 class DebugNanCountOpTest : public OpsTestBase {
  protected:
-  Status Init(DataType input_type) {
+  absl::Status Init(DataType input_type) {
     TF_CHECK_OK(NodeDefBuilder("op", "DebugNanCount")
                     .Input(FakeInput(input_type))
                     .Attr("tensor_name", "FakeTensor:0")
@@ -195,8 +198,8 @@ TEST_F(DebugNanCountOpTest, Float_has_NaNs) {
 
   // Verify the NaN-count debug signal
   Tensor expected_nan_count(allocator(), DT_INT64, TensorShape({1}));
-  test::FillValues<int64>(&expected_nan_count, {3});
-  test::ExpectTensorEqual<int64>(expected_nan_count, *GetOutput(0));
+  test::FillValues<int64_t>(&expected_nan_count, {3});
+  test::ExpectTensorEqual<int64_t>(expected_nan_count, *GetOutput(0));
 }
 
 TEST_F(DebugNanCountOpTest, Float_no_NaNs) {
@@ -207,8 +210,8 @@ TEST_F(DebugNanCountOpTest, Float_no_NaNs) {
   TF_ASSERT_OK(RunOpKernel());
 
   Tensor expected_nan_count(allocator(), DT_INT64, TensorShape({1}));
-  test::FillValues<int64>(&expected_nan_count, {0});
-  test::ExpectTensorEqual<int64>(expected_nan_count, *GetOutput(0));
+  test::FillValues<int64_t>(&expected_nan_count, {0});
+  test::ExpectTensorEqual<int64_t>(expected_nan_count, *GetOutput(0));
 }
 
 TEST_F(DebugNanCountOpTest, Double_has_NaNs) {
@@ -220,8 +223,8 @@ TEST_F(DebugNanCountOpTest, Double_has_NaNs) {
   TF_ASSERT_OK(RunOpKernel());
 
   Tensor expected_nan_count(allocator(), DT_INT64, TensorShape({1}));
-  test::FillValues<int64>(&expected_nan_count, {3});
-  test::ExpectTensorEqual<int64>(expected_nan_count, *GetOutput(0));
+  test::FillValues<int64_t>(&expected_nan_count, {3});
+  test::ExpectTensorEqual<int64_t>(expected_nan_count, *GetOutput(0));
 }
 
 TEST_F(DebugNanCountOpTest, Double_no_NaNs) {
@@ -232,14 +235,14 @@ TEST_F(DebugNanCountOpTest, Double_no_NaNs) {
   TF_ASSERT_OK(RunOpKernel());
 
   Tensor expected_nan_count(allocator(), DT_INT64, TensorShape({1}));
-  test::FillValues<int64>(&expected_nan_count, {0});
-  test::ExpectTensorEqual<int64>(expected_nan_count, *GetOutput(0));
+  test::FillValues<int64_t>(&expected_nan_count, {0});
+  test::ExpectTensorEqual<int64_t>(expected_nan_count, *GetOutput(0));
 }
 
 // Tests for DebugNumericSummaryOp
 class DebugNumericSummaryOpTest : public OpsTestBase {
  protected:
-  Status Init(DataType input_type) {
+  absl::Status Init(DataType input_type) {
     TF_CHECK_OK(NodeDefBuilder("op", "DebugNumericSummary")
                     .Input(FakeInput(input_type))
                     .Attr("tensor_name", "FakeTensor:0")
@@ -247,7 +250,8 @@ class DebugNumericSummaryOpTest : public OpsTestBase {
     return InitOp();
   }
 
-  Status InitGated(DataType input_type, const std::vector<string>& debug_urls) {
+  absl::Status InitGated(DataType input_type,
+                         const std::vector<string>& debug_urls) {
     TF_CHECK_OK(NodeDefBuilder("op", "DebugNumericSummary")
                     .Input(FakeInput(input_type))
                     .Attr("tensor_name", "FakeTensor:0")
@@ -363,7 +367,7 @@ TEST_F(DebugNumericSummaryOpTest, Float_only_valid_values) {
        7.33333333333,  // variance of non-inf and non-nan elements.
        static_cast<double>(DT_FLOAT),  // dtype
        2.0,                            // Number of dimensions.
-       2.0, 3.0});                     // Dimensoin sizes.
+       2.0, 3.0});                     // Dimension sizes.
 
   test::ExpectTensorNear<double>(expected, *GetOutput(0), 1e-8);
 }
@@ -521,7 +525,7 @@ TEST_F(DebugNumericSummaryOpTest, Int32Success) {
 
 TEST_F(DebugNumericSummaryOpTest, Int64Success) {
   TF_ASSERT_OK(Init(DT_INT64));
-  AddInputFromArray<int64>(TensorShape({2, 2, 2}), {0, 0, -1, 3, 3, 7, 0, 0});
+  AddInputFromArray<int64_t>(TensorShape({2, 2, 2}), {0, 0, -1, 3, 3, 7, 0, 0});
   TF_ASSERT_OK(RunOpKernel());
 
   Tensor expected(allocator(), DT_DOUBLE, TensorShape({17}));
@@ -630,7 +634,7 @@ TEST_F(DebugNumericSummaryOpTest, DisabledDueToNonMatchingWatchKey) {
 // Tests for DebugNumericSummaryOp
 class DebugNumericSummaryOpCustomLowerBoundTest : public OpsTestBase {
  protected:
-  Status Init(DataType input_type) {
+  absl::Status Init(DataType input_type) {
     TF_CHECK_OK(NodeDefBuilder("op", "DebugNumericSummary")
                     .Input(FakeInput(input_type))
                     .Attr("tensor_name", "FakeTensor:0")
@@ -682,7 +686,7 @@ TEST_F(DebugNumericSummaryOpCustomLowerBoundTest, Float_full_house) {
 // Tests for DebugNumericSummaryOp
 class DebugNumericSummaryOpCustomLowerUpperBoundsTest : public OpsTestBase {
  protected:
-  Status Init(DataType input_type) {
+  absl::Status Init(DataType input_type) {
     TF_CHECK_OK(NodeDefBuilder("op", "DebugNumericSummary")
                     .Input(FakeInput(input_type))
                     .Attr("tensor_name", "FakeTensor:0")

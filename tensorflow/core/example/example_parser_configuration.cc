@@ -16,7 +16,7 @@ limitations under the License.
 
 #include <vector>
 
-#include "tensorflow/core/example/feature.pb_text.h"
+#include "tensorflow/core/example/feature.pb.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/numeric_op.h"
@@ -29,20 +29,20 @@ limitations under the License.
 
 namespace tensorflow {
 
-Status FindNodeIndexByName(const tensorflow::GraphDef& graph,
-                           const string& node_name, int* node_idx) {
+absl::Status FindNodeIndexByName(const tensorflow::GraphDef& graph,
+                                 const std::string& node_name, int* node_idx) {
   for (int i = 0; i < graph.node_size(); ++i) {
     const auto& node = graph.node(i);
     if (node.name() == node_name) {
       *node_idx = i;
-      return Status::OK();
+      return absl::OkStatus();
     }
   }
   return errors::InvalidArgument(node_name, " not found in GraphDef");
 }
 
-Status ExtractExampleParserConfiguration(
-    const tensorflow::GraphDef& graph, const string& node_name,
+absl::Status ExtractExampleParserConfiguration(
+    const tensorflow::GraphDef& graph, const std::string& node_name,
     tensorflow::Session* session,
     std::vector<FixedLenFeature>* fixed_len_features,
     std::vector<VarLenFeature>* var_len_features) {
@@ -95,7 +95,7 @@ Status ExtractExampleParserConfiguration(
 
   // We must fetch the configuration input tensors to the ParseExample op.
   // Skipping index = 0, which is the serialized proto input.
-  std::vector<string> fetch_names(node.input_size() - 1);
+  std::vector<std::string> fetch_names(node.input_size() - 1);
   for (int i = 1; i < node.input_size(); ++i) {
     fetch_names[i - 1] = node.input(i);
   }
@@ -114,13 +114,14 @@ Status ExtractExampleParserConfiguration(
 
   for (int i = 0; i < num_sparse; ++i) {
     int input_idx = sparse_keys_start + i;
-    (*var_len_features)[i].key = op_input_tensors[input_idx].scalar<string>()();
+    (*var_len_features)[i].key =
+        op_input_tensors[input_idx].scalar<tstring>()();
   }
 
   for (int i = 0; i < num_dense; ++i) {
     FixedLenFeature& config = (*fixed_len_features)[i];
     int dense_keys_offset = dense_keys_start + i;
-    config.key = op_input_tensors[dense_keys_offset].scalar<string>()();
+    config.key = op_input_tensors[dense_keys_offset].scalar<tstring>()();
 
     int defaults_offset = dense_defaults_start + i;
     config.default_value = op_input_tensors[defaults_offset];
@@ -133,39 +134,39 @@ Status ExtractExampleParserConfiguration(
   int sparse_shapes_output_start = sparse_values_output_start + num_sparse;
   int dense_values_output_start = sparse_shapes_output_start + num_sparse;
 
-  string node_output_prefix = strings::StrCat(node_name, ":");
+  std::string node_output_prefix = absl::StrCat(node_name, ":");
 
   for (int i = 0; i < num_sparse; ++i) {
     VarLenFeature& config = (*var_len_features)[i];
 
     int indices_offset = sparse_indices_output_start + i;
     config.indices_output_tensor_name =
-        strings::StrCat(node_output_prefix, indices_offset);
+        absl::StrCat(node_output_prefix, indices_offset);
 
     int values_offset = sparse_values_output_start + i;
     config.values_output_tensor_name =
-        strings::StrCat(node_output_prefix, values_offset);
+        absl::StrCat(node_output_prefix, values_offset);
 
     int shapes_offset = sparse_shapes_output_start + i;
     config.shapes_output_tensor_name =
-        strings::StrCat(node_output_prefix, shapes_offset);
+        absl::StrCat(node_output_prefix, shapes_offset);
   }
 
   for (int i = 0; i < num_dense; ++i) {
     int output_idx = dense_values_output_start + i;
     (*fixed_len_features)[i].values_output_tensor_name =
-        strings::StrCat(node_output_prefix, output_idx);
+        absl::StrCat(node_output_prefix, output_idx);
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status ExampleParserConfigurationProtoToFeatureVectors(
+absl::Status ExampleParserConfigurationProtoToFeatureVectors(
     const ExampleParserConfiguration& config_proto,
     std::vector<FixedLenFeature>* fixed_len_features,
     std::vector<VarLenFeature>* var_len_features) {
   const auto& feature_map = config_proto.feature_map();
   for (auto it = feature_map.cbegin(); it != feature_map.cend(); ++it) {
-    string key = it->first;
+    std::string key = it->first;
     const auto& config = it->second;
     if (config.has_fixed_len_feature()) {
       const auto& fixed_config = config.fixed_len_feature();
@@ -194,7 +195,7 @@ Status ExampleParserConfigurationProtoToFeatureVectors(
       var_len_features->push_back(v);
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace tensorflow

@@ -1,6 +1,6 @@
-FROM ubuntu:16.04
+FROM ubuntu:24.04@sha256:66460d557b25769b102175144d538d88219c077c678a49af4afca6fbfc1b5252
 
-MAINTAINER Shanqing Cai <cais@google.com>
+LABEL maintainer="Shanqing Cai <cais@google.com>"
 
 RUN apt-get update
 RUN apt-get install -y \

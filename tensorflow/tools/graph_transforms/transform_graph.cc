@@ -24,25 +24,29 @@ limitations under the License.
 #include "tensorflow/core/util/command_line_flags.h"
 #include "tensorflow/tools/graph_transforms/file_utils.h"
 #include "tensorflow/tools/graph_transforms/transform_utils.h"
+#if !defined(PLATFORM_WINDOWS)
+#include <pwd.h>
+#include <unistd.h>
+#endif
 
 namespace tensorflow {
 namespace graph_transforms {
 
 using tensorflow::strings::Scanner;
 
-Status ParseTransformParameters(const string& transforms_string,
-                                TransformParameters* params_list) {
+absl::Status ParseTransformParameters(const string& transforms_string,
+                                      TransformParameters* params_list) {
   params_list->clear();
   enum {
     TRANSFORM_NAME,
     TRANSFORM_PARAM_NAME,
     TRANSFORM_PARAM_VALUE,
   } state = TRANSFORM_NAME;
-  StringPiece remaining(transforms_string);
-  StringPiece match;
-  StringPiece transform_name;
-  StringPiece parameter_name;
-  StringPiece parameter_value;
+  absl::string_view remaining(transforms_string);
+  absl::string_view match;
+  absl::string_view transform_name;
+  absl::string_view parameter_name;
+  absl::string_view parameter_value;
   TransformFuncParameters func_parameters;
   while (!remaining.empty()) {
     if (state == TRANSFORM_NAME) {
@@ -53,7 +57,7 @@ Status ParseTransformParameters(const string& transforms_string,
       if (remaining.empty()) {
         // Nothing remains after consuming trailing spaces.
         // Consumed all transform parameter string without errors.
-        return Status::OK();
+        return absl::OkStatus();
       }
       // See if we have a valid transform name.
       const bool found_transform_name =
@@ -62,19 +66,19 @@ Status ParseTransformParameters(const string& transforms_string,
               .GetResult(&remaining, &transform_name);
       if (!found_transform_name) {
         return errors::InvalidArgument("Looking for transform name, but found ",
-                                       remaining.ToString().c_str());
+                                       string(remaining).c_str());
       }
       if (Scanner(remaining).OneLiteral("(").GetResult(&remaining, &match)) {
         state = TRANSFORM_PARAM_NAME;
       } else {
         // Add a transform with no parameters.
-        params_list->push_back({transform_name.ToString(), func_parameters});
+        params_list->push_back({string(transform_name), func_parameters});
         transform_name = "";
         state = TRANSFORM_NAME;
       }
     } else if (state == TRANSFORM_PARAM_NAME) {
       if (Scanner(remaining).OneLiteral(")").GetResult(&remaining, &match)) {
-        params_list->push_back({transform_name.ToString(), func_parameters});
+        params_list->push_back({string(transform_name), func_parameters});
         transform_name = "";
         state = TRANSFORM_NAME;
       } else {
@@ -89,13 +93,13 @@ Status ParseTransformParameters(const string& transforms_string,
         if (!found_parameter_name) {
           return errors::InvalidArgument(
               "Looking for parameter name, but found ",
-              remaining.ToString().c_str());
+              string(remaining).c_str());
         }
         if (Scanner(remaining).OneLiteral("=").GetResult(&remaining, &match)) {
           state = TRANSFORM_PARAM_VALUE;
         } else {
           return errors::InvalidArgument("Looking for =, but found ",
-                                         remaining.ToString().c_str());
+                                         string(remaining).c_str());
         }
       }
     } else if (state == TRANSFORM_PARAM_VALUE) {
@@ -117,29 +121,76 @@ Status ParseTransformParameters(const string& transforms_string,
       }
       if (!found_parameter_value) {
         return errors::InvalidArgument("Looking for parameter name, but found ",
-                                       remaining.ToString().c_str());
+                                       string(remaining).c_str());
       }
-      func_parameters[parameter_name.ToString()].push_back(
-          parameter_value.ToString());
+      func_parameters[string(parameter_name)].emplace_back(parameter_value);
       // Eat up any trailing quotes.
       Scanner(remaining).ZeroOrOneLiteral("\"").GetResult(&remaining, &match);
       Scanner(remaining).ZeroOrOneLiteral("'").GetResult(&remaining, &match);
       state = TRANSFORM_PARAM_NAME;
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
+}
+
+std::string ExpandPath(const std::string& path_string) {
+#if defined(PLATFORM_WINDOWS)
+  return path_string;
+#else
+  if (path_string.empty() || path_string[0] != '~') {
+    return path_string;
+  }
+
+  const char* home = nullptr;
+  std::string::size_type prefix = path_string.find_first_of('/');
+  if (path_string.length() == 1 || prefix == 1) {
+    // The value of $HOME, e.g., ~/foo
+    home = getenv("HOME");
+    if (!home) {
+      // If HOME is not available, get uid
+      struct passwd* pw = getpwuid(getuid());
+      if (pw) {
+        home = pw->pw_dir;
+      }
+    }
+  } else {
+    // The value of ~user, e.g., ~user/foo
+    std::string user(path_string, 1, (prefix == std::string::npos)
+                                         ? std::string::npos
+                                         : prefix - 1);
+    struct passwd* pw = getpwnam(user.c_str());
+    if (pw) {
+      home = pw->pw_dir;
+    }
+  }
+
+  if (!home) {
+    return path_string;
+  }
+
+  string path(home);
+  if (prefix == std::string::npos) {
+    return path;
+  }
+
+  if (path.length() == 0 || path[path.length() - 1] != '/') {
+    path += '/';
+  }
+  path += path_string.substr(prefix + 1);
+  return path;
+#endif
 }
 
 int ParseFlagsAndTransformGraph(int argc, char* argv[], bool init_main) {
-  string in_graph = "";
-  string out_graph = "";
+  string in_graph_string = "";
+  string out_graph_string = "";
   string inputs_string = "";
   string outputs_string = "";
   string transforms_string = "";
   bool output_as_text = false;
   std::vector<Flag> flag_list = {
-      Flag("in_graph", &in_graph, "input graph file name"),
-      Flag("out_graph", &out_graph, "output graph file name"),
+      Flag("in_graph", &in_graph_string, "input graph file name"),
+      Flag("out_graph", &out_graph_string, "output graph file name"),
       Flag("inputs", &inputs_string, "inputs"),
       Flag("outputs", &outputs_string, "outputs"),
       Flag("transforms", &transforms_string, "list of transforms"),
@@ -166,11 +217,11 @@ int ParseFlagsAndTransformGraph(int argc, char* argv[], bool init_main) {
     LOG(ERROR) << "Unknown argument " << argv[1] << ".\n" << usage;
     return -1;
   }
-  if (in_graph.empty()) {
+  if (in_graph_string.empty()) {
     LOG(ERROR) << "in_graph graph can't be empty.\n" << usage;
     return -1;
   }
-  if (out_graph.empty()) {
+  if (out_graph_string.empty()) {
     LOG(ERROR) << "out_graph graph can't be empty.\n" << usage;
     return -1;
   }
@@ -179,14 +230,17 @@ int ParseFlagsAndTransformGraph(int argc, char* argv[], bool init_main) {
     return -1;
   }
 
+  string in_graph = ExpandPath(in_graph_string);
+  string out_graph = ExpandPath(out_graph_string);
+
   std::vector<string> inputs = str_util::Split(inputs_string, ',');
   std::vector<string> outputs = str_util::Split(outputs_string, ',');
   TransformParameters transform_params;
-  Status parse_status =
+  absl::Status parse_status =
       ParseTransformParameters(transforms_string, &transform_params);
   if (!parse_status.ok()) {
     LOG(ERROR) << "Failed to parse --transform argument, error was "
-               << parse_status.error_message();
+               << parse_status.message();
     return -1;
   }
   if (transform_params.empty()) {
@@ -195,45 +249,45 @@ int ParseFlagsAndTransformGraph(int argc, char* argv[], bool init_main) {
   }
 
   GraphDef graph_def;
-  Status load_status = LoadTextOrBinaryGraphFile(in_graph, &graph_def);
+  absl::Status load_status = LoadTextOrBinaryGraphFile(in_graph, &graph_def);
   if (!load_status.ok()) {
-    LOG(ERROR) << "Loading graph '" << in_graph << "' failed with "
-               << load_status.error_message();
+    LOG(ERROR) << "Loading graph '" << in_graph_string << "' failed with "
+               << load_status.message();
     LOG(ERROR) << usage;
     return -1;
   }
 
-  Status transform_result =
+  absl::Status transform_result =
       TransformGraph(inputs, outputs, transform_params, &graph_def);
 
   if (!transform_result.ok()) {
-    LOG(ERROR) << transform_result.error_message();
+    LOG(ERROR) << transform_result.message();
     LOG(ERROR) << usage;
     return -1;
   }
 
-  Status save_status;
+  absl::Status save_status;
   if (output_as_text) {
     save_status = WriteTextProto(Env::Default(), out_graph, graph_def);
   } else {
     save_status = WriteBinaryProto(Env::Default(), out_graph, graph_def);
   }
   if (!save_status.ok()) {
-    LOG(ERROR) << "Saving graph '" << out_graph << "' failed with "
-               << save_status.error_message();
+    LOG(ERROR) << "Saving graph '" << out_graph_string << "' failed with "
+               << save_status.message();
     return -1;
   }
 
   return 0;
 }
 
-Status ShouldIgnoreErrors(const TransformFuncParameters& transform_params,
-                          bool* ignore_errors) {
+absl::Status ShouldIgnoreErrors(const TransformFuncParameters& transform_params,
+                                bool* ignore_errors) {
   *ignore_errors = false;
   if (transform_params.count("ignore_errors") &&
       (!transform_params.at("ignore_errors").empty())) {
     const string& ignore_errors_string =
-        str_util::Lowercase(transform_params.at("ignore_errors").at(0));
+        absl::AsciiStrToLower(transform_params.at("ignore_errors").at(0));
     if (ignore_errors_string == "true") {
       *ignore_errors = true;
     } else if (ignore_errors_string == "false") {
@@ -244,13 +298,13 @@ Status ShouldIgnoreErrors(const TransformFuncParameters& transform_params,
           ignore_errors_string);
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status TransformGraph(const std::vector<string>& inputs,
-                      const std::vector<string>& outputs,
-                      const TransformParameters& transform_params,
-                      GraphDef* graph_def) {
+absl::Status TransformGraph(const std::vector<string>& inputs,
+                            const std::vector<string>& outputs,
+                            const TransformParameters& transform_params,
+                            GraphDef* graph_def) {
   TransformRegistry* transform_registry = GetTransformRegistry();
   for (const auto& transform_info : transform_params) {
     const string& transform_name = transform_info.first;
@@ -272,12 +326,12 @@ Status TransformGraph(const std::vector<string>& inputs,
     TF_RETURN_IF_ERROR(
         ShouldIgnoreErrors(transform_info.second, &ignore_errors));
     GraphDef transformed_graph_def;
-    Status transform_result =
+    absl::Status transform_result =
         transform_func(*graph_def, context, &transformed_graph_def);
     if (!transform_result.ok()) {
       if (ignore_errors) {
         LOG(ERROR) << transform_name << ": Ignoring error "
-                   << transform_result.error_message();
+                   << transform_result.message();
         transformed_graph_def = *graph_def;
       } else {
         return transform_result;
@@ -289,7 +343,7 @@ Status TransformGraph(const std::vector<string>& inputs,
 
     *graph_def = transformed_graph_def;
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 }  // namespace graph_transforms
 }  // namespace tensorflow

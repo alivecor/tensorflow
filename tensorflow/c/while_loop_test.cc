@@ -13,11 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/c/c_api.h"
+#include <memory>
 
+#include "tensorflow/c/c_api.h"
 #include "tensorflow/c/c_test_util.h"
-#include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/platform/strcat.h"
 #include "tensorflow/core/platform/test.h"
 
 using tensorflow::GraphDef;
@@ -38,16 +39,16 @@ class CApiWhileLoopTest : public ::testing::Test {
     DCHECK_GT(ninputs, 0);
 
     for (int i = 0; i < ninputs; ++i) {
-      TF_Operation* placeholder = Placeholder(
-          graph_, s_, ::tensorflow::strings::StrCat("p", i).c_str());
+      TF_Operation* placeholder =
+          Placeholder(graph_, s_, absl::StrCat("p", i).c_str());
       DCHECK_EQ(TF_OK, TF_GetCode(s_)) << TF_Message(s_);
       inputs_.push_back({placeholder, 0});
     }
 
     original_graph_description_ = GraphDebugString();
 
-    params_.reset(new TF_WhileParams(
-        TF_NewWhile(graph_, &inputs_[0], inputs_.size(), s_)));
+    params_ = std::make_unique<TF_WhileParams>(
+        TF_NewWhile(graph_, &inputs_[0], inputs_.size(), s_));
     ASSERT_EQ(TF_OK, TF_GetCode(s_)) << TF_Message(s_);
     ASSERT_EQ(original_graph_description_, GraphDebugString())
         << "TF_NewWhile() altered graph";
@@ -73,6 +74,11 @@ class CApiWhileLoopTest : public ::testing::Test {
   }
 
   void Run(std::initializer_list<int> input_values) {
+    Run(outputs_, input_values);
+  }
+
+  void Run(const std::vector<TF_Output>& run_outputs,
+           std::initializer_list<int> input_values) {
     DCHECK_EQ(inputs_.size(), input_values.size());
     std::vector<std::pair<TF_Operation*, TF_Tensor*>> inputs(inputs_.size());
     int i = 0;
@@ -80,9 +86,10 @@ class CApiWhileLoopTest : public ::testing::Test {
       inputs[i] = {inputs_[i].oper, Int32Tensor(v)};
       ++i;
     }
-    csession_.reset(new CSession(graph_, s_));
+    // TODO(skyewm): use std::make_unique or absl::make_unique when possible.
+    csession_ = std::make_unique<CSession>(graph_, s_);
     csession_->SetInputs(inputs);
-    csession_->SetOutputs(outputs_);
+    csession_->SetOutputs(run_outputs);
     csession_->Run(s_);
     ASSERT_EQ(TF_OK, TF_GetCode(s_)) << TF_Message(s_);
   }
@@ -176,10 +183,8 @@ TEST_F(CApiWhileLoopTest, BasicLoop) {
 
   // Check that cond and body inputs are not present
   for (int i = 0; i < params_->ninputs; ++i) {
-    string cond_name =
-        ::tensorflow::strings::StrCat(params_->name, "/cond/cond_input", i);
-    string body_name =
-        ::tensorflow::strings::StrCat(params_->name, "/body/body_input", i);
+    string cond_name = absl::StrCat(params_->name, "/cond/cond_input", i);
+    string body_name = absl::StrCat(params_->name, "/body/body_input", i);
     EXPECT_TRUE(TF_GraphOperationByName(graph_, cond_name.c_str()) == nullptr);
     EXPECT_TRUE(TF_GraphOperationByName(graph_, body_name.c_str()) == nullptr);
   }
@@ -312,7 +317,7 @@ TEST_F(CApiWhileLoopTest, InvalidCondOutputNode) {
   // TODO(skyewm): this error message could be more informative. Add explicit
   // checks for this case in the while loop implementation?
   ExpectError(TF_INVALID_ARGUMENT,
-              "Requested return node 'p0' not found in graph def");
+              "Requested return tensor 'p0:0' not found in graph def");
 }
 
 TEST_F(CApiWhileLoopTest, InvalidCondOutputIndex) {
@@ -352,7 +357,7 @@ TEST_F(CApiWhileLoopTest, InvalidBodyOutputNode) {
   // TODO(skyewm): this error message could be more informative. Add explicit
   // checks for this case in the while loop implementation?
   ExpectError(TF_INVALID_ARGUMENT,
-              "Requested return node 'p0' not found in graph def");
+              "Requested return tensor 'p0:0' not found in graph def");
 }
 
 // TODO(skyewm): enable this when it works (currently segfaults!)
@@ -383,7 +388,7 @@ TEST_F(CApiWhileLoopTest, WrongGraph) {
   params_->body_outputs[0] = inputs_[0];
   // TODO(skyewm): improve error message
   ExpectError(TF_INVALID_ARGUMENT,
-              "Requested return node 'p0' not found in graph def");
+              "Requested return tensor 'p0:0' not found in graph def");
 }
 
 TEST_F(CApiWhileLoopTest, BadTypes) {
@@ -400,6 +405,38 @@ TEST_F(CApiWhileLoopTest, BadTypes) {
                      "building NodeDef 'float_op'"),
             msg.npos);
   TF_AbortWhile(params_.get());
+}
+
+// This is a basic test to make sure the C++ gradient code can handle while
+// loops created by the C API (which calls the C++ API under the hood). There
+// are more while loop gradient tests in cc/framework/while_gradients_test.cc.
+TEST_F(CApiWhileLoopTest, Gradients) {
+  Init(1);
+
+  // Create loop: while (i < 10) i += 1
+  TF_Operation* ten = ScalarConst(10, params_->cond_graph, s_);
+  TF_Operation* less_than =
+      LessThan(params_->cond_inputs[0], {ten, 0}, params_->cond_graph, s_);
+  DCHECK_EQ(TF_OK, TF_GetCode(s_)) << TF_Message(s_);
+  params_->cond_output = {less_than, 0};
+
+  TF_Operation* one = ScalarConst(1, params_->body_graph, s_);
+  TF_Operation* add =
+      Add(params_->body_inputs[0], {one, 0}, params_->body_graph, s_);
+  ASSERT_EQ(TF_OK, TF_GetCode(s_)) << TF_Message(s_);
+  params_->body_outputs[0] = {add, 0};
+
+  ExpectOK();
+
+  // Create backprop graph
+  TF_Output grad_output;
+  TF_AddGradients(graph_, outputs_.data(), outputs_.size(), inputs_.data(), 1,
+                  nullptr, s_, &grad_output);
+  ASSERT_EQ(TF_OK, TF_GetCode(s_)) << TF_Message(s_);
+
+  // Run gradient
+  Run({grad_output}, {0});
+  ExpectOutputValue(0, 1);
 }
 
 }  // namespace

@@ -15,39 +15,58 @@ limitations under the License.
 
 #include "tensorflow/python/grappler/cost_analyzer.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <iomanip>
+#include <ios>
+#include <map>
+#include <ostream>
+#include <vector>
+
+#include "absl/log/log.h"
+#include "absl/status/status.h"
+#include "tensorflow/core/framework/cost_graph.pb.h"
+#include "tensorflow/core/grappler/costs/op_performance_data.pb.h"
 #include "tensorflow/core/grappler/costs/utils.h"
 #include "tensorflow/core/grappler/grappler_item.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/protobuf/config.pb.h"
 
 namespace tensorflow {
 namespace grappler {
 
 CostAnalyzer::CostAnalyzer(const GrapplerItem& item, Cluster* cluster,
-                           const string& suffix)
+                           const std::string& suffix)
     : item_(&item),
       measure_estimator_(cluster, 10, 0),
-      analytical_estimator_(cluster, false),
+      analytical_estimator_(cluster, /*use_static_shapes=*/false,
+                            /*use_aggressive_shape_inference=*/true),
       suffix_(suffix) {}
 
-Status CostAnalyzer::GenerateReport(std::ostream& os, bool per_node_report) {
+absl::Status CostAnalyzer::GenerateReport(std::ostream& os,
+                                          bool per_node_report, bool verbose) {
   GatherCosts();
   PreprocessCosts();
   AnalyzeCosts();
-  PrintAnalysis(os, per_node_report);
-  return Status::OK();
+  PrintAnalysis(os, per_node_report, verbose);
+  return absl::OkStatus();
 }
 
 void CostAnalyzer::PredictCosts(CostEstimator* cost_estimator,
-                                CostGraphDef* cost_graph, int64* total_time) {
+                                CostGraphDef* cost_graph, int64_t* total_time) {
   TF_CHECK_OK(cost_estimator->Initialize(*item_));
+  RunMetadata run_metadata;
   Costs costs;
-  const Status status =
-      cost_estimator->PredictCosts(item_->graph, cost_graph, &costs);
+  const absl::Status status =
+      cost_estimator->PredictCosts(item_->graph, &run_metadata, &costs);
+  if (cost_graph) {
+    cost_graph->Swap(run_metadata.mutable_cost_graph());
+  }
   *total_time = costs.execution_time.count();
   if (!status.ok()) {
     LOG(ERROR) << "Could not estimate the cost for item " << item_->id << ": "
-               << status.error_message();
+               << status.message();
     return;
   }
 }
@@ -67,7 +86,7 @@ void CostAnalyzer::GatherCosts() {
 
   CostGraphDef cost_graph_analytical_filtered;
   CostGraphDef cost_graph_measured_filtered;
-  std::map<string, const CostGraphDef_Node*> measured_nodes;
+  std::map<std::string, const CostGraphDef_Node*> measured_nodes;
   for (const auto& node : cost_graph_measured.node()) {
     measured_nodes[node.name()] = &node;
   }
@@ -104,7 +123,7 @@ void CostAnalyzer::PreprocessCosts() {
 
     double analytical_compute_cost = analytical.compute_time();
     if (analytical_compute_cost == 0) {
-      // Negative infinity indidates unavailable data.
+      // Negative infinity indicates unavailable data.
       perf->set_compute_efficiency(-INFINITY);
     } else {
       perf->set_compute_efficiency(analytical_compute_cost / measured_cost);
@@ -112,7 +131,7 @@ void CostAnalyzer::PreprocessCosts() {
 
     double analytical_memory_cost = analytical.memory_time();
     if (analytical_memory_cost == 0) {
-      // Negative infinity indidates unavailable data.
+      // Negative infinity indicates unavailable data.
       perf->set_memory_efficiency(-INFINITY);
     } else {
       perf->set_memory_efficiency(analytical_memory_cost / measured_cost);
@@ -120,8 +139,7 @@ void CostAnalyzer::PreprocessCosts() {
   }
 }
 
-
-void CostAnalyzer::SortOpsByTime(std::map<string, OpPerfSummary> ops) {
+void CostAnalyzer::SortOpsByTime(std::map<std::string, OpPerfSummary> ops) {
   for (const auto& op : ops) {
     ops_.push_back(op.second);
   }
@@ -134,9 +152,9 @@ void CostAnalyzer::SortOpsByTime(std::map<string, OpPerfSummary> ops) {
 }
 
 void CostAnalyzer::AnalyzeCosts() {
-  std::map<string, OpPerfSummary> ops;
+  std::map<std::string, OpPerfSummary> ops;
   for (const auto& op_perf : op_perf_.op_performance()) {
-    string op_name = op_perf.op().op();
+    std::string op_name = op_perf.op().op();
     ops[op_name].count++;
     ops[op_name].time += op_perf.compute_cost();
     ops[op_name].compute_time += op_perf.compute_time();
@@ -158,7 +176,8 @@ void CostAnalyzer::AnalyzeCosts() {
   }
 }
 
-void CostAnalyzer::PrintAnalysis(std::ostream& os, bool per_node_report) const {
+void CostAnalyzer::PrintAnalysis(std::ostream& os, bool per_node_report,
+                                 bool verbose) const {
   os << std::endl;
   os << std::left << std::setw(50)
      << "Total time measured in ns (serialized): " << std::right
@@ -227,10 +246,55 @@ void CostAnalyzer::PrintAnalysis(std::ostream& os, bool per_node_report) const {
   os << std::endl;
 
   if (per_node_report) {
-    os << "Below is the per-node report:" << std::endl;
-    os << op_perf_.DebugString();
+    if (verbose) {
+      os << "Below is the full per-node report:" << std::endl;
+      os << op_perf_.DebugString();
+    } else {
+      os << "Below is the per-node report summary:" << std::endl;
+      int width = 35;
+      int width_narrow = 15;
+      int width_wide = 20;
+      os << std::setw(width + 1) << "Op,";
+      os << std::setw(width_wide + 1) << "Measured time (ns),";
+      os << std::setw(width_wide + 1) << "Compute time (ns),";
+      os << std::setw(width_wide + 1) << "Memory time (ns),";
+      os << std::setw(width_narrow + 2) << "Compute eff,";
+      os << std::setw(width_narrow + 2) << "Memory eff,";
+      os << "    Inputs" << std::endl;
+      for (int i = 0; i < op_perf_.op_performance_size(); i++) {
+        const auto& perf = op_perf_.op_performance(i);
+        std::string op_name = perf.op().op();
+        os << std::setw(width) << op_name << ",";
+        os << std::setw(width_wide) << perf.compute_cost() << ",";
+        os << std::setw(width_wide) << perf.compute_time() << ",";
+        os << std::setw(width_wide) << perf.memory_time() << ",";
+        os << std::setw(width_narrow) << std::setprecision(2)
+           << perf.compute_efficiency() * 100 << "%,";
+        os << std::setw(width_narrow) << std::setprecision(2)
+           << perf.memory_efficiency() * 100 << "%,";
+        os << "    [";
+        for (int j = 0; j < perf.op().inputs_size(); j++) {
+          const auto& shape = perf.op().inputs(j).shape();
+          if (shape.dim_size() > 0) {
+            os << "(";
+            std::vector<int> dims;
+            for (int k = 0; k < shape.dim_size(); k++) {
+              os << shape.dim(k).size();
+              if (k < shape.dim_size() - 1) {
+                os << ", ";
+              }
+            }
+            os << ")";
+            if (j < perf.op().inputs_size() - 1) {
+              os << ", ";
+            }
+          }
+        }
+        os << "]" << std::endl;
+      }
+      os << std::endl;
+    }
   }
 }
-
 }  // end namespace grappler
 }  // end namespace tensorflow

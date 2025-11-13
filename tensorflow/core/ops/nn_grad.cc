@@ -22,7 +22,7 @@ namespace tensorflow {
 
 typedef FunctionDefHelper FDH;
 
-Status SoftmaxGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status SoftmaxGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
       "SoftmaxGrad",
@@ -31,25 +31,48 @@ Status SoftmaxGrad(const AttrSlice& attrs, FunctionDef* g) {
       // Ret val defs
       {"grad_x: T"},
       // Attr defs
-      {{"T: {float, double}"}},
+      {{"T: {float, double, bfloat16}"}},
       // Nodes
       // Based on _SoftmaxGrad in nn_grad.py.
       {
         {{"softmax"}, "Softmax", {"x"}, {{"T", "$T"}}},
         {{"n0"}, "Mul", {"grad_softmax", "softmax"}, {{"T", "$T"}}},
-        FDH::Const<int32>("indices", {1}),
-        {{"n1"}, "Sum", {"n0", "indices"}, {{"T", "$T"}}},
-        FDH::Const<int32>("newshape", {-1, 1}),
-        {{"n2"}, "Reshape", {"n1", "newshape"}, {{"T", "$T"}}},
-        {{"n3"}, "Sub", {"grad_softmax", "n2"}, {{"T", "$T"}}},
-        {{"grad_x"}, "Mul", {"n3", "softmax"}, {{"T", "$T"}}}
+        FDH::Const<int32>("indices", {-1}),
+        {{"n1"}, "Sum", {"n0", "indices"}, {{"keep_dims", true}, {"T", "$T"}}},
+        {{"n2"}, "Sub", {"grad_softmax", "n1"}, {{"T", "$T"}}},
+        {{"grad_x"}, "Mul", {"n2", "softmax"}, {{"T", "$T"}}}
       });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("Softmax", SoftmaxGrad);
 
-Status ReluGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status LogSoftmaxGrad(const AttrSlice& attrs, FunctionDef* g) {
+  // clang-format off
+  *g = FDH::Define(
+      "LogSoftmaxGrad",
+      // Arg defs
+      {"x: T", "grad_logsoftmax: T"},
+      // Ret val defs
+      {"grad_x: T"},
+      // Attr defs
+      {{"T: {float, double}"}},
+      // Nodes
+      // Based on _LogSoftmaxGrad in nn_grad.py.
+      {
+        {{"softmax"}, "Softmax", {"x"}, {{"T", "$T"}}},
+        FDH::Const<int32>("indices", {-1}),
+        {{"n0"}, "Sum", {"grad_logsoftmax", "indices"},
+         {{"keep_dims", true}, {"T", "$T"}}},
+        {{"n1"}, "Mul", {"n0", "softmax"}, {{"T", "$T"}}},
+        {{"grad_x"}, "Sub", {"grad_logsoftmax", "n1"}, {{"T", "$T"}}}
+      });
+  // clang-format on
+  return absl::OkStatus();
+}
+REGISTER_OP_GRADIENT("LogSoftmax", LogSoftmaxGrad);
+
+absl::Status ReluGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
       // Arg defs
@@ -63,11 +86,11 @@ Status ReluGrad(const AttrSlice& attrs, FunctionDef* g) {
         {{"dx"}, "ReluGrad", {"dy", "x"}, {{"T", "$T"}}}
       });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("Relu", ReluGrad);
 
-Status Relu6Grad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status Relu6Grad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
       // Arg defs
@@ -81,11 +104,11 @@ Status Relu6Grad(const AttrSlice& attrs, FunctionDef* g) {
         {{"dx"}, "Relu6Grad", {"dy", "x"}, {{"T", "$T"}}}
       });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("Relu6", Relu6Grad);
 
-Status CrossEntropyGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status CrossEntropyGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
     // Arg defs
@@ -110,11 +133,11 @@ Status CrossEntropyGrad(const AttrSlice& attrs, FunctionDef* g) {
       {{"dcost_dlabels"}, "ZerosLike", {"labels"}, {{"T", "$T"}}},
     });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("CrossEntropy", CrossEntropyGrad);
 
-Status Conv2DGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status Conv2DGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
     // Arg defs
@@ -146,11 +169,11 @@ Status Conv2DGrad(const AttrSlice& attrs, FunctionDef* g) {
                   {"use_cudnn_on_gpu", "$use_cudnn_on_gpu"}}},
     });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("Conv2D", Conv2DGrad);
 
-Status MaxPoolGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status MaxPoolGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
     // Arg defs
@@ -177,11 +200,11 @@ Status MaxPoolGrad(const AttrSlice& attrs, FunctionDef* g) {
                   {"padding", "$padding"}}}
     });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("MaxPool", MaxPoolGrad);
 
-Status AvgPoolGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status AvgPoolGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
     // Arg defs
@@ -203,11 +226,11 @@ Status AvgPoolGrad(const AttrSlice& attrs, FunctionDef* g) {
                   {"padding", "$padding"}}}
     });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("AvgPool", AvgPoolGrad);
 
-Status MaxPoolGradGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status MaxPoolGradGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
     // Arg defs
@@ -234,11 +257,11 @@ Status MaxPoolGradGrad(const AttrSlice& attrs, FunctionDef* g) {
                   {"padding", "$padding"}}}
     });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("MaxPoolGrad", MaxPoolGradGrad);
 
-Status BiasAddGrad(const AttrSlice& attrs, FunctionDef* g) {
+absl::Status BiasAddGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
   *g = FDH::Define(
     // Arg defs
@@ -255,7 +278,7 @@ Status BiasAddGrad(const AttrSlice& attrs, FunctionDef* g) {
                       {"data_format", "$data_format"}}}
     });
   // clang-format on
-  return Status::OK();
+  return absl::OkStatus();
 }
 REGISTER_OP_GRADIENT("BiasAdd", BiasAddGrad);
 

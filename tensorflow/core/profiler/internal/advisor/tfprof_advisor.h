@@ -13,9 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_TFPROF_ADVICE_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_TFPROF_ADVICE_H_
+#ifndef TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_TFPROF_ADVISOR_H_
+#define TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_TFPROF_ADVISOR_H_
 
+#include <vector>
+
+#include "absl/strings/str_format.h"
 #include "tensorflow/core/profiler/internal/advisor/accelerator_utilization_checker.h"
 #include "tensorflow/core/profiler/internal/advisor/checker.h"
 #include "tensorflow/core/profiler/internal/advisor/expensive_operation_checker.h"
@@ -33,9 +36,9 @@ class Advisor {
 
   static AdvisorOptionsProto DefaultOptions() {
     AdvisorOptionsProto options;
-    std::vector<string> checkers(
+    std::vector<std::string> checkers(
         kCheckers, kCheckers + sizeof(kCheckers) / sizeof(*kCheckers));
-    for (const string& checker : checkers) {
+    for (const std::string& checker : checkers) {
       (*options.mutable_checkers())[checker];
     }
     return options;
@@ -62,9 +65,9 @@ class Advisor {
                                    stats_));
     }
     for (const auto& checker : ret.checkers()) {
-      fprintf(stdout, "\n%s:\n", checker.first.c_str());
-      for (const string& r : checker.second.reports()) {
-        fprintf(stdout, "%s\n", r.c_str());
+      absl::FPrintF(stdout, "\n%s:\n", checker.first);
+      for (const std::string& r : checker.second.reports()) {
+        absl::FPrintF(stdout, "%s\n", r);
       }
     }
     fflush(stdout);
@@ -78,4 +81,4 @@ class Advisor {
 }  // namespace tfprof
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_TFPROF_ADVICE_H_
+#endif  // TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_TFPROF_ADVISOR_H_

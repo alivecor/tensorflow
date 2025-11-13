@@ -13,89 +13,60 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_UTIL_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_UTIL_H_
+#ifndef TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_UTIL_H_
+#define TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_UTIL_H_
 
 #include <memory>
+#include <string>
 
-#include "grpc++/grpc++.h"
-#include "grpc++/impl/codegen/proto_utils.h"
-#include "grpc++/support/byte_buffer.h"
+#include "grpcpp/grpcpp.h"
+#include "grpcpp/impl/codegen/proto_utils.h"
+#include "grpcpp/support/byte_buffer.h"
+#include "xla/tsl/distributed_runtime/rpc/grpc_util.h"
+#include "tensorflow/core/distributed_runtime/tensor_coding.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "tensorflow/core/platform/mutex.h"
+#include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/platform/protobuf.h"
 
 namespace tensorflow {
+// NOLINTBEGIN(misc-unused-using-decls)
+using tsl::FromGrpcStatus;
+using tsl::SharedGrpcChannelPtr;
+using tsl::ToGrpcStatus;
+// NOLINTEND(misc-unused-using-decls)
 
-inline Status FromGrpcStatus(const ::grpc::Status& s) {
-  if (s.ok()) {
-    return Status::OK();
-  } else {
-    return Status(static_cast<tensorflow::error::Code>(s.error_code()),
-                  s.error_message());
+// Thin wrapper around ::grpc::ProtoBufferReader to give TensorResponse
+// an efficient byte reader from which to decode a RecvTensorResponse.
+class GrpcByteSource : public TensorResponse::Source {
+ public:
+  explicit GrpcByteSource(::grpc::ByteBuffer* buffer) : buffer_(buffer) {}
+  ~GrpcByteSource() override { DeleteStream(); }
+
+  typedef ::grpc::ProtoBufferReader Reader;
+
+  protobuf::io::ZeroCopyInputStream* contents() override {
+    DeleteStream();
+    stream_ = new (&space_) Reader(buffer_);
+    return stream_;
   }
-}
 
-inline ::grpc::Status ToGrpcStatus(const ::tensorflow::Status& s) {
-  if (s.ok()) {
-    return ::grpc::Status::OK;
-  } else {
-    return ::grpc::Status(static_cast<::grpc::StatusCode>(s.code()),
-                          s.error_message());
+ private:
+  void DeleteStream() {
+    if (stream_) {
+      stream_->~Reader();
+    }
   }
-}
 
-typedef std::shared_ptr<::grpc::Channel> SharedGrpcChannelPtr;
+  ::grpc::ByteBuffer* buffer_;  // Not owned
+  Reader* stream_ = nullptr;    // Points into space_ if non-nullptr
+  char space_[sizeof(Reader)];
+};
 
 inline string GrpcIdKey() { return "tf-rpc"; }
 
-// Serialize src and store in *dst.
-void GrpcUnparseProto(const protobuf::Message& src, ::grpc::ByteBuffer* dst);
-
-// Parse contents of src and initialize *dst with them.
-bool GrpcParseProto(const ::grpc::ByteBuffer& src, protobuf::Message* dst);
-
-// A ZeroCopyInputStream that reads from a grpc::ByteBuffer.
-class GrpcByteBufferSource : public ::grpc::protobuf::io::ZeroCopyInputStream {
- public:
-  GrpcByteBufferSource();
-  bool Init(const ::grpc::ByteBuffer& src);  // Can be called multiple times.
-  bool Next(const void** data, int* size) override;
-  void BackUp(int count) override;
-  bool Skip(int count) override;
-  ::grpc::protobuf::int64 ByteCount() const override;
-
- private:
-  std::vector<::grpc::Slice> slices_;
-  int cur_;          // Current slice index.
-  int left_;         // Number of bytes in slices_[cur_] left to yield.
-  const char* ptr_;  // Address of next byte in slices_[cur_] to yield.
-  ::grpc::protobuf::int64 byte_count_;
-};
-
-// GrpcCounter is used to delay shutdown until all active RPCs are done.
-class GrpcCounter {
- public:
-  GrpcCounter() {}
-
-  GrpcCounter(const GrpcCounter&) = delete;
-  GrpcCounter& operator=(const GrpcCounter&) = delete;
-
-  // Increment the count of live RPCs.
-  void Increment();
-
-  // Decrement the count of live RPCs.
-  void Decrement();
-
-  // Wait until count of live RPCs is zero.
-  void WaitUntilUnused();
-
- private:
-  mutex mu_;
-  condition_variable empty_;
-  int counter_ = 0;
-};
-
+// Decode a TensorResponse without extra copying. This function is an optimized
+// variant of tsl::GrpcMaybeParseProto.
+bool GrpcMaybeParseTensorResponse(::grpc::ByteBuffer* src, TensorResponse* dst);
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_UTIL_H_
+#endif  // TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_UTIL_H_

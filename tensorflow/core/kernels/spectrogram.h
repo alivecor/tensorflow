@@ -28,8 +28,8 @@ limitations under the License.
 // window = hann(window_length_samples, 'periodic');
 // S = abs(spectrogram(audio, window, overlap_samples)).^2;
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_KERNELS_SPECTROGRAM_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_KERNELS_SPECTROGRAM_H_
+#ifndef TENSORFLOW_CORE_KERNELS_SPECTROGRAM_H_
+#define TENSORFLOW_CORE_KERNELS_SPECTROGRAM_H_
 
 #include <complex>
 #include <deque>
@@ -55,6 +55,19 @@ class Spectrogram {
 
   // Initialize with an explicit window instead of a length.
   bool Initialize(const std::vector<double>& window, int step_length);
+
+  // Reset internal variables.
+  // Spectrogram keeps internal state: remaining input data from previous call.
+  // As a result it can produce different number of frames when you call
+  // ComputeComplexSpectrogram multiple times (even though input data
+  // has the same size). As it is shown in
+  // MultipleCallsToComputeComplexSpectrogramMayYieldDifferentNumbersOfFrames
+  // in tensorflow/core/kernels/spectrogram_test.cc.
+  // But if you need to compute Spectrogram on input data without keeping
+  // internal state (and clear remaining input data from the previous call)
+  // you have to call Reset() before computing Spectrogram.
+  // For example in tensorflow/core/kernels/spectrogram_op.cc
+  bool Reset();
 
   // Processes an arbitrary amount of audio data (contained in input)
   // to yield complex spectrogram frames. After a successful call to
@@ -104,9 +117,10 @@ class Spectrogram {
   std::vector<int> fft_integer_working_area_;
   std::vector<double> fft_double_working_area_;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(Spectrogram);
+  Spectrogram(const Spectrogram&) = delete;
+  void operator=(const Spectrogram&) = delete;
 };
 
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_KERNELS_SPECTROGRAM_H_
+#endif  // TENSORFLOW_CORE_KERNELS_SPECTROGRAM_H_

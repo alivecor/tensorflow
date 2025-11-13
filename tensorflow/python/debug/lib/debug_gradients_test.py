@@ -14,20 +14,18 @@
 # ==============================================================================
 """Unit tests for debug_gradients module."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import shutil
 import tempfile
 
 from tensorflow.core.protobuf import config_pb2
+from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.python.client import session
 from tensorflow.python.debug.lib import debug_data
 from tensorflow.python.debug.lib import debug_gradients
 from tensorflow.python.debug.lib import debug_utils
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import tensor
 from tensorflow.python.framework import test_util
+from tensorflow.python.lib.io import file_io
 from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variables
@@ -35,11 +33,17 @@ from tensorflow.python.platform import googletest
 from tensorflow.python.training import gradient_descent
 
 
+@test_util.run_v1_only("Sessions are not available in TF 2.x")
 class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
   def setUp(self):
-    self.sess = session.Session()
-    with self.sess:
+    rewriter_config = rewriter_config_pb2.RewriterConfig(
+        disable_model_pruning=True,
+        dependency_optimization=rewriter_config_pb2.RewriterConfig.OFF)
+    graph_options = config_pb2.GraphOptions(rewrite_options=rewriter_config)
+    config = config_pb2.ConfigProto(graph_options=graph_options)
+    self.sess = session.Session(config=config)
+    with self.sess.as_default():
       self.u = variables.Variable(2.0, name="u")
       self.v = variables.Variable(3.0, name="v")
       self.w = math_ops.multiply(self.u.value(), self.v.value(), name="w")
@@ -65,17 +69,17 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
     # Fetch the gradient tensor with the x-tensor object.
     w_grad = grad_debugger.gradient_tensor(self.w)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
     # Fetch the gradient tensor with the x-tensor's name.
     w_grad = grad_debugger.gradient_tensor(self.w.name)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
     # Fetch the gradient tensor with the x-tensor name.
     w_grad = grad_debugger.gradient_tensor(self.w.name)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
   def testIdentifyGradientGivesCorrectTensorObjectWithTfGradients(self):
@@ -96,24 +100,24 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
     # Fetch the gradient tensor with the x-tensor object.
     w_grad = grad_debugger.gradient_tensor(self.w)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
     # Fetch the gradient tensor with the x-tensor's name.
     w_grad = grad_debugger.gradient_tensor(self.w.name)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
     # Fetch the gradient tensor with the x-tensor name.
     w_grad = grad_debugger.gradient_tensor(self.w.name)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
   def testCallingIdentifyGradientTwiceWithTheSameGradientsDebuggerErrors(self):
     grad_debugger = debug_gradients.GradientsDebugger()
     grad_debugger.identify_gradient(self.w)
-    with self.assertRaisesRegexp(
-        ValueError, "The graph already contains an op named .*"):
+    with self.assertRaisesRegex(ValueError,
+                                "The graph already contains an op named .*"):
       grad_debugger.identify_gradient(self.w)
 
   def testIdentifyGradientWorksOnMultipleLosses(self):
@@ -134,15 +138,15 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
     dz1_dy = grad_debugger_1.gradient_tensor(y)
     dz2_dy = grad_debugger_2.gradient_tensor(y)
-    self.assertIsInstance(dz1_dy, ops.Tensor)
-    self.assertIsInstance(dz2_dy, ops.Tensor)
+    self.assertIsInstance(dz1_dy, tensor.Tensor)
+    self.assertIsInstance(dz2_dy, tensor.Tensor)
     self.assertIsNot(dz1_dy, dz2_dy)
 
     self.sess.run(variables.global_variables_initializer())
-    self.assertAllClose(5.0 ** 2, self.sess.run(z1))
-    self.assertAllClose(5.0 ** 0.5, self.sess.run(z2))
+    self.assertAllClose(5.0**2, self.sess.run(z1))
+    self.assertAllClose(5.0**0.5, self.sess.run(z2))
     self.assertAllClose(2.0 * 5.0, self.sess.run(dz1_dy))
-    self.assertAllClose(0.5 * (5.0 ** -0.5), self.sess.run(dz2_dy))
+    self.assertAllClose(0.5 * (5.0**-0.5), self.sess.run(dz2_dy))
 
   def testIdentifyGradientRaisesLookupErrorForUnknownXTensor(self):
     grad_debugger_1 = debug_gradients.GradientsDebugger()
@@ -155,18 +159,18 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     # registered.
     gradients_impl.gradients(y, [self.u, self.v])
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         LookupError,
         r"This GradientsDebugger has not received any gradient tensor for "):
       grad_debugger_1.gradient_tensor(self.w)
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         LookupError,
         r"This GradientsDebugger has not received any gradient tensor for "):
       grad_debugger_2.gradient_tensor(self.w)
 
   def testIdentifyGradientRaisesTypeErrorForNonTensorOrTensorNameInput(self):
     grad_debugger = debug_gradients.GradientsDebugger()
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         TypeError,
         r"x_tensor must be a str or tf\.Tensor or tf\.Variable, but instead "
         r"has type .*Operation.*"):
@@ -184,7 +188,7 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
     # Fetch the gradient tensor with the x-tensor object.
     w_grad = grad_debugger.gradient_tensor(self.w)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
   def testWatchGradientsByXTensorNamesWorks(self):
@@ -206,11 +210,11 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     self.assertAllClose(2.0, self.sess.run(v_grad))
 
     w_grad = grad_debugger.gradient_tensor(self.w)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
     w_grad = grad_debugger.gradient_tensor("w:0")
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
   def testWatchGradientsByXTensorNamesWorksWithoutContextManager(self):
@@ -232,11 +236,11 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     self.assertAllClose(2.0, self.sess.run(v_grad))
 
     w_grad = grad_debugger.gradient_tensor(self.w)
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
     w_grad = grad_debugger.gradient_tensor("w:0")
-    self.assertIsInstance(w_grad, ops.Tensor)
+    self.assertIsInstance(w_grad, tensor.Tensor)
     self.assertAllClose(1.0, self.sess.run(w_grad))
 
   def testWatchGradientsWorksOnRefTensor(self):
@@ -254,8 +258,8 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     self.sess.run(variables.global_variables_initializer())
     self.assertAllClose(3.0, self.sess.run(u_grad))
     self.assertAllClose(2.0, self.sess.run(v_grad))
-    self.assertAllClose(
-        3.0, self.sess.run(grad_debugger.gradient_tensor("u:0")))
+    self.assertAllClose(3.0, self.sess.run(
+        grad_debugger.gradient_tensor("u:0")))
 
   def testWatchGradientsWorksOnMultipleTensors(self):
     y = math_ops.add(self.w, -1.0, name="y")
@@ -269,13 +273,13 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
     self.assertEqual(2, len(grad_debugger.gradient_tensors()))
     self.assertIs(u_grad, grad_debugger.gradient_tensor("u:0"))
-    self.assertIsInstance(grad_debugger.gradient_tensor("w:0"), ops.Tensor)
+    self.assertIsInstance(grad_debugger.gradient_tensor("w:0"), tensor.Tensor)
 
     self.sess.run(variables.global_variables_initializer())
-    self.assertAllClose(
-        1.0, self.sess.run(grad_debugger.gradient_tensor("w:0")))
-    self.assertAllClose(
-        3.0, self.sess.run(grad_debugger.gradient_tensor("u:0")))
+    self.assertAllClose(1.0, self.sess.run(
+        grad_debugger.gradient_tensor("w:0")))
+    self.assertAllClose(3.0, self.sess.run(
+        grad_debugger.gradient_tensor("u:0")))
 
   def testWatchGradientsByXTensorsWorks(self):
     y = math_ops.add(self.w, -1.0, name="foo/y")
@@ -285,8 +289,8 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     # But we can still get the gradient tensors by using
     # watch_gradients_by_x_tensors().
     grad_debugger = debug_gradients.GradientsDebugger()
-    with grad_debugger.watch_gradients_by_tensors(
-        self.sess.graph, [self.w, self.u, y]):
+    with grad_debugger.watch_gradients_by_tensors(self.sess.graph,
+                                                  [self.w, self.u, y]):
       gradient_descent.GradientDescentOptimizer(0.1).minimize(z)
 
     self.assertEqual(3, len(grad_debugger.gradient_tensors()))
@@ -314,23 +318,23 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
 
     dz1_dy = grad_debugger_1.gradient_tensor(y)
     dz2_dy = grad_debugger_2.gradient_tensor(y)
-    self.assertIsInstance(dz1_dy, ops.Tensor)
-    self.assertIsInstance(dz2_dy, ops.Tensor)
+    self.assertIsInstance(dz1_dy, tensor.Tensor)
+    self.assertIsInstance(dz2_dy, tensor.Tensor)
     self.assertIsNot(dz1_dy, dz2_dy)
 
     self.sess.run(variables.global_variables_initializer())
-    self.assertAllClose(5.0 ** 2, self.sess.run(z1))
-    self.assertAllClose(5.0 ** 0.5, self.sess.run(z2))
+    self.assertAllClose(5.0**2, self.sess.run(z1))
+    self.assertAllClose(5.0**0.5, self.sess.run(z2))
     self.assertAllClose(2.0 * 5.0, self.sess.run(dz1_dy))
-    self.assertAllClose(0.5 * (5.0 ** -0.5), self.sess.run(dz2_dy))
+    self.assertAllClose(0.5 * (5.0**-0.5), self.sess.run(dz2_dy))
 
   def testGradientsValuesFromDumpWorks(self):
     y = math_ops.add(self.w, -1.0, name="y")
     z = math_ops.square(y, name="z")
 
     grad_debugger = debug_gradients.GradientsDebugger()
-    with grad_debugger.watch_gradients_by_tensors(
-        self.sess.graph, [self.w, self.u, y]):
+    with grad_debugger.watch_gradients_by_tensors(self.sess.graph,
+                                                  [self.w, self.u, y]):
       train_op = gradient_descent.GradientDescentOptimizer(0.1).minimize(z)
 
     self.sess.run(variables.global_variables_initializer())
@@ -338,12 +342,11 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     run_options = config_pb2.RunOptions(output_partition_graphs=True)
     dump_dir = tempfile.mkdtemp()
     debug_url = "file://" + dump_dir
-    debug_utils.watch_graph(
-        run_options,
-        self.sess.graph,
-        debug_urls=debug_url)
+    debug_utils.watch_graph(run_options, self.sess.graph, debug_urls=debug_url)
     run_metadata = config_pb2.RunMetadata()
+    self.assertAllClose(2.0, self.sess.run(self.u))
     self.sess.run(train_op, options=run_options, run_metadata=run_metadata)
+    self.assertAllClose(-1.0, self.sess.run(self.u))
 
     dump = debug_data.DebugDumpDir(
         dump_dir, partition_graphs=run_metadata.partition_graphs)
@@ -364,14 +367,14 @@ class IdentifyGradientTest(test_util.TensorFlowTestCase):
     self.assertEqual(1, len(u_grad_values))
     self.assertAllClose(30.0, u_grad_values[0])
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         LookupError,
         r"This GradientsDebugger has not received any gradient tensor for "
         r"x-tensor v:0"):
       debug_gradients.gradient_values_from_dump(grad_debugger, self.v, dump)
 
     # Cleanup.
-    shutil.rmtree(dump_dir)
+    file_io.delete_recursively(dump_dir)
 
 
 if __name__ == "__main__":

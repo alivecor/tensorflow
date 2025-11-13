@@ -13,13 +13,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <cstdint>
+#include <numeric>
+#include <vector>
+
 #include "tensorflow/compiler/tf2xla/xla_helpers.h"
 #include "tensorflow/compiler/tf2xla/xla_op_kernel.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
-#include "tensorflow/compiler/xla/client/computation_builder.h"
+#include "xla/hlo/builder/xla_builder.h"
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/types.h"
-#include "tensorflow/core/kernels/no_op.h"
+#include "tensorflow/core/framework/types.pb.h"
 
 namespace tensorflow {
 namespace {
@@ -29,21 +32,21 @@ class L2LossOp : public XlaOpKernel {
   explicit L2LossOp(OpKernelConstruction* ctx) : XlaOpKernel(ctx) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    const TensorShape input_shape = ctx->InputShape(0);
-
-    DataType dtype = ctx->input_type(0);
-    xla::ComputationBuilder* b = ctx->builder();
-
-    auto zero = XlaHelpers::Zero(b, dtype);
-    auto two = XlaHelpers::IntegerLiteral(b, dtype, 2);
-    const xla::Computation& add = *ctx->GetOrCreateAdd(dtype);
-
-    std::vector<int64> dims(input_shape.dims());
+    std::vector<int64_t> dims(ctx->InputShape(0).dims());
     std::iota(dims.begin(), dims.end(), 0);
 
+    DataType dtype = ctx->input_type(0);
+    xla::XlaBuilder* const b = ctx->builder();
+
     //  output = sum(t ** 2) / 2
-    auto x = ctx->Input(0);
-    ctx->SetOutput(0, b->Div(b->Reduce(b->Mul(x, x), zero, add, dims), two));
+    const DataType accumulation_type = XlaHelpers::SumAccumulationType(dtype);
+    auto t = XlaHelpers::ConvertElementType(ctx->Input(0), accumulation_type);
+    auto square = xla::Mul(t, t);
+    auto reduce = xla::Reduce(square, XlaHelpers::Zero(b, accumulation_type),
+                              *ctx->GetOrCreateAdd(accumulation_type), dims);
+    auto deconverted = XlaHelpers::ConvertElementType(reduce, dtype);
+    auto two = XlaHelpers::IntegerLiteral(b, dtype, 2);
+    ctx->SetOutput(0, xla::Div(deconverted, two));
   }
 };
 

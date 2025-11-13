@@ -13,28 +13,37 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_GRAPPLER_INPUTS_UTILS_H_
-#define TENSORFLOW_GRAPPLER_INPUTS_UTILS_H_
+#ifndef TENSORFLOW_CORE_GRAPPLER_INPUTS_UTILS_H_
+#define TENSORFLOW_CORE_GRAPPLER_INPUTS_UTILS_H_
 
 #include <set>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "tensorflow/core/framework/graph.pb.h"
+#include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/protobuf/meta_graph.pb.h"
 
 namespace tensorflow {
 namespace grappler {
 
 bool FilesExist(const std::vector<string>& files,
-                std::vector<Status>* status = nullptr);
+                std::vector<absl::Status>* status = nullptr);
 bool FilesExist(const std::set<string>& files);
 
-bool FileExists(const std::string& file, Status* status);
+bool FileExists(const string& file, absl::Status* status);
 
-Status ReadGraphDefFromFile(const std::string& graph_def_pbtxt_path,
-                            GraphDef* result);
+// Reads GraphDef from file in either text or raw serialized format.
+absl::Status ReadGraphDefFromFile(const string& graph_def_path,
+                                  GraphDef* result);
+
+// Reads MetaGraphDef from file in either text or raw serialized format.
+absl::Status ReadMetaGraphDefFromFile(const string& meta_graph_def_path,
+                                      MetaGraphDef* result);
 
 }  // end namespace grappler
 }  // end namespace tensorflow
 
-#endif  // TENSORFLOW_GRAPPLER_INPUTS_UTILS_H_
+#endif  // TENSORFLOW_CORE_GRAPPLER_INPUTS_UTILS_H_

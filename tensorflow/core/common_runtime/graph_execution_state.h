@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/build_graph_options.h"
 #include "tensorflow/core/common_runtime/device.h"
 #include "tensorflow/core/common_runtime/device_set.h"
+#include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/graph/costmodel.h"
 #include "tensorflow/core/graph/graph.h"
@@ -41,26 +42,38 @@ struct RewriteGraphMetadata;
 struct GraphExecutionStateOptions {
   const DeviceSet* device_set = nullptr;
   const SessionOptions* session_options = nullptr;
+  // Unique session identifier. Can be empty.
+  string session_handle;
   // A map from node name to device name, representing the unchangeable
   // placement of stateful nodes.
   std::unordered_map<string, string> stateful_placements;
+  // Whether to run Placer on the graph.
+  bool run_placer = true;
+
+  // Whether to enable tf2xla mlir bridge. The default is true and intends to
+  // work for almost all models. Non default values should only applied to
+  // selective models.
+  bool enable_tf2xla_mlir_bridge = true;
 };
 
 // A ClientGraph is simply a sub-graph of the full graph as induced by
 // BuildGraphOptions.
 struct ClientGraph {
   explicit ClientGraph(std::unique_ptr<FunctionLibraryDefinition> flib,
-                       DataTypeVector feed_types, DataTypeVector fetch_types)
+                       DataTypeVector feed_types, DataTypeVector fetch_types,
+                       int64_t collective_graph_key)
       : flib_def(std::move(flib)),
         graph(flib_def.get()),
         feed_types(std::move(feed_types)),
-        fetch_types(std::move(fetch_types)) {}
+        fetch_types(std::move(fetch_types)),
+        collective_graph_key(collective_graph_key) {}
   // Each client-graph gets its own function library since optimization passes
   // post rewrite for execution might want to introduce new functions.
   std::unique_ptr<FunctionLibraryDefinition> flib_def;
   Graph graph;
   DataTypeVector feed_types;
   DataTypeVector fetch_types;
+  int64_t collective_graph_key;
 };
 
 // GraphExecutionState is responsible for generating an
@@ -93,22 +106,16 @@ class GraphExecutionState {
 
   // Creates a new `GraphExecutionState` for the given
   // `graph_def`, which represents the entire graph for a session.
-  //
-  // N.B. This method uses `GraphDef::Swap()` and leaves `graph_def`
-  // in an undefined state. If it is necessary to use `*graph_def`
-  // after this call, make an explicit copy of the graph before
-  // calling this method.
-  static Status MakeForBaseGraph(
-      GraphDef* graph_def, const GraphExecutionStateOptions& options,
+  static absl::Status MakeForBaseGraph(
+      GraphDef&& graph_def, const GraphExecutionStateOptions& options,
       std::unique_ptr<GraphExecutionState>* out_state);
 
   // Creates a new `GraphExecutionState` and `SimpleClientGraph`
   // for the subgraph of `original_graph_def` defined by
   // `subgraph_options`.
-  static Status MakeForPrunedGraph(
-      const FunctionDefLibrary& func_def_lib,
+  static absl::Status MakeForPrunedGraph(
+      const GraphExecutionState& base_execution_state,
       const GraphExecutionStateOptions& options,
-      const GraphDef& original_graph_def,
       const BuildGraphOptions& subgraph_options,
       std::unique_ptr<GraphExecutionState>* out_state,
       std::unique_ptr<ClientGraph>* out_client_graph);
@@ -127,21 +134,36 @@ class GraphExecutionState {
   // NOTE(mrry): This method respects the placement of stateful nodes in
   // in *this, but currently does not transfer any other placement
   // or cost model information to the new graph.
-  Status Extend(const GraphDef& extension_def,
-                std::unique_ptr<GraphExecutionState>* out) const;
+  //
+  // Note that using this interface requires setting the value of
+  // config.experimental().disable_optimize_for_static_graph() in the state
+  // options to `true`, otherwise it will return an error.
+  absl::Status Extend(const GraphDef& extension_def,
+                      std::unique_ptr<GraphExecutionState>* out) const;
 
   // Builds a ClientGraph (a sub-graph of the full graph as induced by
   // the Node set specified in "options").  If successful, returns OK
   // and the caller takes the ownership of "*out". Otherwise, returns
   // an error.
-  Status BuildGraph(const BuildGraphOptions& options,
-                    std::unique_ptr<ClientGraph>* out);
+  absl::Status BuildGraph(const BuildGraphOptions& options,
+                          std::unique_ptr<ClientGraph>* out);
+
+  // Optimize the graph with the node set specified in `options`.
+  absl::Status OptimizeGraph(
+      const BuildGraphOptions& options, const Graph& graph,
+      const FunctionLibraryDefinition* flib_def,
+      std::unique_ptr<Graph>* optimized_graph,
+      std::unique_ptr<FunctionLibraryDefinition>* optimized_flib);
 
   // The graph returned by BuildGraph may contain only the pruned
   // graph, whereas some clients may want access to the full graph.
-  const Graph* full_graph() {
-    return graph_;
-  }
+  const Graph* full_graph() { return graph_; }
+
+  // The original graph.
+  GraphDef* original_graph_def() { return original_graph_def_.get(); }
+
+  // The original function library of this graph.
+  const FunctionLibraryDefinition& flib_def() const { return *flib_def_; }
 
   // Returns the node with the given name, or null if it does not exist.
   const Node* get_node_by_name(const string& name) const {
@@ -154,10 +176,6 @@ class GraphExecutionState {
     }
   }
 
-  // Returns a reference to the current graph_def.  Use must
-  // not extend beyond lifetime of GrahExecutionState object.
-  const GraphDef& original_graph_def() { return original_graph_def_; }
-
   // Returns the map of stateful placements as a map of
   // node name to placement string.
   std::unordered_map<string, string> GetStatefulPlacements() const {
@@ -165,10 +183,12 @@ class GraphExecutionState {
   }
 
  private:
-  GraphExecutionState(GraphDef* graph_def,
+  GraphExecutionState(std::unique_ptr<GraphDef>&& graph_def,
+                      std::unique_ptr<FunctionLibraryDefinition>&& flib_def,
                       const GraphExecutionStateOptions& options);
 
-  Status InitBaseGraph(const BuildGraphOptions& options);
+  absl::Status InitBaseGraph(std::unique_ptr<Graph>&& graph,
+                             bool enable_tf2xla_mlir_bridge = true);
 
   // Map of placed stateful nodes, i.e. nodes for which is_stateful()
   // is true, such as "params" and "queue" nodes.  Once placed these
@@ -179,12 +199,23 @@ class GraphExecutionState {
   void SaveStatefulNodes(Graph* graph);
   void RestoreStatefulNodes(Graph* graph);
 
-  Status OptimizeGraph(const BuildGraphOptions& options,
-                       std::unique_ptr<Graph>* optimized_graph);
+  // Extract the subset of the graph that needs to be run, adding feed/fetch
+  // ops as needed.
+  absl::Status PruneGraph(const BuildGraphOptions& options, Graph* graph,
+                          subgraph::RewriteGraphMetadata* out_rewrite_metadata);
 
-  GraphDef original_graph_def_;            // Immutable after ctor.
+  // The GraphExecutionState must store a copy of the original GraphDef if
+  // either of the following conditions holds:
+  //
+  // * `session_options_.config.graph_options().place_pruned_graph()` is true.
+  // * `session_options_.config.experimental().optimize_for_static_graph()` is
+  //   false.
+  const std::unique_ptr<GraphDef> original_graph_def_;
+
   const DeviceSet* device_set_;            // Not owned
   const SessionOptions* session_options_;  // Not owned
+  // Unique session identifier. Can be empty.
+  string session_handle_;
 
   // Map from name to Node for the full graph in placed_.
   NodeNameToCostIdMap node_name_to_cost_id_map_;
@@ -200,7 +231,11 @@ class GraphExecutionState {
   // The dataflow graph owned by this object.
   Graph* graph_;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(GraphExecutionState);
+  // Whether to run Placer.
+  bool run_placer_;
+
+  GraphExecutionState(const GraphExecutionState&) = delete;
+  void operator=(const GraphExecutionState&) = delete;
 };
 
 }  // namespace tensorflow

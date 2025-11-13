@@ -20,15 +20,20 @@ limitations under the License.
 #include <stdlib.h>
 #include <string.h>
 
+#include <cstdint>
 #include <memory>
 
+#include "absl/base/casts.h"
+#include "absl/log/check.h"
+#include "jpeglib.h"  // from @libjpeg_turbo
 #include "tensorflow/core/lib/jpeg/jpeg_handle.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/platform/jpeg.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/test.h"
+#include "tensorflow/core/platform/tstring.h"
 #include "tensorflow/core/platform/types.h"
-
-#include "tensorflow/core/lib/core/casts.h"
+#include "tsl/platform/status.h"
 
 namespace tensorflow {
 namespace jpeg {
@@ -59,7 +64,7 @@ void TestJPEG(Env* env, const string& jpegfile) {
   string jpeg;
   ReadFileToStringOrDie(env, jpegfile, &jpeg);
   const int fsize = jpeg.size();
-  const uint8* const temp = bit_cast<const uint8*>(jpeg.data());
+  const uint8* const temp = absl::bit_cast<const uint8*>(jpeg.data());
 
   // Try partial decoding (half of the data)
   int w, h, c;
@@ -101,7 +106,7 @@ void TestCropAndDecodeJpeg(Env* env, const string& jpegfile,
   string jpeg;
   ReadFileToStringOrDie(env, jpegfile, &jpeg);
   const int fsize = jpeg.size();
-  auto temp = bit_cast<const uint8*>(jpeg.data());
+  const auto* temp = absl::bit_cast<const uint8*>(jpeg.data());
 
   // Decode the whole image.
   std::unique_ptr<uint8[]> imgdata1;
@@ -224,7 +229,7 @@ TEST(JpegMemTest, CropAndDecodeJpegWithStride) {
   string jpeg;
   ReadFileToStringOrDie(env, data_path + "jpeg_merge_test1.jpg", &jpeg);
   const int fsize = jpeg.size();
-  auto temp = bit_cast<const uint8*>(jpeg.data());
+  const auto* temp = absl::bit_cast<const uint8*>(jpeg.data());
 
   int w, h, c;
   ASSERT_TRUE(GetImageInfo(temp, fsize, &w, &h, &c));
@@ -262,7 +267,7 @@ TEST(JpegMemTest, CropAndDecodeJpegWithInvalidCropWindow) {
   string jpeg;
   ReadFileToStringOrDie(env, data_path + "jpeg_merge_test1.jpg", &jpeg);
   const int fsize = jpeg.size();
-  auto temp = bit_cast<const uint8*>(jpeg.data());
+  const auto* temp = absl::bit_cast<const uint8*>(jpeg.data());
 
   int w, h, c;
   ASSERT_TRUE(GetImageInfo(temp, fsize, &w, &h, &c));
@@ -325,7 +330,7 @@ TEST(JpegMemTest, Jpeg2) {
     CHECK_NE(string::npos, cpdata1.find(kXMP));
 
     // Test the other API, where a storage string is supplied
-    string cptest;
+    tstring cptest;
     flags.stride = 0;
     Compress(refdata1.get(), in_w, in_h, flags, &cptest);
     CHECK_EQ(cptest, cpdata1);
@@ -364,7 +369,7 @@ TEST(JpegMemTest, Jpeg2) {
     const std::unique_ptr<uint8[]> imgdata2(new uint8[flags.stride * in_h]);
     CHECK(imgdata2.get() == Uncompress(cpdata2.c_str(), cpdata2.length(), flags,
                                        nullptr /* nwarn */,
-                                       [&imgdata2](int w, int h, int c) {
+                                       [=, &imgdata2](int w, int h, int c) {
                                          CHECK_EQ(w, in_w);
                                          CHECK_EQ(h, in_h);
                                          CHECK_EQ(c, 3);
@@ -452,7 +457,7 @@ TEST(JpegMemTest, ChromaDownsampling) {
   UncompressFlags unflags;
   unflags.components = 3;
   int w, h, c;
-  int64 num_warnings;
+  int64_t num_warnings;
   std::unique_ptr<uint8[]> uncompressed(Uncompress(
       jpeg.c_str(), jpeg.size(), unflags, &w, &h, &c, &num_warnings));
   CHECK(uncompressed != nullptr);
@@ -464,7 +469,7 @@ TEST(JpegMemTest, ChromaDownsampling) {
     flags.format = FORMAT_RGB;
     flags.quality = 85;
     flags.chroma_downsampling = downsample;
-    string recompressed;
+    tstring recompressed;
     Compress(uncompressed.get(), w, h, flags, &recompressed);
     CHECK(!recompressed.empty());
     CHECK_EQ(IsChromaDownsampled(recompressed), downsample);

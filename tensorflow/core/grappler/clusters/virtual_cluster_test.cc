@@ -14,12 +14,25 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/grappler/clusters/virtual_cluster.h"
+
+#include <memory>
+#include <unordered_map>
+
+#include "absl/log/check.h"
+#include "absl/status/status.h"
+#include "tensorflow/cc/framework/scope.h"
+#include "tensorflow/cc/ops/standard_ops.h"
+#include "xla/tsl/protobuf/error_codes.pb.h"
 #include "tensorflow/core/framework/cost_graph.pb.h"
 #include "tensorflow/core/framework/step_stats.pb.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/grappler/grappler_item.h"
 #include "tensorflow/core/grappler/inputs/trivial_test_graph_input_yielder.h"
 #include "tensorflow/core/platform/test.h"
+#include "tensorflow/core/protobuf/config.pb.h"
+#include "tensorflow/core/protobuf/device_properties.pb.h"
+#include "tensorflow/core/protobuf/error_codes.pb.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -37,17 +50,25 @@ class VirtualClusterTest : public ::testing::Test {
     cpu_device.set_l1_cache_size(32 * 1024);
     cpu_device.set_l2_cache_size(256 * 1024);
     cpu_device.set_l3_cache_size(4 * 1024 * 1024);
-    std::unordered_map<string, DeviceProperties> devices;
+    cpu_device.set_memory_size(1024 * 1024);
+    std::unordered_map<std::string, DeviceProperties> devices;
     devices["/job:localhost/replica:0/task:0/cpu:0"] = cpu_device;
-    cluster_.reset(new VirtualCluster(devices));
+    cluster_ = std::make_unique<VirtualCluster>(devices);
     TF_CHECK_OK(cluster_->Provision());
   }
 
-  void TearDown() override { cluster_.reset(); }
+  void TearDown() override {
+    TF_CHECK_OK(cluster_->Shutdown());
+    cluster_.reset();
+  }
 
  protected:
   std::unique_ptr<VirtualCluster> cluster_;
 };
+
+TEST_F(VirtualClusterTest, ClusterType) {
+  CHECK_EQ("virtual", cluster_->type());
+}
 
 TEST_F(VirtualClusterTest, CostModel) {
   TrivialTestGraphInputYielder fake_input(4, 1, 10, false,
@@ -65,7 +86,7 @@ TEST_F(VirtualClusterTest, CostModel) {
   EXPECT_LE(4, metadata.cost_graph().node_size());
   for (const auto& node : metadata.cost_graph().node()) {
     // Skip the constant node that configures the random number generator.
-    if (node.name().find("Const/Const") != string::npos) {
+    if (node.name().find("Const/Const") != std::string::npos) {
       continue;
     }
     EXPECT_EQ(1, node.output_info_size());
@@ -89,6 +110,21 @@ TEST_F(VirtualClusterTest, CostModel) {
       }
     }
   }
+}
+
+TEST_F(VirtualClusterTest, OutOfMemory) {
+  tensorflow::Scope root = tensorflow::Scope::NewRootScope();
+  // Create a large variable that can't fit in memory.
+  auto zero = ops::Variable(root.WithOpName("zero"), {1024, 1024}, DT_FLOAT);
+  auto identity = ops::Identity(root.WithOpName("i"), zero);
+  auto identity2 = ops::Identity(root.WithOpName("i2"), identity);
+  GrapplerItem item;
+  TF_CHECK_OK(root.ToGraphDef(&item.graph));
+  item.fetch.push_back("i2");
+
+  TF_CHECK_OK(cluster_->Initialize(item));
+  absl::Status s = cluster_->Run(item.graph, item.feed, item.fetch, nullptr);
+  EXPECT_EQ(error::RESOURCE_EXHAUSTED, s.code());
 }
 
 }  // namespace

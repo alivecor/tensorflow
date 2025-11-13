@@ -19,76 +19,165 @@ limitations under the License.
 namespace tensorflow {
 
 using shape_inference::DimensionHandle;
+using shape_inference::InferenceContext;
 using shape_inference::ShapeHandle;
 
-static Status StatelessShape(shape_inference::InferenceContext* context) {
+static absl::Status StatelessShape(InferenceContext* c) {
   // Check seed shape
   ShapeHandle seed;
-  TF_RETURN_IF_ERROR(context->WithRank(context->input(1), 1, &seed));
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &seed));
   DimensionHandle unused;
-  TF_RETURN_IF_ERROR(context->WithValue(context->Dim(seed, 0), 2, &unused));
+  TF_RETURN_IF_ERROR(c->WithValue(c->Dim(seed, 0), 2, &unused));
 
   // Set output shape
-  shape_inference::ShapeHandle out;
-  TF_RETURN_IF_ERROR(context->MakeShapeFromShapeTensor(0, &out));
-  context->set_output(0, out);
-  return Status::OK();
+  ShapeHandle out;
+  TF_RETURN_IF_ERROR(c->MakeShapeFromShapeTensor(0, &out));
+  c->set_output(0, out);
+  return absl::OkStatus();
 }
 
-#define REGISTER_STATELESS_OP(name)                  \
-  REGISTER_OP(name)                                  \
-      .Input("shape: T")                             \
-      .Input("seed: int64")                          \
-      .Output("output: dtype")                       \
-      .Attr("dtype: {half,float,double} = DT_FLOAT") \
-      .Attr("T: {int32, int64} = DT_INT32")          \
+#define REGISTER_STATELESS_OP(name)                           \
+  REGISTER_OP(name)                                           \
+      .Input("shape: T")                                      \
+      .Input("seed: Tseed")                                   \
+      .Output("output: dtype")                                \
+      .Attr("dtype: {half,bfloat16,float,double} = DT_FLOAT") \
+      .Attr("T: {int32, int64} = DT_INT32")                   \
+      .Attr("Tseed: {int32, int64} = DT_INT64")               \
       .SetShapeFn(StatelessShape)
 
-// This op is exposed through contrib/stateless only.  The interface may change.
-REGISTER_STATELESS_OP("StatelessRandomUniform").Doc(R"doc(
-Outputs deterministic pseudorandom random values from a uniform distribution.
-
-The generated values follow a uniform distribution in the range `[0, 1)`. The
-lower bound 0 is included in the range, while the upper bound 1 is excluded.
-
-The outputs are a deterministic function of `shape` and `seed`.
-
-shape: The shape of the output tensor.
-dtype: The type of the output.
-seed: 2 seeds (shape [2]).
-output: Random values with specified shape.
-)doc");
-
-// This op is exposed through contrib/stateless only.  The interface may change.
-REGISTER_STATELESS_OP("StatelessRandomNormal").Doc(R"doc(
-Outputs deterministic pseudorandom values from a normal distribution.
-
-The generated values will have mean 0 and standard deviation 1.
-
-The outputs are a deterministic function of `shape` and `seed`.
-
-shape: The shape of the output tensor.
-dtype: The type of the output.
-seed: 2 seeds (shape [2]).
-output: Random values with specified shape.
-)doc");
-
-// This op is exposed through contrib/stateless only.  The interface may change.
-REGISTER_STATELESS_OP("StatelessTruncatedNormal").Doc(R"doc(
-Outputs deterministic pseudorandom values from a truncated normal distribution.
-
-The generated values follow a normal distribution with mean 0 and standard
-deviation 1, except that values whose magnitude is more than 2 standard
-deviations from the mean are dropped and re-picked.
-
-The outputs are a deterministic function of `shape` and `seed`.
-
-shape: The shape of the output tensor.
-dtype: The type of the output.
-seed: 2 seeds (shape [2]).
-output: Random values with specified shape.
-)doc");
+REGISTER_STATELESS_OP("StatelessRandomUniform");
+REGISTER_STATELESS_OP("StatelessRandomNormal");
+REGISTER_STATELESS_OP("StatelessTruncatedNormal");
 
 #undef REGISTER_STATELESS_OP
+
+REGISTER_OP("StatelessRandomUniformInt")
+    .Input("shape: T")
+    .Input("seed: Tseed")
+    .Input("minval: dtype")
+    .Input("maxval: dtype")
+    .Output("output: dtype")
+    .Attr("dtype: {int32, int64}")
+    .Attr("T: {int32, int64}")
+    .Attr("Tseed: {int32, int64} = DT_INT64")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      absl::Status s = c->WithRank(c->input(2), 0, &unused);
+      if (!s.ok()) {
+        return errors::InvalidArgument(
+            "minval must be a scalar; got a tensor of shape ",
+            c->DebugString(c->input(2)));
+      }
+      s = c->WithRank(c->input(3), 0, &unused);
+      if (!s.ok()) {
+        return errors::InvalidArgument(
+            "maxval must be a scalar; got a tensor of shape ",
+            c->DebugString(c->input(3)));
+      }
+      return StatelessShape(c);
+    });
+
+REGISTER_OP("StatelessRandomUniformFullInt")
+    .Input("shape: T")
+    .Input("seed: Tseed")
+    .Output("output: dtype")
+    .Attr("dtype: {int32, int64, uint32, uint64} = DT_UINT64")
+    .Attr("T: {int32, int64} = DT_INT32")
+    .Attr("Tseed: {int32, int64, uint32, uint64} = DT_INT64")
+    .SetShapeFn(StatelessShape);
+
+REGISTER_OP("StatelessMultinomial")
+    .Input("logits: T")
+    .Input("num_samples: int32")
+    .Input("seed: Tseed")
+    .Output("output: output_dtype")
+    .Attr("T: realnumbertype")
+    .Attr("Tseed: {int32, int64} = DT_INT64")
+    .Attr("output_dtype: {int32, int64} = DT_INT64")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      // Check seed shape
+      ShapeHandle seed;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &seed));
+      DimensionHandle unused_dim;
+      TF_RETURN_IF_ERROR(c->WithValue(c->Dim(seed, 0), 2, &unused_dim));
+
+      ShapeHandle logits_shape;
+      ShapeHandle unused;
+      DimensionHandle num_samples;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &logits_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      TF_RETURN_IF_ERROR(c->MakeDimForScalarInput(1, &num_samples));
+      c->set_output(0, c->Matrix(c->Dim(logits_shape, 0), num_samples));
+      return absl::OkStatus();
+    });
+
+REGISTER_OP("StatelessRandomBinomial")
+    .Input("shape: S")
+    .Input("seed: Tseed")
+    .Input("counts: T")
+    .Input("probs: T")
+    .Output("output: dtype")
+    .Attr("S: {int32, int64}")
+    .Attr("Tseed: {int32, int64} = DT_INT64")
+    .Attr("T: {half, float, double, int32, int64} = DT_DOUBLE")
+    .Attr("dtype: {half, float, double, int32, int64} = DT_INT64")
+    .SetShapeFn(StatelessShape);
+
+REGISTER_OP("StatelessParameterizedTruncatedNormal")
+    .Input("shape: S")
+    .Input("seed: Tseed")
+    .Input("means: dtype")
+    .Input("stddevs: dtype")
+    .Input("minvals: dtype")
+    .Input("maxvals: dtype")
+    .Output("output: dtype")
+    .Attr("S: {int32, int64}")
+    .Attr("Tseed: {int32, int64} = DT_INT64")
+    .Attr("dtype: {float16, float32, float64}")
+    .SetShapeFn([](InferenceContext* c) {
+      // Check seed shape
+      ShapeHandle seed;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &seed));
+      DimensionHandle unused_dim;
+      TF_RETURN_IF_ERROR(c->WithValue(c->Dim(seed, 0), 2, &unused_dim));
+
+      ShapeHandle bcast_means_stddevs;
+      ShapeHandle bcast_except_maxvals;
+      ShapeHandle bcast_all;
+      TF_RETURN_IF_ERROR(BroadcastBinaryOpOutputShapeFnHelper(
+          c, c->input(2), c->input(3), true, &bcast_means_stddevs));
+      TF_RETURN_IF_ERROR(BroadcastBinaryOpOutputShapeFnHelper(
+          c, c->input(4), bcast_means_stddevs, true, &bcast_except_maxvals));
+      TF_RETURN_IF_ERROR(BroadcastBinaryOpOutputShapeFnHelper(
+          c, c->input(5), bcast_except_maxvals, true, &bcast_all));
+
+      // Set output shape
+      ShapeHandle out;
+      TF_RETURN_IF_ERROR(c->MakeShapeFromShapeTensor(0, &out));
+      c->set_output(0, out);
+      return absl::OkStatus();
+    });
+
+REGISTER_OP("StatelessRandomPoisson")
+    .Input("shape: T")
+    .Input("seed: Tseed")
+    .Input("lam: Rtype")
+    .Output("output: dtype")
+    .Attr("Rtype: {float16, float32, float64, int32, int64}")
+    .Attr("dtype: {float16, float32, float64, int32, int64}")
+    .Attr("T: {int32, int64}")
+    .Attr("Tseed: {int32, int64} = DT_INT64")
+    .SetShapeFn(StatelessShape);
+
+REGISTER_OP("StatelessRandomGammaV2")
+    .Input("shape: T")
+    .Input("seed: Tseed")
+    .Input("alpha: dtype")
+    .Output("output: dtype")
+    .Attr("dtype: {float16, float32, float64}")
+    .Attr("T: {int32, int64}")
+    .Attr("Tseed: {int32, int64} = DT_INT64")
+    .SetShapeFn(StatelessShape);
 
 }  // namespace tensorflow

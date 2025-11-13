@@ -13,11 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
-#include "tensorflow/core/kernels/reduction_ops_gpu_kernels.h"
+#include "tensorflow/core/kernels/reduction_gpu_kernels.cu.h"
 
 namespace tensorflow {
 namespace functor {
@@ -59,4 +59,4 @@ DEFINE_FOR_TYPE_AND_R(bool, Eigen::internal::OrReducer);
 }  // end namespace functor
 }  // end namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

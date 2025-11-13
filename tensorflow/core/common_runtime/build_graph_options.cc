@@ -21,17 +21,33 @@ namespace tensorflow {
 
 string BuildGraphOptions::DebugString() const {
   string rv = "Feed endpoints: ";
-  for (auto& s : feed_endpoints) {
-    strings::StrAppend(&rv, s, ", ");
+  for (auto& s : callable_options.feed()) {
+    absl::StrAppend(&rv, s, ", ");
   }
-  strings::StrAppend(&rv, "\nFetch endpoints: ");
-  for (auto& s : fetch_endpoints) {
-    strings::StrAppend(&rv, s, ", ");
+  absl::StrAppend(&rv, "\nFetch endpoints: ");
+  for (auto& s : callable_options.fetch()) {
+    absl::StrAppend(&rv, s, ", ");
   }
-  strings::StrAppend(&rv, "\nTarget nodes: ");
-  for (auto& s : target_nodes) {
-    strings::StrAppend(&rv, s, ", ");
+  absl::StrAppend(&rv, "\nTarget nodes: ");
+  for (auto& s : callable_options.target()) {
+    absl::StrAppend(&rv, s, ", ");
   }
+  if (collective_graph_key != kNoCollectiveGraphKey) {
+    absl::StrAppend(&rv, "\ncollective_graph_key: ", collective_graph_key);
+  }
+  string collective_order_str;
+  switch (collective_order) {
+    case GraphCollectiveOrder::kNone:
+      collective_order_str = "none";
+      break;
+    case GraphCollectiveOrder::kEdges:
+      collective_order_str = "edges";
+      break;
+    case GraphCollectiveOrder::kAttrs:
+      collective_order_str = "attrs";
+      break;
+  }
+  absl::StrAppend(&rv, "\ncollective_order: ", collective_order_str);
   return rv;
 }
 

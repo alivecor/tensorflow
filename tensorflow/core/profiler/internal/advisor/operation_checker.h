@@ -14,9 +14,10 @@ limitations under the License.
 ==============================================================================*/
 // This checker checks common wrong configurations of operations.
 //
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_OPERATION_CHECKER_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_OPERATION_CHECKER_H_
+#ifndef TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_OPERATION_CHECKER_H_
+#define TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_OPERATION_CHECKER_H_
 
+#include "absl/strings/str_format.h"
 #include "tensorflow/core/profiler/internal/advisor/checker.h"
 
 namespace tensorflow {
@@ -24,14 +25,14 @@ namespace tfprof {
 
 class OperationChecker : public Checker {
  public:
-  string name() const override { return kCheckers[1]; }
+  std::string name() const override { return kCheckers[1]; }
 
  private:
   AdviceProto::Checker Check(const AdvisorOptionsProto::CheckerOption& options,
                              const TFStats* stats) override {
     if (!stats) {
-      fprintf(stderr, "Missing profiles (e.g. graph, run_meta). Skip %s\n",
-              name().c_str());
+      absl::FPrintF(
+          stderr, "Missing profiles (e.g. graph, run_meta). Skip %s\n", name());
       return reports_;
     }
     bool use_batch_norm = false;
@@ -74,4 +75,4 @@ class OperationChecker : public Checker {
 }  // namespace tfprof
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_OPERATION_CHECKER_H_
+#endif  // TENSORFLOW_CORE_PROFILER_INTERNAL_ADVISOR_OPERATION_CHECKER_H_

@@ -13,15 +13,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
+#ifndef TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
+#define TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
 
+#include "absl/status/status.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/cost_graph.pb.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/step_stats.pb.h"
 #include "tensorflow/core/framework/tensor.h"
-#include "tensorflow/core/framework/tensor.pb_text.h"
+#include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/protobuf/config.pb.h"
 #include "tensorflow/core/protobuf/master.pb.h"
@@ -63,8 +64,8 @@ class RunStepRequestWrapper {
   virtual const string& feed_name(size_t i) const = 0;
 
   // Stores the content of the feed value at index `i` in `tensor`.
-  virtual Status FeedValue(size_t i, Tensor* out_tensor) const = 0;
-  virtual Status FeedValue(size_t i, TensorProto* out_tensor) const = 0;
+  virtual absl::Status FeedValue(size_t i, Tensor* out_tensor) const = 0;
+  virtual absl::Status FeedValue(size_t i, TensorProto* out_tensor) const = 0;
 
   // Fetches. A list of tensor names. The caller expects a tensor to
   // be returned for each fetch[i] (see RunStepResponse.tensor). The
@@ -79,6 +80,18 @@ class RunStepRequestWrapper {
 
   // Options for the run call.
   virtual const RunOptions& options() const = 0;
+
+  // If true then some errors, e.g., execution errors that have long
+  // error messages, may return an OK RunStepResponse with the actual
+  // error saved in the status_code/status_error_message fields of the
+  // response body. This is a workaround since the RPC subsystem may
+  // truncate long metadata messages.
+  virtual bool store_errors_in_response_body() const = 0;
+
+  // Unique identifier for this request. Every RunGraphRequest must have a
+  // unique request_id, and retried RunGraphRequests must have the same
+  // request_id. If request_id is zero, retry detection is disabled.
+  virtual int64_t request_id() const = 0;
 
   // Returns a human-readable representation of this message for debugging.
   virtual string DebugString() const = 0;
@@ -98,6 +111,7 @@ class MutableRunStepRequestWrapper : public RunStepRequestWrapper {
   virtual void add_fetch(const string& name) = 0;
   virtual void add_target(const string& name) = 0;
   virtual RunOptions* mutable_options() = 0;
+  virtual void set_store_errors_in_response_body(bool store_errors) = 0;
 };
 
 // Specialized (and mutable) wrapper for RunStep requests between a client and
@@ -109,8 +123,8 @@ class InMemoryRunStepRequest : public MutableRunStepRequestWrapper {
   const string& partial_run_handle() const override;
   size_t num_feeds() const override;
   const string& feed_name(size_t i) const override;
-  Status FeedValue(size_t i, Tensor* out_tensor) const override;
-  Status FeedValue(size_t i, TensorProto* out_tensor) const override;
+  absl::Status FeedValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status FeedValue(size_t i, TensorProto* out_tensor) const override;
   size_t num_fetches() const override;
   const string& fetch_name(size_t i) const override;
   size_t num_targets() const override;
@@ -118,6 +132,8 @@ class InMemoryRunStepRequest : public MutableRunStepRequestWrapper {
   const RunOptions& options() const override;
   string DebugString() const override;
   const RunStepRequest& ToProto() const override;
+  bool store_errors_in_response_body() const override;
+  int64_t request_id() const override;
 
   // MutableRunStepRequestWrapper methods.
   void set_session_handle(const string& handle) override;
@@ -126,14 +142,16 @@ class InMemoryRunStepRequest : public MutableRunStepRequestWrapper {
   void add_fetch(const string& name) override;
   void add_target(const string& name) override;
   RunOptions* mutable_options() override;
+  void set_store_errors_in_response_body(bool store_errors) override;
 
  private:
   string session_handle_;
   string partial_run_handle_;
-  gtl::InlinedVector<std::pair<string, Tensor>, 4> feeds_;
-  gtl::InlinedVector<string, 4> fetches_;
-  gtl::InlinedVector<string, 4> targets_;
+  absl::InlinedVector<std::pair<string, Tensor>, 4UL> feeds_;
+  absl::InlinedVector<string, 4UL> fetches_;
+  absl::InlinedVector<string, 4UL> targets_;
   RunOptions options_;
+  bool store_errors_in_response_body_ = false;
 
   // Holds a cached and owned representation of the proto
   // representation of this request, if needed, so that `ToProto()`
@@ -156,8 +174,8 @@ class MutableProtoRunStepRequest : public MutableRunStepRequestWrapper {
   const string& partial_run_handle() const override;
   size_t num_feeds() const override;
   const string& feed_name(size_t i) const override;
-  Status FeedValue(size_t i, Tensor* out_tensor) const override;
-  Status FeedValue(size_t i, TensorProto* out_tensor) const override;
+  absl::Status FeedValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status FeedValue(size_t i, TensorProto* out_tensor) const override;
   size_t num_fetches() const override;
   const string& fetch_name(size_t i) const override;
   size_t num_targets() const override;
@@ -165,6 +183,8 @@ class MutableProtoRunStepRequest : public MutableRunStepRequestWrapper {
   const RunOptions& options() const override;
   string DebugString() const override;
   const RunStepRequest& ToProto() const override;
+  bool store_errors_in_response_body() const override;
+  int64_t request_id() const override;
 
   // MutableRunStepRequestWrapper methods.
   void set_session_handle(const string& handle) override;
@@ -173,9 +193,11 @@ class MutableProtoRunStepRequest : public MutableRunStepRequestWrapper {
   void add_fetch(const string& name) override;
   void add_target(const string& name) override;
   RunOptions* mutable_options() override;
+  void set_store_errors_in_response_body(bool store_errors) override;
 
  private:
   RunStepRequest request_;
+  friend class MasterInterface;
 };
 
 // Wrapper for immutable RunStep requests that use a non-owned
@@ -193,8 +215,8 @@ class ProtoRunStepRequest : public RunStepRequestWrapper {
   const string& partial_run_handle() const override;
   size_t num_feeds() const override;
   const string& feed_name(size_t i) const override;
-  Status FeedValue(size_t i, Tensor* out_tensor) const override;
-  Status FeedValue(size_t i, TensorProto* out_tensor) const override;
+  absl::Status FeedValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status FeedValue(size_t i, TensorProto* out_tensor) const override;
   size_t num_fetches() const override;
   const string& fetch_name(size_t i) const override;
   size_t num_targets() const override;
@@ -202,6 +224,8 @@ class ProtoRunStepRequest : public RunStepRequestWrapper {
   const RunOptions& options() const override;
   string DebugString() const override;
   const RunStepRequest& ToProto() const override;
+  bool store_errors_in_response_body() const override;
+  int64_t request_id() const override;
 
  private:
   const RunStepRequest* const request_;  // Not owned.
@@ -220,7 +244,7 @@ class ProtoRunStepRequest : public RunStepRequestWrapper {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-// Abstract interface for an immutable RunStepRequest message.
+// Abstract interface for an immutable RunGraphRequest message.
 //
 // This interface is typically used by server-side components in the
 // TensorFlow worker.
@@ -232,6 +256,9 @@ class RunGraphRequestWrapper {
   // namespace is used.
   virtual const string& session_handle() const = 0;
 
+  // Set to true if `CreateWorkerSession` was called for `session_handle`.
+  virtual bool create_worker_session_called() const = 0;
+
   // REQUIRED: graph_handle must be returned by a RegisterGraph call
   // to the same WorkerService.
   virtual const string& graph_handle() const = 0;
@@ -242,7 +269,7 @@ class RunGraphRequestWrapper {
   // different runs of the graph computation. Subgraphs communicate
   // (e.g., send/recv ops) with each other using `step_id` to
   // distinguish tensors generated by different runs.
-  virtual int64 step_id() const = 0;
+  virtual int64_t step_id() const = 0;
 
   // Options for this step.
   virtual const ExecutorOpts& exec_opts() const = 0;
@@ -250,7 +277,7 @@ class RunGraphRequestWrapper {
   // Sends the tensors in "send" into the graph before the run.
   virtual size_t num_sends() const = 0;
   virtual const string& send_key(size_t i) const = 0;
-  virtual Status SendValue(size_t i, Tensor* out_tensor) const = 0;
+  virtual absl::Status SendValue(size_t i, Tensor* out_tensor) const = 0;
 
   // Fetches the keys into `RunGraphResponse.recv` after the run.
   virtual size_t num_recvs() const = 0;
@@ -262,6 +289,15 @@ class RunGraphRequestWrapper {
   // True if this is the last partial run request in a sequence of requests.
   virtual bool is_last_partial_run() const = 0;
 
+  // If true then some errors, e.g., execution errors that have long
+  // error messages, may return an OK RunStepResponse with the actual
+  // error saved in the status_code/status_error_message fields of the
+  // response body. This is a workaround since the RPC subsystem may
+  // truncate long metadata messages.
+  virtual bool store_errors_in_response_body() const = 0;
+
+  virtual int64_t request_id() const = 0;
+
   // Returns the wrapped data as a protocol buffer message.
   virtual const RunGraphRequest& ToProto() const = 0;
 };
@@ -272,19 +308,25 @@ class RunGraphRequestWrapper {
 class MutableRunGraphRequestWrapper : public RunGraphRequestWrapper {
  public:
   virtual void set_session_handle(const string& handle) = 0;
+  virtual void set_create_worker_session_called(bool called) = 0;
   virtual void set_graph_handle(const string& handle) = 0;
-  virtual void set_step_id(int64 step_id) = 0;
+  virtual void set_step_id(int64_t step_id) = 0;
   virtual ExecutorOpts* mutable_exec_opts() = 0;
 
   // Stores the i^{th} feed value in `run_step_request` in this
   // request with the given `send_key`.
-  virtual Status AddSendFromRunStepRequest(
+  virtual absl::Status AddSendFromRunStepRequest(
       const RunStepRequestWrapper& run_step_request, size_t i,
+      const string& send_key) = 0;
+  virtual absl::Status AddSendFromRunCallableRequest(
+      const RunCallableRequest& run_callable_request, size_t i,
       const string& send_key) = 0;
 
   virtual void add_recv_key(const string& recv_key) = 0;
   virtual void set_is_partial(bool is_partial) = 0;
   virtual void set_is_last_partial_run(bool is_last_partial_run) = 0;
+  virtual void set_store_errors_in_response_body(bool store_errors) = 0;
+  virtual void set_request_id(int64_t request_id) = 0;
 };
 
 class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
@@ -292,38 +334,50 @@ class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
   // RunGraphRequestWrapper methods.
   const string& session_handle() const override;
   const string& graph_handle() const override;
-  int64 step_id() const override;
+  bool create_worker_session_called() const override;
+  int64_t step_id() const override;
   const ExecutorOpts& exec_opts() const override;
   size_t num_sends() const override;
   const string& send_key(size_t i) const override;
-  Status SendValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status SendValue(size_t i, Tensor* out_tensor) const override;
   size_t num_recvs() const override;
   const string& recv_key(size_t i) const override;
   bool is_partial() const override;
   bool is_last_partial_run() const override;
   const RunGraphRequest& ToProto() const override;
+  bool store_errors_in_response_body() const override;
+  int64_t request_id() const override;
 
   // MutableRunGraphRequestWrapper methods.
   void set_session_handle(const string& handle) override;
+  void set_create_worker_session_called(bool called) override;
   void set_graph_handle(const string& handle) override;
-  void set_step_id(int64 step_id) override;
+  void set_step_id(int64_t step_id) override;
   ExecutorOpts* mutable_exec_opts() override;
-  Status AddSendFromRunStepRequest(
+  absl::Status AddSendFromRunStepRequest(
       const RunStepRequestWrapper& run_step_request, size_t i,
+      const string& send_key) override;
+  absl::Status AddSendFromRunCallableRequest(
+      const RunCallableRequest& run_callable_request, size_t i,
       const string& send_key) override;
   void add_recv_key(const string& recv_key) override;
   void set_is_partial(bool is_partial) override;
   void set_is_last_partial_run(bool is_last_partial_run) override;
+  void set_store_errors_in_response_body(bool store_errors) override;
+  void set_request_id(int64_t request_id) override;
 
  private:
   string session_handle_;
+  bool create_worker_session_called_ = false;
   string graph_handle_;
-  int64 step_id_;
+  int64_t step_id_;
   ExecutorOpts exec_opts_;
-  gtl::InlinedVector<std::pair<string, Tensor>, 4> sends_;
-  gtl::InlinedVector<string, 4> recvs_;
+  absl::InlinedVector<std::pair<string, Tensor>, 4UL> sends_;
+  absl::InlinedVector<string, 4UL> recvs_;
   bool is_partial_ = false;
   bool is_last_partial_run_ = false;
+  bool store_errors_in_response_body_ = false;
+  int64_t request_id_ = 0;
 
   // Holds a cached and owned representation of the proto
   // representation of this request, if needed, so that `ToProto()`
@@ -339,29 +393,38 @@ class MutableProtoRunGraphRequest : public MutableRunGraphRequestWrapper {
  public:
   // RunGraphRequestWrapper methods.
   const string& session_handle() const override;
+  bool create_worker_session_called() const override;
   const string& graph_handle() const override;
-  int64 step_id() const override;
+  int64_t step_id() const override;
   const ExecutorOpts& exec_opts() const override;
   size_t num_sends() const override;
   const string& send_key(size_t i) const override;
-  Status SendValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status SendValue(size_t i, Tensor* out_tensor) const override;
   size_t num_recvs() const override;
   const string& recv_key(size_t i) const override;
   bool is_partial() const override;
   bool is_last_partial_run() const override;
+  bool store_errors_in_response_body() const override;
+  int64_t request_id() const override;
   const RunGraphRequest& ToProto() const override;
 
   // MutableRunGraphRequestWrapper methods.
   void set_session_handle(const string& handle) override;
+  void set_create_worker_session_called(bool called) override;
   void set_graph_handle(const string& handle) override;
-  void set_step_id(int64 step_id) override;
+  void set_step_id(int64_t step_id) override;
   ExecutorOpts* mutable_exec_opts() override;
-  Status AddSendFromRunStepRequest(
+  absl::Status AddSendFromRunStepRequest(
       const RunStepRequestWrapper& run_step_request, size_t i,
+      const string& send_key) override;
+  absl::Status AddSendFromRunCallableRequest(
+      const RunCallableRequest& run_callable_request, size_t i,
       const string& send_key) override;
   void add_recv_key(const string& recv_key) override;
   void set_is_partial(bool is_partial) override;
   void set_is_last_partial_run(bool is_last_partial_run) override;
+  void set_store_errors_in_response_body(bool store_errors) override;
+  void set_request_id(int64_t request_id) override;
 
  private:
   RunGraphRequest request_;
@@ -373,16 +436,19 @@ class ProtoRunGraphRequest : public RunGraphRequestWrapper {
 
   // RunGraphRequestWrapper methods.
   const string& session_handle() const override;
+  bool create_worker_session_called() const override;
   const string& graph_handle() const override;
-  int64 step_id() const override;
+  int64_t step_id() const override;
   const ExecutorOpts& exec_opts() const override;
   size_t num_sends() const override;
   const string& send_key(size_t i) const override;
-  Status SendValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status SendValue(size_t i, Tensor* out_tensor) const override;
   size_t num_recvs() const override;
   const string& recv_key(size_t i) const override;
   bool is_partial() const override;
   bool is_last_partial_run() const override;
+  bool store_errors_in_response_body() const override;
+  int64_t request_id() const override;
   const RunGraphRequest& ToProto() const override;
 
  private:
@@ -417,8 +483,8 @@ class MutableRunGraphResponseWrapper {
   virtual const string& recv_key(size_t i) const = 0;
   // NOTE: The following methods may perform a destructive read, for
   // efficiency.
-  virtual Status RecvValue(size_t i, TensorProto* out_tensor) = 0;
-  virtual Status RecvValue(size_t i, Tensor* out_tensor) = 0;
+  virtual absl::Status RecvValue(size_t i, TensorProto* out_tensor) = 0;
+  virtual absl::Status RecvValue(size_t i, Tensor* out_tensor) = 0;
   virtual void AddRecv(const string& key, const Tensor& value) = 0;
 
   // Submessages that store performance statistics about the subgraph
@@ -428,6 +494,11 @@ class MutableRunGraphResponseWrapper {
   virtual size_t num_partition_graphs() const = 0;
   virtual GraphDef* mutable_partition_graph(size_t i) = 0;
   virtual void AddPartitionGraph(const GraphDef& partition_graph) = 0;
+
+  // Returned status if requested.
+  virtual absl::Status status() const = 0;
+  virtual absl::StatusCode status_code() const = 0;
+  virtual void set_status(const absl::Status& status) = 0;
 
  protected:
   // Returns a mutable protobuf message that represents the contents of
@@ -450,14 +521,17 @@ class InMemoryRunGraphResponse : public MutableRunGraphResponseWrapper {
   // MutableRunGraphResponseWrapper methods.
   size_t num_recvs() const override;
   const string& recv_key(size_t i) const override;
-  Status RecvValue(size_t i, TensorProto* out_tensor) override;
-  Status RecvValue(size_t i, Tensor* out_tensor) override;
+  absl::Status RecvValue(size_t i, TensorProto* out_tensor) override;
+  absl::Status RecvValue(size_t i, Tensor* out_tensor) override;
   void AddRecv(const string& key, const Tensor& value) override;
   StepStats* mutable_step_stats() override;
   CostGraphDef* mutable_cost_graph() override;
   size_t num_partition_graphs() const override;
   GraphDef* mutable_partition_graph(size_t i) override;
   void AddPartitionGraph(const GraphDef& partition_graph) override;
+  absl::Status status() const override;
+  absl::StatusCode status_code() const override;
+  void set_status(const absl::Status& status) override;
 
  protected:
   // NOTE: This method is not implemented. See
@@ -465,10 +539,13 @@ class InMemoryRunGraphResponse : public MutableRunGraphResponseWrapper {
   RunGraphResponse* get_proto() override;
 
  private:
-  gtl::InlinedVector<std::pair<string, Tensor>, 4> recvs_;
+  absl::InlinedVector<std::pair<string, Tensor>, 4UL> recvs_;
   StepStats step_stats_;
   CostGraphDef cost_graph_;
   std::vector<GraphDef> partition_graphs_;
+  // Store the code and message separately so that they can be updated
+  // independently by setters.
+  absl::Status status_;
 };
 
 // Proto-based message wrapper for use on the client side of the RunGraph RPC.
@@ -477,14 +554,17 @@ class OwnedProtoRunGraphResponse : public MutableRunGraphResponseWrapper {
   // MutableRunGraphResponseWrapper methods.
   size_t num_recvs() const override;
   const string& recv_key(size_t i) const override;
-  Status RecvValue(size_t i, TensorProto* out_tensor) override;
-  Status RecvValue(size_t i, Tensor* out_tensor) override;
+  absl::Status RecvValue(size_t i, TensorProto* out_tensor) override;
+  absl::Status RecvValue(size_t i, Tensor* out_tensor) override;
   void AddRecv(const string& key, const Tensor& value) override;
   StepStats* mutable_step_stats() override;
   CostGraphDef* mutable_cost_graph() override;
   size_t num_partition_graphs() const override;
   GraphDef* mutable_partition_graph(size_t i) override;
   void AddPartitionGraph(const GraphDef& partition_graph) override;
+  absl::Status status() const override;
+  absl::StatusCode status_code() const override;
+  void set_status(const absl::Status& status) override;
 
  protected:
   RunGraphResponse* get_proto() override;
@@ -501,14 +581,17 @@ class NonOwnedProtoRunGraphResponse : public MutableRunGraphResponseWrapper {
   // MutableRunGraphResponseWrapper methods.
   size_t num_recvs() const override;
   const string& recv_key(size_t i) const override;
-  Status RecvValue(size_t i, TensorProto* out_tensor) override;
-  Status RecvValue(size_t i, Tensor* out_tensor) override;
+  absl::Status RecvValue(size_t i, TensorProto* out_tensor) override;
+  absl::Status RecvValue(size_t i, Tensor* out_tensor) override;
   void AddRecv(const string& key, const Tensor& value) override;
   StepStats* mutable_step_stats() override;
   CostGraphDef* mutable_cost_graph() override;
   size_t num_partition_graphs() const override;
   GraphDef* mutable_partition_graph(size_t i) override;
   void AddPartitionGraph(const GraphDef& partition_graph) override;
+  absl::Status status() const override;
+  absl::StatusCode status_code() const override;
+  void set_status(const absl::Status& status) override;
 
  protected:
   RunGraphResponse* get_proto() override;
@@ -546,17 +629,22 @@ class MutableRunStepResponseWrapper {
   // the fetch order specified in RunStepRequest.
   virtual size_t num_tensors() const = 0;
   virtual const string& tensor_name(size_t i) const = 0;
-  virtual Status TensorValue(size_t i, Tensor* out_tensor) const = 0;
+  virtual absl::Status TensorValue(size_t i, Tensor* out_tensor) const = 0;
 
   // Stores the i^{th} recv value in `run_graph_response` in this
   // response with the given `name`.
-  virtual Status AddTensorFromRunGraphResponse(
+  virtual absl::Status AddTensorFromRunGraphResponse(
       const string& name, MutableRunGraphResponseWrapper* run_graph_response,
       size_t i) = 0;
 
   // Returned metadata if requested in the options.
   virtual const RunMetadata& metadata() const = 0;
   virtual RunMetadata* mutable_metadata() = 0;
+
+  // Returned status if requested.
+  virtual absl::Status status() const = 0;
+  virtual absl::StatusCode status_code() const = 0;
+  virtual void set_status(const absl::Status& status) = 0;
 
  protected:
   // Returns a mutable protobuf message that represents the contents of
@@ -579,12 +667,15 @@ class InMemoryRunStepResponse : public MutableRunStepResponseWrapper {
   // MutableRunStepResponseWrapper methods.
   size_t num_tensors() const override;
   const string& tensor_name(size_t i) const override;
-  Status TensorValue(size_t i, Tensor* out_tensor) const override;
-  Status AddTensorFromRunGraphResponse(
+  absl::Status TensorValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status AddTensorFromRunGraphResponse(
       const string& name, MutableRunGraphResponseWrapper* run_graph_response,
       size_t i) override;
   const RunMetadata& metadata() const override;
   RunMetadata* mutable_metadata() override;
+  absl::Status status() const override;
+  absl::StatusCode status_code() const override;
+  void set_status(const absl::Status& status) override;
 
  protected:
   // NOTE: This method is not implemented. See
@@ -592,8 +683,11 @@ class InMemoryRunStepResponse : public MutableRunStepResponseWrapper {
   RunStepResponse* get_proto() override;
 
  private:
-  gtl::InlinedVector<std::pair<string, Tensor>, 4> tensors_;
+  absl::InlinedVector<std::pair<string, Tensor>, 4UL> tensors_;
   RunMetadata metadata_;
+  // Store the code and message separately so that they can be updated
+  // independently by setters.
+  absl::Status status_;
 };
 
 // Proto-based message wrapper for use on the client side of the RunStep RPC.
@@ -602,12 +696,15 @@ class OwnedProtoRunStepResponse : public MutableRunStepResponseWrapper {
   // MutableRunStepResponseWrapper methods.
   size_t num_tensors() const override;
   const string& tensor_name(size_t i) const override;
-  Status TensorValue(size_t i, Tensor* out_tensor) const override;
-  Status AddTensorFromRunGraphResponse(
+  absl::Status TensorValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status AddTensorFromRunGraphResponse(
       const string& name, MutableRunGraphResponseWrapper* run_graph_response,
       size_t i) override;
   const RunMetadata& metadata() const override;
   RunMetadata* mutable_metadata() override;
+  absl::Status status() const override;
+  absl::StatusCode status_code() const override;
+  void set_status(const absl::Status& status) override;
 
  protected:
   RunStepResponse* get_proto() override;
@@ -624,12 +721,15 @@ class NonOwnedProtoRunStepResponse : public MutableRunStepResponseWrapper {
   // MutableRunStepResponseWrapper methods.
   size_t num_tensors() const override;
   const string& tensor_name(size_t i) const override;
-  Status TensorValue(size_t i, Tensor* out_tensor) const override;
-  Status AddTensorFromRunGraphResponse(
+  absl::Status TensorValue(size_t i, Tensor* out_tensor) const override;
+  absl::Status AddTensorFromRunGraphResponse(
       const string& name, MutableRunGraphResponseWrapper* run_graph_response,
       size_t i) override;
   const RunMetadata& metadata() const override;
   RunMetadata* mutable_metadata() override;
+  absl::Status status() const override;
+  absl::StatusCode status_code() const override;
+  void set_status(const absl::Status& status) override;
 
  protected:
   RunStepResponse* get_proto() override;
@@ -638,6 +738,9 @@ class NonOwnedProtoRunStepResponse : public MutableRunStepResponseWrapper {
   RunStepResponse* response_;  // Not owned.
 };
 
+bool ParseTensorProtoToTensor(const TensorProto& tensor_proto,
+                              Tensor* out_tensor);
+
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW
+#endif  // TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_

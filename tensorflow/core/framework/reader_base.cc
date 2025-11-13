@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/reader_base.h"
 
+#include "absl/synchronization/notification.h"
 #include "tensorflow/core/framework/reader_base.pb.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/coding.h"
@@ -28,63 +29,63 @@ namespace tensorflow {
 
 // ReaderBase ------------------------------------------------------
 
-ReaderBase::ReaderBase(const string& name) : name_(name) {}
+ReaderBase::ReaderBase(const std::string& name) : name_(name) {}
 
-int64 ReaderBase::NumRecordsProduced() {
+int64_t ReaderBase::NumRecordsProduced() {
   mutex_lock lock(mu_);
   return num_records_produced_;
 }
 
-int64 ReaderBase::NumWorkUnitsCompleted() {
+int64_t ReaderBase::NumWorkUnitsCompleted() {
   mutex_lock lock(mu_);
   return work_finished_;
 }
 
-Status ReaderBase::Reset() {
+absl::Status ReaderBase::Reset() {
   mutex_lock lock(mu_);
   return ResetLocked();
 }
 
-Status ReaderBase::ResetLocked() {
+absl::Status ReaderBase::ResetLocked() {
   work_started_ = 0;
   work_finished_ = 0;
   num_records_produced_ = 0;
   work_.clear();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status ReaderBase::SerializeState(string* state) {
+absl::Status ReaderBase::SerializeState(tstring* state) {
   mutex_lock lock(mu_);
   return SerializeStateLocked(state);
 }
 
-Status ReaderBase::SerializeStateLocked(string* state) {
+absl::Status ReaderBase::SerializeStateLocked(tstring* state) {
   return errors::Unimplemented("Reader SerializeState");
 }
 
-Status ReaderBase::RestoreState(const string& state) {
+absl::Status ReaderBase::RestoreState(const tstring& state) {
   mutex_lock lock(mu_);
-  Status status = RestoreStateLocked(state);
+  absl::Status status = RestoreStateLocked(state);
   if (!status.ok()) {
     ResetLocked().IgnoreError();
   }
   return status;
 }
 
-Status ReaderBase::RestoreStateLocked(const string& state) {
+absl::Status ReaderBase::RestoreStateLocked(const tstring& state) {
   return errors::Unimplemented("Reader RestoreState");
 }
 
-int64 ReaderBase::ReadUpTo(const int64 num_records, QueueInterface* queue,
-                           std::vector<string>* keys,
-                           std::vector<string>* values,
-                           OpKernelContext* context) {
+int64_t ReaderBase::ReadUpTo(const int64_t num_records, QueueInterface* queue,
+                             std::vector<tstring>* keys,
+                             std::vector<tstring>* values,
+                             OpKernelContext* context) {
   mutex_lock lock(mu_);
-  int64 records_produced_this_call = 0;
+  int64_t records_produced_this_call = 0;
   while (true) {
     // Records produced by this iteration of the ReadUpToLocked call.
-    int64 num_records_produced = 0;
-    int64 remaining = num_records - records_produced_this_call;
+    int64_t num_records_produced = 0;
+    int64_t remaining = num_records - records_produced_this_call;
     if (remaining == 0) {
       return records_produced_this_call;
     }
@@ -93,7 +94,7 @@ int64 ReaderBase::ReadUpTo(const int64 num_records, QueueInterface* queue,
       if (!context->status().ok()) {
         return records_produced_this_call;
       }
-      Status status = OnWorkStartedLocked();
+      absl::Status status = OnWorkStartedLocked();
       if (status.ok()) {
         work_started_++;
       } else {
@@ -103,7 +104,7 @@ int64 ReaderBase::ReadUpTo(const int64 num_records, QueueInterface* queue,
     }
     bool at_end = false;
 
-    Status status =
+    absl::Status status =
         ReadUpToLocked(remaining, keys, values, &num_records_produced, &at_end);
     // This call so far.
     records_produced_this_call += num_records_produced;
@@ -133,16 +134,17 @@ int64 ReaderBase::ReadUpTo(const int64 num_records, QueueInterface* queue,
 }
 
 // Default implementation just reads one record at a time.
-Status ReaderBase::ReadUpToLocked(int64 num_records, std::vector<string>* keys,
-                                  std::vector<string>* values, int64* num_read,
-                                  bool* at_end) {
+absl::Status ReaderBase::ReadUpToLocked(int64_t num_records,
+                                        std::vector<tstring>* keys,
+                                        std::vector<tstring>* values,
+                                        int64_t* num_read, bool* at_end) {
   bool produced = false;
-  string key;
-  string value;
-  Status status = ReadLocked(&key, &value, &produced, at_end);
+  tstring key;
+  tstring value;
+  absl::Status status = ReadLocked(&key, &value, &produced, at_end);
   if (produced) {
-    keys->emplace_back(key);
-    values->emplace_back(value);
+    keys->push_back(std::move(key));
+    values->push_back(std::move(value));
     *num_read = 1;
   } else {
     *num_read = 0;
@@ -150,7 +152,7 @@ Status ReaderBase::ReadUpToLocked(int64 num_records, std::vector<string>* keys,
   return status;
 }
 
-void ReaderBase::Read(QueueInterface* queue, string* key, string* value,
+void ReaderBase::Read(QueueInterface* queue, tstring* key, tstring* value,
                       OpKernelContext* context) {
   mutex_lock lock(mu_);
   while (true) {
@@ -159,7 +161,7 @@ void ReaderBase::Read(QueueInterface* queue, string* key, string* value,
       if (!context->status().ok()) {
         return;
       }
-      Status status = OnWorkStartedLocked();
+      absl::Status status = OnWorkStartedLocked();
       if (status.ok()) {
         work_started_++;
       } else {
@@ -170,7 +172,7 @@ void ReaderBase::Read(QueueInterface* queue, string* key, string* value,
 
     bool produced = false;
     bool at_end = false;
-    Status status = ReadLocked(key, value, &produced, &at_end);
+    absl::Status status = ReadLocked(key, value, &produced, &at_end);
 
     if (!at_end && status.ok() && !produced) {
       status = errors::Internal(
@@ -178,9 +180,9 @@ void ReaderBase::Read(QueueInterface* queue, string* key, string* value,
           " must set *at_end=true, *produced=true, or return an error.");
     }
     if (!status.ok() && produced) {
-      status = errors::Internal("ReadLocked() for ", name(),
-                                " set *produced=true *and* returned an error: ",
-                                status.ToString());
+      status = errors::Internal(
+          "ReadLocked() for ", name(),
+          " set *produced=true *and* returned an error: ", status.message());
     }
     if (status.ok() && at_end) {
       status = OnWorkFinishedLocked();
@@ -197,12 +199,12 @@ void ReaderBase::Read(QueueInterface* queue, string* key, string* value,
   }
 }
 
-string ReaderBase::GetNextWorkLocked(QueueInterface* queue,
-                                     OpKernelContext* context) const {
-  string work;
-  Notification n;
+std::string ReaderBase::GetNextWorkLocked(QueueInterface* queue,
+                                          OpKernelContext* context) const {
+  std::string work;
+  absl::Notification n;
   queue->TryDequeue(
-      context, [this, context, &n, &work](const QueueInterface::Tuple& tuple) {
+      context, [context, &n, &work](const QueueInterface::Tuple& tuple) {
         if (context->status().ok()) {
           if (tuple.size() != 1) {
             context->SetStatus(
@@ -214,7 +216,7 @@ string ReaderBase::GetNextWorkLocked(QueueInterface* queue,
             context->SetStatus(errors::InvalidArgument(
                 "Expected to dequeue a one-element string tensor"));
           } else {
-            work = tuple[0].flat<string>()(0);
+            work = tuple[0].flat<tstring>()(0);
           }
         }
         n.Notify();
@@ -228,39 +230,39 @@ void ReaderBase::SaveBaseState(ReaderBaseState* state) const {
   state->set_work_started(work_started_);
   state->set_work_finished(work_finished_);
   state->set_num_records_produced(num_records_produced_);
-  state->set_current_work(work_);
+  state->set_current_work(work_.data(), work_.size());
 }
 
-string ReaderBase::KeyName(const string& key) const {
-  return strings::StrCat(current_work(), ":", key);
+tstring ReaderBase::KeyName(const tstring& key) const {
+  return absl::StrCat(current_work(), ":", key);
 }
 
-Status ReaderBase::RestoreBaseState(const ReaderBaseState& state) {
+absl::Status ReaderBase::RestoreBaseState(const ReaderBaseState& state) {
   work_started_ = state.work_started();
   work_finished_ = state.work_finished();
   num_records_produced_ = state.num_records_produced();
   work_ = state.current_work();
   if (work_started_ < 0 || work_finished_ < 0 || num_records_produced_ < 0) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
     const string debug_string = "<debug state not available>";
 #else
-    const string debug_string = state.DebugString();
+    const std::string debug_string = state.DebugString();
 #endif
     return errors::InvalidArgument(
         "Unexpected negative value when restoring in ", name(), ": ",
         debug_string);
   }
   if (work_started_ > work_finished_) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || (__EMSCRIPTEN__)
     const string debug_string = "<debug state not available>";
 #else
-    const string debug_string = state.DebugString();
+    const std::string debug_string = state.DebugString();
 #endif
     return errors::InvalidArgument(
         "Inconsistent work started vs. finished when restoring in ", name(),
         ": ", debug_string);
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace tensorflow

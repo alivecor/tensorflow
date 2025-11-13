@@ -14,10 +14,6 @@
 # =============================================================================
 """Utility to convert a Graph to a FunctionDef."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import re
 
 from tensorflow.core.framework import function_pb2
@@ -57,11 +53,11 @@ def _is_in_placeholders(op, func_arg_placeholders):
 
 
 def _get_node_def(op):
-  return op._node_def  # pylint: disable=protected-access
+  return op.node_def  # pylint: disable=protected-access
 
 
 def _get_op_def(op):
-  return op.op_def or op_def_registry.get_registered_ops()[op.type]
+  return op.op_def or op_def_registry.get(op.type)
 
 
 def _create_input_dict(function_graph,
@@ -109,6 +105,13 @@ def _add_op_node(op, func, input_dict):
                                                (node_def.input[i],
                                                 input_dict.items()))
       node_def.input[i] = input_dict[node_def.input[i]]
+  # The function is stateful if any of its operations are stateful.
+  # NOTE(mrry): The "Const" node typically does not have an `OpDef` associated
+  # with it, so we assume any nodes without an `OpDef` are stateless.
+  # TODO(skyewm): Remove the `is not None` test after we transition to the C
+  # API.
+  if op.op_def is not None and op.op_def.is_stateful:
+    func.signature.is_stateful = True
 
 
 def graph_to_function_def(graph, operations, inputs, outputs, out_names=None):
@@ -152,15 +155,15 @@ def graph_to_function_def(graph, operations, inputs, outputs, out_names=None):
         [_tensor_to_argdef(o, used_names=used_names) for o in outputs])
   elif len(outputs) != len(out_names):
     raise ValueError(
-        "Length of out_names (%d) does not match number of outputs (%d): %s" %
-        (len(out_names), len(outputs), ", ".join(out_names)))
+        f"out_names must be either empty or equal in size to outputs. "
+        f"len(out_names) = {len(out_names)} len(outputs) = {len(outputs)}")
   elif len(out_names) != len(set(out_names)):
     raise ValueError(
-        "Must not have duplicates in out_names: %s" % ", ".join(out_names))
+        f"Must not have duplicates in out_names. Received: {out_names}")
   else:
     func.signature.output_arg.extend(
         [_tensor_to_argdef(o, name=n) for o, n in zip(outputs, out_names)])
-  func_arg_placeholders = set([i.name for i in inputs])
+  func_arg_placeholders = set(i.name for i in inputs)
   input_dict = _create_input_dict(graph, func_arg_placeholders,
                                   initial_value=initial_dict)
 

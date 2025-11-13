@@ -13,10 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 """Command parsing module for TensorFlow Debugger (tfdbg)."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import ast
 import re
@@ -540,4 +536,11 @@ def get_print_tensor_argparser(description):
       action="store_true",
       help="Include summary for non-empty tensors of numeric (int*, float*, "
       "complex*) and Boolean types.")
+  ap.add_argument(
+      "-w",
+      "--write_path",
+      type=str,
+      default="",
+      help="Path of the numpy file to write the tensor data to, using "
+      "numpy.save().")
   return ap

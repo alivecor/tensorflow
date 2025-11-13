@@ -17,11 +17,25 @@ limitations under the License.
 // and feed them as inputs to Grappler. This can be used for quick experiments
 // or to derive small regression tests.
 
-#include "tensorflow/cc/ops/standard_ops.h"
-
-#include "tensorflow/core/framework/graph.pb.h"
-#include "tensorflow/core/grappler/grappler_item.h"
 #include "tensorflow/core/grappler/inputs/trivial_test_graph_input_yielder.h"
+
+#include <utility>
+#include <vector>
+
+#include "tensorflow/cc/framework/ops.h"
+#include "tensorflow/cc/framework/scope.h"
+#include "tensorflow/cc/ops/data_flow_ops.h"
+#include "tensorflow/cc/ops/math_ops.h"
+#include "tensorflow/cc/ops/random_ops.h"
+#include "tensorflow/core/framework/graph.pb.h"
+#include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor_shape.h"
+#include "tensorflow/core/framework/types.pb.h"
+#include "tensorflow/core/grappler/grappler_item.h"
+#include "tensorflow/core/platform/strcat.h"
+#include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/protobuf/queue_runner.pb.h"
+#include "tsl/platform/status.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -31,16 +45,14 @@ namespace {
 GraphDef CreateGraphDef(int num_stages, int width, int tensor_size,
                         bool use_multiple_devices, bool insert_queue,
                         const std::vector<string>& device_names) {
-  CHECK_GE(device_names.size(), width);
-
   using namespace ::tensorflow::ops;  // NOLINT(build/namespaces)
 
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
 
   // x is from the feed.
   const int batch_size = tensor_size < 0 ? 1 : tensor_size;
-  Output x =
-      RandomNormal(s.WithOpName("x"), {batch_size, 1}, DataType::DT_FLOAT);
+  Output x = RandomNormal(s.WithOpName("x").WithDevice("/CPU:0"),
+                          {batch_size, 1}, DataType::DT_FLOAT);
 
   // Create stages.
   std::vector<Output> last_stage;
@@ -50,12 +62,16 @@ GraphDef CreateGraphDef(int num_stages, int width, int tensor_size,
     for (int j = 0; j < width; j++) {
       if (last_stage.size() == 1) {
         Output unary_op =
-            Square(s.WithDevice(device_names[use_multiple_devices ? j : 0]),
-                   last_stage[0]);
+            Sign(s.WithDevice(
+                     device_names[use_multiple_devices ? j % device_names.size()
+                                                       : 0]),
+                 last_stage[0]);
         this_stage.push_back(unary_op);
       } else {
         Output combine =
-            AddN(s.WithDevice(device_names[use_multiple_devices ? j : 0]),
+            AddN(s.WithDevice(
+                     device_names[use_multiple_devices ? j % device_names.size()
+                                                       : 0]),
                  last_stage);
         this_stage.push_back(combine);
       }
@@ -64,16 +80,19 @@ GraphDef CreateGraphDef(int num_stages, int width, int tensor_size,
   }
 
   if (insert_queue) {
-    FIFOQueue queue(s.WithOpName("queue"), {DataType::DT_FLOAT});
-    QueueEnqueue enqueue(s.WithOpName("enqueue"), queue, last_stage);
-    QueueDequeue dequeue(s.WithOpName("dequeue"), queue, {DataType::DT_FLOAT});
-    QueueClose cancel(s.WithOpName("cancel"), queue,
+    FIFOQueue queue(s.WithOpName("queue").WithDevice("/CPU:0"),
+                    {DataType::DT_FLOAT});
+    QueueEnqueue enqueue(s.WithOpName("enqueue").WithDevice("/CPU:0"), queue,
+                         last_stage);
+    QueueDequeue dequeue(s.WithOpName("dequeue").WithDevice("/CPU:0"), queue,
+                         {DataType::DT_FLOAT});
+    QueueClose cancel(s.WithOpName("cancel").WithDevice("/CPU:0"), queue,
                       QueueClose::CancelPendingEnqueues(true));
     last_stage = {dequeue[0]};
   }
 
   // Create output.
-  AddN output(s.WithOpName("y"), last_stage);
+  AddN output(s.WithOpName("y").WithDevice("/CPU:0"), last_stage);
 
   GraphDef def;
   TF_CHECK_OK(s.ToGraphDef(&def));

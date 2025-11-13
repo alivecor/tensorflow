@@ -13,15 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 """Format tensors (ndarrays) for screen display and navigation."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import re
 
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
 
 from tensorflow.python.debug.cli import debugger_cli_common
 from tensorflow.python.debug.lib import debug_data
@@ -72,6 +67,7 @@ class HighlightOptions(object):
 def format_tensor(tensor,
                   tensor_label,
                   include_metadata=False,
+                  auxiliary_message=None,
                   include_numeric_summary=False,
                   np_printoptions=None,
                   highlight_options=None):
@@ -84,6 +80,8 @@ def format_tensor(tensor,
       suppress the tensor name line in the return value.
     include_metadata: Whether metadata such as dtype and shape are to be
       included in the formatted text.
+    auxiliary_message: An auxiliary message to display under the tensor label,
+      dtype and shape information lines.
     include_numeric_summary: Whether a text summary of the numeric values (if
       applicable) will be included.
     np_printoptions: A dictionary of keyword arguments that are passed to a
@@ -131,12 +129,15 @@ def format_tensor(tensor,
 
   if include_metadata:
     lines.append("  dtype: %s" % str(tensor.dtype))
-    lines.append("  shape: %s" % str(tensor.shape))
+    lines.append("  shape: %s" % str(tensor.shape).replace("L", ""))
 
   if lines:
     lines.append("")
   formatted = debugger_cli_common.RichTextLines(
       lines, font_attr_segs=font_attr_segs)
+
+  if auxiliary_message:
+    formatted.extend(auxiliary_message)
 
   if include_numeric_summary:
     formatted.append("Numeric summary:")
@@ -148,7 +149,7 @@ def format_tensor(tensor,
     np.set_printoptions(**np_printoptions)
 
   array_lines = repr(tensor).split("\n")
-  if tensor.dtype.type is not np.string_:
+  if tensor.dtype.type is not np.bytes_:
     # Parse array lines to get beginning indices for each line.
 
     # TODO(cais): Currently, we do not annotate string-type tensors due to
@@ -243,8 +244,8 @@ def _annotate_ndarray_lines(
 
   curr_indices = [0] * len(dims)
   curr_dim = 0
-  for i in xrange(len(array_lines)):
-    line = array_lines[i].strip()
+  for i, raw_line in enumerate(array_lines):
+    line = raw_line.strip()
 
     if not line:
       # Skip empty lines, which can appear for >= 3D arrays.
@@ -267,7 +268,7 @@ def _annotate_ndarray_lines(
       else:
         if curr_dim > 0:
           curr_indices[curr_dim - 1] += 1
-          for k in xrange(curr_dim, ndims):
+          for k in range(curr_dim, ndims):
             curr_indices[k] = 0
 
   return annotations
@@ -342,7 +343,7 @@ def locate_tensor_element(formatted, indices):
 
   batch_pos = 0  # Current position in the batch.
 
-  for r in xrange(len(lines)):
+  for r in range(len(lines)):
     if r not in annot:
       continue
 
@@ -480,7 +481,7 @@ def _pad_string_to_length(string, length):
 
 
 def numeric_summary(tensor):
-  """Get a text summmary of a numeric tensor.
+  """Get a text summary of a numeric tensor.
 
   This summary is only available for numeric (int*, float*, complex*) and
   Boolean tensors.
@@ -529,8 +530,8 @@ def numeric_summary(tensor):
   if not isinstance(tensor, np.ndarray) or not np.size(tensor):
     return debugger_cli_common.RichTextLines([
         "No numeric summary available due to empty tensor."])
-  elif (np.issubdtype(tensor.dtype, np.float) or
-        np.issubdtype(tensor.dtype, np.complex) or
+  elif (np.issubdtype(tensor.dtype, np.floating) or
+        np.issubdtype(tensor.dtype, np.complexfloating) or
         np.issubdtype(tensor.dtype, np.integer)):
     counts = [
         ("nan", np.sum(np.isnan(tensor))),
@@ -553,7 +554,7 @@ def numeric_summary(tensor):
           ("std", np.std(valid_array))]
       output.extend(_counts_summary(stats, skip_zeros=False))
     return output
-  elif tensor.dtype == np.bool:
+  elif tensor.dtype == np.bool_:
     counts = [
         ("False", np.sum(tensor == 0)),
         ("True", np.sum(tensor > 0)),]
